@@ -11,38 +11,37 @@ assume. **No secret values appear here, and none ever should.**
 | Default branch | `main` |
 | CI | `.github/workflows/ci.yml` — install · lint · test, plus a gitleaks secret scan |
 
-### Repository visibility — going public, on purpose (pending)
+### Repository visibility — PUBLIC, temporarily and on purpose
 
-**This repository is still PRIVATE — the flip to public has not happened yet.** The founder
-approved making it public, for one reason only: GitHub does not enforce branch protection or
-rulesets on a **private** repository under a **Free personal** account, and he chose free-tier
-protection over privacy for the build phase. The change could not be completed from automation
-(GitHub's Danger Zone visibility confirmation does not take effect from scripted clicks), so it is
-a manual step: **Settings → General → Danger Zone → Change visibility → Change to public**.
+> **This repository is PUBLIC. Flip it back to private at ship.**
 
-Everything below describes the intended end state. Branch protection cannot be configured until the
-repo is public.
+It is public for exactly one reason: GitHub does not enforce branch protection or rulesets on a
+**private** repository under a **Free personal** account. The founder chose free-tier branch
+protection over privacy for the build phase, knowing the trade.
 
-**Flip it back to private at ship.** And know what that does and does not do:
+**Going private later does not undo public exposure.** Every commit, file and line of history
+published here may already have been cloned, forked, cached, indexed by a search engine or ingested
+by a crawler. Treat this entire history as permanently public, forever, including after the repo
+goes private again.
 
-- Going private later **does not undo public exposure**. Anything published here — every commit,
-  every file, every line of history — may already have been cloned, cached, forked, indexed by
-  search engines, or ingested by a crawler. Treat everything in this history as permanently public.
-- It follows that **nothing sensitive may ever be committed here**, and that stays true after the
-  repo goes private again. No keys, no tokens, no customer data, no merchant data, no card data.
-  `.env.example` carries empty values and always will. Real values live in AWS Parameter Store
-  (`/adpay/dev/*`) and GitHub Actions secrets.
-- When the repo goes private, branch protection stops being enforced again unless the repo has
-  moved to an organization on a paid plan by then.
+Which means, and this does not expire:
 
-Before publishing, the history was scanned: gitleaks over the **full** history
-(`fetch-depth: 0`, CI run #15 on `4cd096a`) reported **no leaks**, a tree-wide scan for AWS keys,
-private keys and token patterns found nothing, and every credential-bearing variable in
-`.env.example` was confirmed empty. That scan runs on every push and must stay green.
+- **Nothing sensitive is ever committed here.** No keys, no tokens, no customer or merchant data,
+  no card data. `.env.example` carries empty values and always will. Real values live in AWS
+  Parameter Store (`/adpay/dev/*`) and GitHub Actions secrets.
+- No AD11 identifier is committed either — the Finix Application and Merchant IDs live in
+  `/adpay/dev/finix`, not in this repo.
+- The gitleaks job runs over the **full** history on every push. It must stay green. If it ever
+  goes red, assume the secret is burned and rotate it — do not simply delete the commit.
 
-### Branch protection — NOT YET IN PLACE
+**At ship:** flip to private (Settings → General → Danger Zone → Change visibility), and know that
+branch protection stops being enforced at that moment unless the repo has moved to an organization
+on a paid plan by then. Decide which you want before you flip.
 
-Blocked on the visibility flip above. Once the repo is public, protect `main` with a branch ruleset: pull request required before merging, the CI checks
+### Branch protection — active
+
+Branch ruleset **`main protection`** (id `23906393`), enforcement **Active**, bypass list **empty**,
+applies to 1 target: `main`. Pull request required before merging, the CI checks
 (`install · lint · test` and `no committed secrets`) must pass, force pushes blocked, deletions
 blocked. Required approvals are **0** — this is a solo build, so the PR requirement exists to run
 CI and leave a reviewable diff, not to wait for another human.
