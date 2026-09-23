@@ -1,0 +1,10 @@
+{
+  "name": "@adpay/merchant",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "lint": "echo \"[@adpay/merchant] lint: no sources yet\"",
+    "test": "node --test test/ 2>/dev/null || echo \"[@adpay/merchant] test: no tests yet\"",
+    "typecheck": "echo \"[@adpay/merchant] typecheck: no sources yet\""
+  }
+}
