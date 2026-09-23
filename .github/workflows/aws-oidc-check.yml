@@ -1,0 +1,38 @@
+# Smoke test for the GitHub OIDC → AWS trust path.
+#
+# Run it by hand (Actions → "AWS OIDC check" → Run workflow) after the IAM OIDC
+# identity provider exists in account 512624877493. Until then it fails at the
+# credentials step with "Not authorized to perform sts:AssumeRoleWithWebIdentity",
+# which is the expected, harmless answer.
+#
+# There is no long-lived AWS access key anywhere in this repo, and there should
+# never be one: this workflow mints short-lived credentials per run.
+
+name: AWS OIDC check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # required to request the OIDC token
+  contents: read
+
+jobs:
+  whoami:
+    name: assume the CI role
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::512624877493:role/adpay-github-actions-ci
+          role-session-name: adpay-pos-oidc-check
+          aws-region: us-east-2
+
+      - name: Who am I
+        run: aws sts get-caller-identity
+
+      - name: Can I see the ECR repositories
+        run: aws ecr describe-repositories --repository-names adpay-api adpay-admin --query 'repositories[].repositoryUri' --output text
+
+      - name: Can I read the dev parameters
+        run: aws ssm get-parameters-by-path --path /adpay/dev --query 'Parameters[].Name' --output text
