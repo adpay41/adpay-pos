@@ -11,11 +11,17 @@ assume. **No secret values appear here, and none ever should.**
 | Default branch | `main` |
 | CI | `.github/workflows/ci.yml` — install · lint · test, plus a gitleaks secret scan |
 
-### Repository visibility — temporarily public, on purpose
+### Repository visibility — going public, on purpose (pending)
 
-**This repository is public.** It is public for one reason only: GitHub does not enforce branch
-protection or rulesets on a **private** repository under a **Free personal** account, and the
-founder chose free-tier protection over privacy for the build phase.
+**This repository is still PRIVATE — the flip to public has not happened yet.** The founder
+approved making it public, for one reason only: GitHub does not enforce branch protection or
+rulesets on a **private** repository under a **Free personal** account, and he chose free-tier
+protection over privacy for the build phase. The change could not be completed from automation
+(GitHub's Danger Zone visibility confirmation does not take effect from scripted clicks), so it is
+a manual step: **Settings → General → Danger Zone → Change visibility → Change to public**.
+
+Everything below describes the intended end state. Branch protection cannot be configured until the
+repo is public.
 
 **Flip it back to private at ship.** And know what that does and does not do:
 
@@ -34,9 +40,9 @@ Before publishing, the history was scanned: gitleaks over the **full** history
 private keys and token patterns found nothing, and every credential-bearing variable in
 `.env.example` was confirmed empty. That scan runs on every push and must stay green.
 
-### Branch protection
+### Branch protection — NOT YET IN PLACE
 
-`main` is protected by a branch ruleset: pull request required before merging, the CI checks
+Blocked on the visibility flip above. Once the repo is public, protect `main` with a branch ruleset: pull request required before merging, the CI checks
 (`install · lint · test` and `no committed secrets`) must pass, force pushes blocked, deletions
 blocked. Required approvals are **0** — this is a solo build, so the PR requirement exists to run
 CI and leave a reviewable diff, not to wait for another human.
@@ -149,7 +155,62 @@ commitment to spend $20; nothing spends on its own, and the stack is not deploye
   second, weaker door. There is no root console usage to stop.
 - **MFA** — the founder enrolls this himself; it needs a QR scan.
 
-### Infrastructure
+## Sentry
+
+Organization **`americandream-pay-llc`** — correct entity, already existed.
+
+| Project | Platform | For |
+| --- | --- | --- |
+| `adpay-register` | React Native | `apps/register` |
+| `adpay-merchant` | React Native | `apps/merchant` |
+| `adpay-api` | Node.js | `packages/api` |
+
+DSNs are in Parameter Store (a Sentry DSN is designed to ship inside a client build; it is an
+identifier, not a credential, so these are plain `String` parameters):
+
+- `/adpay/dev/sentry/dsn-register`
+- `/adpay/dev/sentry/dsn-merchant`
+- `/adpay/dev/sentry/dsn-api`
+- `/adpay/dev/sentry/org` → `americandream-pay-llc`
+
+**Not done: the source-maps auth token.** A Sentry auth token is a real credential. Create it at
+*Settings → Developer Settings → Auth Tokens* with `project:releases` and `org:read`, then put it
+straight into the GitHub Actions secret `SENTRY_AUTH_TOKEN` and
+`aws ssm put-parameter --name /adpay/dev/sentry/auth-token --type SecureString`. It is shown once.
+
+## Store accounts
+
+### Google Play Console — blocked on an entity question
+
+The only developer account on the signed-in Google account (`nihalhari41@gmail.com`) is named
+**"Prophecy"**. There is no American Dream Pay LLC developer account.
+
+No app entry was created, and this one matters: **a Play app entry cannot be deleted.** Once
+`us.americandreampay.merchant` is created under a developer account, that package name is
+permanently bound to it — it can be unpublished or archived, never removed, and never reused under
+a different developer account. Creating it under "Prophecy" would burn the package name for the
+real American Dream Pay LLC account. Decide the developer account first.
+
+Package names to use once that is settled:
+
+| App | Package | Distribution |
+| --- | --- | --- |
+| Merchant app | `us.americandreampay.merchant` | Play listing |
+| Register | `us.americandreampay.register` | **sideloaded, no Play listing** |
+
+### Apple Developer — not signed in
+
+`developer.apple.com/account` redirects to sign-in, so verification status could not be read and no
+bundle ID or App Store Connect record was created. Signing in needs the founder (password, and
+Apple enforces 2FA).
+
+## Device management (Esper / Scalefusion)
+
+**No account exists.** Both `id.esper.cloud` and `app.scalefusion.com` present sign-in pages with no
+active session. Per the dispatch, skipped — the design doc decides Esper vs. building OTA
+ourselves, and the spec keeps v1 on ADB `dpm set-device-owner` regardless.
+
+## Infrastructure
 
 `infra/` holds the CDK dev stack (VPC, RDS Postgres 16, ElastiCache Redis, ECS Fargate, ALB).
 `cdk synth` was run and passes. **`cdk deploy` has not been run and must not be** until the founder
@@ -157,9 +218,12 @@ approves the cost. See [ADR 0005](decisions/0005-iac-aws-cdk.md).
 
 ## Still open
 
-- **Finix sandbox** — the dashboard was at a login screen, not an active session, so the dashboard
-  type (Software Platform), the Application ID and the API key were not retrieved. See
-  [`finix-links.md`](finix-links.md) for everything that was established from public docs,
-  including confirmation that the **PAX A35 is a Finix-supported terminal** over Wi-Fi/Ethernet.
-- **Sentry, Google Play Console, Apple Developer, Esper/Scalefusion** — not reached in this pass.
-- **GitHub Actions secrets** — none set. `AWS_*`, `FINIX_*`, `SENTRY_*` are all still empty.
+- **Finix — entity mismatch, unresolved.** The sandbox dashboard belongs to **AmericanDream11 LLC**,
+  not American Dream Pay LLC. It is a confirmed **Software Platform** dashboard and the **PAX A35 is
+  supported**, but no API key was created and no identifiers from it were wired into AD Pay's
+  infrastructure. See [`finix-links.md`](finix-links.md). Settle the entity first.
+- **Repo visibility + branch protection** — see above; both need the founder's hands.
+- **GitHub Actions secrets** — none set. `FINIX_*`, `SENTRY_AUTH_TOKEN` and anything else still
+  empty. There is deliberately no `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`: CI uses OIDC.
+- **IAM OIDC identity provider** — blocked by an SCP; needs *Activate advanced features*.
+- **MFA** — founder enrolls.

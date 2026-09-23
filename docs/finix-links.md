@@ -30,11 +30,30 @@ secrets.
   **once** — they cannot be retrieved after the window closes.
 - **Application ID and Merchant ID**: Dashboard → **Developer** → *Finix Processing Details*.
 
-### Open: confirm the dashboard type is *Software Platform*
+### Dashboard type — Software Platform, confirmed
 
-Not yet confirmed — the sandbox dashboard was at a login screen rather than an active session when
-this bootstrap ran. Finix's "Platform Payments" guide is the relevant path for a software platform
-that onboards its own merchants: <https://docs.finix.com/guides/platform-payments>
+The sandbox dashboard is a **platform** dashboard, not a single-merchant one. The navigation carries
+**Merchant Identities, Merchant Payouts, Onboarding Forms, Compliance Forms** and an
+**Application** resource — Finix describes the Application as *"your own business or platform within
+the Finix system"* — and the API keys issued are **Application**-scoped with the **Developer** role.
+That is the Software Platform / PayFac-as-a-Service shape the spec assumes, where AD Pay onboards
+its own merchants.
+
+The account is **Sandbox** and **not activated** ("Looking to Activate Your Account?"). Live access
+is a conversation with Finix.
+
+### ⚠️ Entity mismatch — unresolved
+
+The sandbox account is registered to **AmericanDream11 LLC** (`team@americandream11.us`), not
+**American Dream Pay LLC**. The bootstrap rule is that AD Pay is a separate company from AD11, and a
+processor account is bound to a legal entity for underwriting, settlement and liability — so no AD
+Pay credentials were created in it and no identifiers from it were wired into AD Pay's
+infrastructure. **The founder decides:** open a Finix sandbox under American Dream Pay LLC, or
+deliberately build v1 against the AD11 sandbox and migrate before going live. Nothing downstream
+should be wired up until that is settled.
+
+Two Application-scoped API keys already exist in that account (created 2026-09-10, one used
+2026-09-22). No new key was created here.
 
 ## The pages that matter for this build
 
@@ -81,15 +100,32 @@ Note also **Deploy Apps to Your Terminals** — the Device Reader SDK runs your 
 directly on PAX terminals. Not v1, but it is the fallback if the dual-screen register plus separate
 A35 ever proves awkward.
 
-## Getting a test terminal
+## Getting a test terminal — confirmed, you cannot self-serve
 
-There is no self-serve "request a test terminal" button. Per the docs: order in **Production** via
-the **Device Store** in the Finix Dashboard, or **reach out to your Finix contact to order a
-terminal for Sandbox**. So a sandbox A35 is a conversation with Finix, not a checkout — worth
-starting early, since the terminal adapter is sequencing step 6 and the A35's arrival gates it.
+The Device Store is present in the dashboard, but in Sandbox it says plainly:
 
-For integration testing before hardware arrives, see *Testing Your Integration* under In-Person
-Payments (Sandbox test cards and approved test amounts), and keep using the stub provider.
+> You are not able to order devices in Sandbox, please contact your Finix point of contact or
+> support@finix.com if you would like to purchase devices.
+
+So a sandbox A35 is a conversation with Finix, not a checkout. **Start it early** — the terminal
+adapter is sequencing step 6 and the A35's arrival gates it.
+
+Device Store list prices (sandbox catalogue, USD):
+
+| Device | Price |
+| --- | --- |
+| **PAX A35** (the one v1 targets) | **$282.00** |
+| PAX D135 | $75.00 |
+| PAX A800 | $400.00 |
+| PAX A920 Pro | $500.00 |
+| PAX A3700 | $550.00 |
+| PAX IM30 | $590.00 |
+
+The dashboard also has **Device Management** and **Device Orders** pages, which is where terminal
+health and fulfilment will show up once real hardware exists.
+
+Until hardware arrives, test with *Testing Your Integration* under In-Person Payments (Sandbox test
+cards and approved test amounts) and keep the stub provider.
 
 ## Webhooks
 
