@@ -1,0 +1,45 @@
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+# env / secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.keystore
+*.jks
+google-play-service-account*.json
+aws-exports.js
+
+# CDK
+infra/cdk.out/
+infra/cdk.context.json
+
+# RN / Android / iOS
+apps/*/android/.gradle/
+apps/*/android/app/build/
+apps/*/ios/Pods/
+apps/*/ios/build/
+*.apk
+*.aab
+
+# Next
+apps/admin/.next/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
