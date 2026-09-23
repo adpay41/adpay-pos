@@ -1,0 +1,10 @@
+{
+  "name": "@adpay/register",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "lint": "echo \"[@adpay/register] lint: no sources yet\"",
+    "test": "node --test test/ 2>/dev/null || echo \"[@adpay/register] test: no tests yet\"",
+    "typecheck": "echo \"[@adpay/register] typecheck: no sources yet\""
+  }
+}
