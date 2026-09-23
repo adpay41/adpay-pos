@@ -4,7 +4,11 @@
     "module": "CommonJS",
     "moduleResolution": "Node",
     "outDir": "dist",
-    "types": ["node"]
+    "types": ["node"],
+    // aws-cdk-lib's L2 interfaces (IVpc.vpnGatewayId, ICluster.defaultCloudMapNamespace, ...)
+    // declare optional properties as required-but-possibly-undefined, which is incompatible
+    // with exactOptionalPropertyTypes. Relaxed here only; the rest of the monorepo keeps it on.
+    "exactOptionalPropertyTypes": false
   },
   "include": ["bin/**/*.ts", "lib/**/*.ts"]
 }
