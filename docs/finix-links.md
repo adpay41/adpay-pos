@@ -42,15 +42,18 @@ its own merchants.
 The account is **Sandbox** and **not activated** ("Looking to Activate Your Account?"). Live access
 is a conversation with Finix.
 
-### ⚠️ Entity mismatch — unresolved
+### ⚠️ Entity mismatch — decided, with migration debt
 
 The sandbox account is registered to **AmericanDream11 LLC** (`team@americandream11.us`), not
 **American Dream Pay LLC**. The bootstrap rule is that AD Pay is a separate company from AD11, and a
-processor account is bound to a legal entity for underwriting, settlement and liability — so no AD
-Pay credentials were created in it and no identifiers from it were wired into AD Pay's
-infrastructure. **The founder decides:** open a Finix sandbox under American Dream Pay LLC, or
-deliberately build v1 against the AD11 sandbox and migrate before going live. Nothing downstream
-should be wired up until that is settled.
+processor account is bound to a legal entity for underwriting, settlement and liability.
+
+**Decision (2026-09-23): build v1 against this sandbox, migrate to an American Dream Pay LLC
+account before going live.** See **[ADR 0006](decisions/0006-finix-sandbox-entity-migration.md)**
+for what that costs and what must change first — it is a production release blocker, not a backlog
+item. The Application ID (`AP8CpWQcq7CiSMyRDCVuuqE6`) and the Merchant / Identity IDs are in the
+AWS parameter `/adpay/dev/finix`, tagged with the owning entity. No AD11 identifier is committed to
+this repository.
 
 Two Application-scoped API keys already exist in that account (created 2026-09-10, one used
 2026-09-22). No new key was created here.

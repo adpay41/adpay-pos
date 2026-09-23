@@ -155,6 +155,31 @@ commitment to spend $20; nothing spends on its own, and the stack is not deploye
   second, weaker door. There is no root console usage to stop.
 - **MFA** — the founder enrolls this himself; it needs a QR scan.
 
+## Finix — running on AD11's sandbox, on purpose
+
+> ⚠️ **Migration debt.** See **[ADR 0006](decisions/0006-finix-sandbox-entity-migration.md)** —
+> read it before touching the payment layer.
+
+The sandbox belongs to **AmericanDream11 LLC**, not American Dream Pay LLC. The founder decided on
+2026-09-23 to **build v1 against it and migrate to an AD Pay LLC account before going live**. That
+is a release blocker for production, not a backlog item: new underwriting, new Application /
+Merchant / Identity IDs, new keys and webhooks, every merchant re-onboarded, every terminal
+re-provisioned, and settlement re-pointed so money lands in AD Pay's bank account.
+
+Dashboard type is confirmed **Software Platform**. Wired into dev config:
+
+| Parameter | Contents |
+| --- | --- |
+| `/adpay/dev/finix` (SecureString) | `env`, `base_url`, `application_id`, `merchant_id`, `merchant_identity_id`, `entity`, and **empty** `api_key` / `api_secret` |
+
+`application_id` is `AP8CpWQcq7CiSMyRDCVuuqE6`. The `entity` field reads
+`AmericanDream11 LLC (TEMPORARY - migrate before live)` — leave that string there until the account
+actually changes. **No AD11 identifier is committed to this repository**, and `.env.example` stays
+empty.
+
+Treat everything produced against this sandbox as disposable. Nothing built may assume a Finix id
+survives the migration.
+
 ## Sentry
 
 Organization **`americandream-pay-llc`** — correct entity, already existed.
@@ -180,18 +205,31 @@ straight into the GitHub Actions secret `SENTRY_AUTH_TOKEN` and
 
 ## Store accounts
 
-### Google Play Console — blocked on an entity question
+### Google Play Console — no account under the AD Pay address; nothing created
 
-The only developer account on the signed-in Google account (`nihalhari41@gmail.com`) is named
-**"Prophecy"**. There is no American Dream Pay LLC developer account.
+Four Google accounts are signed in to this browser. Their Play developer status:
 
-No app entry was created, and this one matters: **a Play app entry cannot be deleted.** Once
-`us.americandreampay.merchant` is created under a developer account, that package name is
-permanently bound to it — it can be unpublished or archived, never removed, and never reused under
-a different developer account. Creating it under "Prophecy" would burn the package name for the
-real American Dream Pay LLC account. Decide the developer account first.
+| Google account | Play developer account |
+| --- | --- |
+| `nihalhari41@gmail.com` | **Prophecy** |
+| `patelnihalhari41@gmail.com` | **AmericanDream11 LLC** |
+| `americandream11limited@gmail.com` | none — lands on the signup flow |
+| **`americandreampayllc@gmail.com`** | **none** — lands on signup, and blocked there: *"To create a developer account, turn on 2-step verification for your Google account"* |
 
-Package names to use once that is settled:
+So there is no American Dream Pay LLC Play developer account, and **no app entry was created
+anywhere**. Creating one costs $25 and is an account signup — outside what automation does here.
+
+This is the right outcome rather than a workaround: **a Play app entry cannot be deleted.** Once
+`us.americandreampay.merchant` is created under a developer account, the package name is
+permanently bound to it — unpublishable and archivable, never removable, never reusable elsewhere.
+Creating it under "Prophecy" or "AmericanDream11 LLC" would burn the name for the real AD Pay
+account.
+
+To unblock, in this order: turn on 2-step verification for `americandreampayllc@gmail.com`, pay the
+$25 one-time Google Play developer registration as an **Organization** (AD Pay LLC), complete
+Google's organization verification, then create the app entry.
+
+Package names, once that exists:
 
 | App | Package | Distribution |
 | --- | --- | --- |
@@ -218,10 +256,9 @@ approves the cost. See [ADR 0005](decisions/0005-iac-aws-cdk.md).
 
 ## Still open
 
-- **Finix — entity mismatch, unresolved.** The sandbox dashboard belongs to **AmericanDream11 LLC**,
-  not American Dream Pay LLC. It is a confirmed **Software Platform** dashboard and the **PAX A35 is
-  supported**, but no API key was created and no identifiers from it were wired into AD Pay's
-  infrastructure. See [`finix-links.md`](finix-links.md). Settle the entity first.
+- **Finix API key** — `/adpay/dev/finix` ships with `api_key` and `api_secret` **empty**. The
+  founder creates the key by hand (Dashboard → Developer → Create API Key; shown once) and sets it
+  himself. Automation never handles it.
 - **Repo visibility + branch protection** — see above; both need the founder's hands.
 - **GitHub Actions secrets** — none set. `FINIX_*`, `SENTRY_AUTH_TOKEN` and anything else still
   empty. There is deliberately no `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`: CI uses OIDC.
