@@ -75,6 +75,7 @@ purpose: support is one person for the first 200 stores.
 | [0003](docs/decisions/0003-payments-interface.md) | PaymentProvider interface, Finix behind it |
 | [0004](docs/decisions/0004-money-integer-cents.md) | Money as integer cents |
 | [0005](docs/decisions/0005-iac-aws-cdk.md) | AWS CDK (TypeScript) for infrastructure |
+| [0006](docs/decisions/0006-finix-sandbox-entity-migration.md) | **Finix sandbox is AD11's — migration debt before production** |
 
 ## Repo layout
 
