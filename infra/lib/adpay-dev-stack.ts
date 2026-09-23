@@ -42,6 +42,7 @@ export class AdpayDevStack extends cdk.Stack {
       securityGroups: [dbSg],
       allocatedStorage: 20,
       storageType: rds.StorageType.GP3,
+      storageEncrypted: true,
       multiAz: false,
       databaseName: 'adpay',
       // Credentials are generated into Secrets Manager. No credential is ever in this file.
@@ -66,10 +67,13 @@ export class AdpayDevStack extends cdk.Stack {
       cacheSubnetGroupName: redisSubnets.ref,
       vpcSecurityGroupIds: [redisSg.securityGroupId],
     });
-    redis.addDependency(redisSubnets);
+    redis.addResourceDependency(redisSubnets);
 
     // ------------------------------------------------------------- ecs + alb
-    const cluster = new ecs.Cluster(this, 'Cluster', { vpc, containerInsights: false });
+    const cluster = new ecs.Cluster(this, 'Cluster', {
+      vpc,
+      containerInsightsV2: ecs.ContainerInsights.DISABLED, // dev: no CloudWatch Insights spend
+    });
 
     const serviceSg = new ec2.SecurityGroup(this, 'ApiSg', { vpc, description: 'adpay dev api' });
     dbSg.addIngressRule(serviceSg, ec2.Port.tcp(5432), 'api → postgres');
@@ -102,6 +106,8 @@ export class AdpayDevStack extends cdk.Stack {
       cluster,
       taskDefinition: taskDef,
       desiredCount: 0, // stays at 0 until a real image exists
+      minHealthyPercent: 50,
+      circuitBreaker: { rollback: true },
       securityGroups: [serviceSg],
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       assignPublicIp: false,
