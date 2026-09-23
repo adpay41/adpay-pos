@@ -11,16 +11,35 @@ assume. **No secret values appear here, and none ever should.**
 | Default branch | `main` |
 | CI | `.github/workflows/ci.yml` — install · lint · test, plus a gitleaks secret scan |
 
-**Branch protection is NOT in place.** GitHub does not enforce classic branch protection or
-rulesets on a **private** repository under a **Free personal** account; the console states the rule
-"won't be enforced … until you move to a GitHub Team or Enterprise organization account", and it
-refuses to save one. Three ways out, none of them taken yet because they are the founder's call:
+### Repository visibility — temporarily public, on purpose
 
-1. Create an `americandreampay` **organization** and move the repo (a Team plan is paid).
-2. Make the repo **public** (protection works on free public repos — not appropriate for this).
-3. Leave `main` unprotected and rely on discipline plus CI on every push.
+**This repository is public.** It is public for one reason only: GitHub does not enforce branch
+protection or rulesets on a **private** repository under a **Free personal** account, and the
+founder chose free-tier protection over privacy for the build phase.
 
-Until then, treat "PR into `main`, CI green, no force-push" as a convention rather than a guarantee.
+**Flip it back to private at ship.** And know what that does and does not do:
+
+- Going private later **does not undo public exposure**. Anything published here — every commit,
+  every file, every line of history — may already have been cloned, cached, forked, indexed by
+  search engines, or ingested by a crawler. Treat everything in this history as permanently public.
+- It follows that **nothing sensitive may ever be committed here**, and that stays true after the
+  repo goes private again. No keys, no tokens, no customer data, no merchant data, no card data.
+  `.env.example` carries empty values and always will. Real values live in AWS Parameter Store
+  (`/adpay/dev/*`) and GitHub Actions secrets.
+- When the repo goes private, branch protection stops being enforced again unless the repo has
+  moved to an organization on a paid plan by then.
+
+Before publishing, the history was scanned: gitleaks over the **full** history
+(`fetch-depth: 0`, CI run #15 on `4cd096a`) reported **no leaks**, a tree-wide scan for AWS keys,
+private keys and token patterns found nothing, and every credential-bearing variable in
+`.env.example` was confirmed empty. That scan runs on every push and must stay green.
+
+### Branch protection
+
+`main` is protected by a branch ruleset: pull request required before merging, the CI checks
+(`install · lint · test` and `no committed secrets`) must pass, force pushes blocked, deletions
+blocked. Required approvals are **0** — this is a solo build, so the PR requirement exists to run
+CI and leave a reviewable diff, not to wait for another human.
 
 ## AWS
 
@@ -29,10 +48,8 @@ not a classic root account.
 
 | Item | Value |
 | --- | --- |
-| Organization | `o-hzxqtm6mxm` |
-| Management account | `903126308528` |
 | Project | `Lift Off Soon` (`AmericanDreamPay`) |
-| Project account (where resources live) | `512624877493` |
+| Project account (where resources live) | `512624877493` — unavoidably public: it is embedded in the ECR URIs and the CI role ARN below |
 | **Region** | **`us-east-2` (Ohio)** — see the deviation below |
 | Console | Sign in → choose the `Lift Off Soon` session |
 
@@ -74,27 +91,63 @@ and so on. `infra/lib/adpay-dev-stack.ts` currently generates the DB credential 
 Manager via `rds.Credentials.fromGeneratedSecret` — that is RDS's own managed secret and is worth
 keeping either way.
 
-### Not done
+### CI credentials — GitHub OIDC, no long-lived keys
 
-- **IAM user `github-actions-ci`** — not created. A scoped policy was authored (ECR auth + push to
-  the two repos, ECS deploy, the one S3 bucket, read `/adpay/dev/*`, KMS decrypt via SSM, PassRole
-  limited to `ecs-tasks.amazonaws.com`) but the console's policy editor would not accept it
-  programmatically. The JSON is in the bootstrap report; recreate it via CloudShell:
-  `aws iam create-policy --policy-name adpay-github-actions-ci --policy-document file://policy.json`
-- **Access keys** — deliberately not created. An access key is a long-lived credential that would
-  have to be copied into GitHub; the founder creates it and pastes it himself.
-  **Better option: skip the key entirely** and use GitHub's OIDC provider with an IAM *role*
-  (`token.actions.githubusercontent.com`, trust scoped to `repo:adpay41/adpay-pos:*`). No long-lived
-  secret, nothing to rotate, nothing to leak. Recommended before the first deploy.
-- **`founder-admin` IAM user** — deliberately not created. In this account model human access goes
-  through IAM Identity Center (the project's *Team* page), which the founder already uses; a
-  parallel IAM user with `AdministratorAccess` would be a second, weaker way in. There is no root
-  console usage to stop.
-- **MFA** — the founder enrolls this himself (he has to scan the QR).
-- **Billing alarms ($50 / $200) and Cost Explorer** — not set. This account model shows spend under
-  *AWS Settings → Billing* with project-level controls rather than classic Budgets; available
-  credits are **$0.00**, so any deployed resource bills immediately. Worth setting a project spend
-  limit before the first `cdk deploy`.
+There is **no AWS access key** for CI and there should never be one. CI authenticates with GitHub's
+OIDC provider and mints short-lived credentials per run.
+
+| Piece | Value | State |
+| --- | --- | --- |
+| IAM role | `arn:aws:iam::512624877493:role/adpay-github-actions-ci` | **created** |
+| Trust | `sts:AssumeRoleWithWebIdentity`, `aud = sts.amazonaws.com`, `sub` like `repo:adpay41/adpay-pos:*` | **created** |
+| Managed policy | `arn:aws:iam::512624877493:policy/adpay-github-actions-ci` | **created and attached** |
+| Workflow | `.github/workflows/aws-oidc-check.yml` | **committed** |
+| **IAM OIDC identity provider** (`token.actions.githubusercontent.com`) | — | **BLOCKED** |
+
+**The one missing piece:** `iam:CreateOpenIDConnectProvider` is denied by an organization service
+control policy on this managed project account:
+
+```
+AccessDenied … CreateOpenIDConnectProvider on resource
+arn:aws:iam::512624877493:oidc-provider/token.actions.githubusercontent.com
+with an explicit deny in a service control policy
+```
+
+`iam:ListOpenIDConnectProviders` is denied too, so no provider can be created or even listed here.
+The role and policy are ready and waiting; the trust path simply cannot complete until the provider
+exists. Unblocking it means **Activate advanced features** on the project (AWS Settings → Projects),
+which hands account management over from AWS's managed guardrails — a real decision, not made here.
+
+Until then, `aws-oidc-check.yml` fails at the credentials step with
+*"Not authorized to perform sts:AssumeRoleWithWebIdentity"*. That is expected. Nothing in CI needs
+AWS yet: lint and test do not touch it, and the infra stack is not deployed.
+
+The policy grants exactly: ECR auth plus push/pull limited to `adpay-api` and `adpay-admin`; ECS
+describe/register/update; `iam:PassRole` limited to `ecs-tasks.amazonaws.com`; read/write on
+`adpay-dev-assets-7k3q9m` only; read on `/adpay/dev/*` only; and `kms:Decrypt` only via SSM.
+
+### Cost controls
+
+| Control | Value |
+| --- | --- |
+| **Project spend limit (hard cap)** | **$20.00/month** on `Lift Off Soon` — at the limit the project is **paused** |
+| Early control: stop new resource launches | on (~7 days before the limit) |
+| Early control: pause idle resources | on (~5 days before the limit) |
+| Early control: pause top cost drivers | on (~4 days before the limit) |
+| Built-in notifications | 50% / 75% / 90% of the limit = **$10 / $15 / $18**, plus an on-track-to-exceed warning |
+| AWS Budget `adpay-dev-10usd` | **$10.00/month**, email alerts at 80% actual, 100% actual, 100% forecast |
+
+**The requested ceiling was $10; AWS's minimum project spend limit is $20.** So the hard cap sits at
+$20 — the lowest value the account allows — and the $10 line is covered two ways: the built-in 50%
+notification lands exactly at $10, and a separate AWS Budget alerts at $10. A $20 ceiling is not a
+commitment to spend $20; nothing spends on its own, and the stack is not deployed.
+
+### Deliberately not done
+
+- **`founder-admin` IAM user** — human access goes through IAM Identity Center (the project's *Team*
+  page), which the founder already uses. A parallel IAM user with `AdministratorAccess` would be a
+  second, weaker door. There is no root console usage to stop.
+- **MFA** — the founder enrolls this himself; it needs a QR scan.
 
 ### Infrastructure
 
