@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api, tokenStore } from './api';
+import { AlertsTab } from './alerts';
 import { CatalogTab } from './catalog';
 import { StaffTab, type Me } from './staff';
 import { C, usd } from './theme';
@@ -146,8 +147,8 @@ function Login({ onToken }: { onToken: (t: string) => void }) {
   );
 }
 
-type Tab = 'sales' | 'tickets' | 'items' | 'staff';
-const TAB_LABEL: Record<Tab, string> = { sales: 'Sales', tickets: 'Tickets', items: 'Items', staff: 'Staff' };
+type Tab = 'sales' | 'tickets' | 'items' | 'alerts' | 'staff';
+const TAB_LABEL: Record<Tab, string> = { sales: 'Sales', tickets: 'Tickets', items: 'Items', alerts: 'Alerts', staff: 'Staff' };
 
 interface MeResponse {
   principal: Me & { merchant_id: string };
@@ -166,7 +167,9 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
 
   // Tabs follow what this person may do at this store (P3 permissions).
   const can = (p: Permission) => !!me?.principal.permissions.includes(p);
-  const tabs: Tab[] = me ? [...(can('reports.view') ? (['sales', 'tickets'] as const) : []), ...(can('catalog.edit') ? (['items'] as const) : []), 'staff'] : [];
+  const tabs: Tab[] = me
+    ? [...(can('reports.view') ? (['sales', 'tickets'] as const) : []), ...(can('catalog.edit') ? (['items'] as const) : []), ...(can('reports.view') ? (['alerts'] as const) : []), 'staff']
+    : [];
   const current = tab && tabs.includes(tab) ? tab : (tabs[0] ?? null);
 
   async function switchTo(merchantId: string) {
@@ -203,6 +206,7 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
       {current === 'sales' && <SalesTab token={token} />}
       {current === 'tickets' && <TicketsTab token={token} />}
       {current === 'items' && <CatalogTab token={token} />}
+      {current === 'alerts' && <AlertsTab token={token} />}
       {current === 'staff' && me && <StaffTab token={token} me={{ ...me.principal }} />}
     </View>
   );

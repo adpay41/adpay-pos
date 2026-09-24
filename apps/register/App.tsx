@@ -35,6 +35,7 @@ function Register() {
 
   const forget = useCallback(() => {
     rt?.sync.stop();
+    rt?.ops.stop();
     setRt(null);
     void tokenStore.set(null);
     setToken(null);

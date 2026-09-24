@@ -41,6 +41,8 @@ export function ErrorBox({ error }: { error: unknown }) {
 
 const NAV = [
   { href: '/', label: 'Merchants' },
+  { href: '/fleet', label: 'Fleet' },
+  { href: '/alerts', label: 'Alerts' },
   { href: '/sales', label: 'Sales' },
   { href: '/audit', label: 'Audit log' },
 ];

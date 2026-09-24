@@ -141,7 +141,7 @@ export class SyncEngine {
     try {
       await this.pushOnce();
       await this.refreshCatalogIfStale();
-      // Idle poll is 15s until the WebSocket nudge (build plan P4) makes catalog pushes instant.
+      // Idle poll is the fallback: with the realtime channel up (P4) a catalog change is nudged instantly.
       this.delay = this.status.queued > 0 ? 5_000 : 15_000;
     } catch (e) {
       this.delay = Math.min(60_000, this.delay * 2);

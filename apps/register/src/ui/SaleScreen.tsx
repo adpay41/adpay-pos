@@ -18,9 +18,9 @@ import {
   type ReceiptLine,
 } from '@adpay/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { DevSettings, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { createDisplayChannel, displayFor } from '../core/display';
-import { WebPreviewHardware, type Hardware } from '../core/hardware';
+import { PREVIEW_HEALTH, WebPreviewHardware, type Hardware } from '../core/hardware';
 import type { SessionState } from '../core/session';
 import type { StaffState } from '../core/staff';
 import type { SyncStatus } from '../core/sync';
@@ -79,13 +79,17 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const favorites = useMemo(() => favoriteKeys(catalog), [catalog]);
   const items = useMemo(() => (category === FAVORITES ? favorites : categoryKeys(catalog, category)), [catalog, category, favorites]);
 
-  const run = useCallback(async (fn: () => Promise<unknown>) => {
-    try {
-      await fn();
-    } catch (e) {
-      setModal({ kind: 'error', message: (e as Error).message });
-    }
-  }, []);
+  const run = useCallback(
+    async (fn: () => Promise<unknown>) => {
+      try {
+        await fn();
+      } catch (e) {
+        rt.log.warn('action refused at the register', { message: (e as Error).message.slice(0, 200) });
+        setModal({ kind: 'error', message: (e as Error).message });
+      }
+    },
+    [rt],
+  );
 
   /** Run `action` if the signed-in person may; otherwise ask for a manager override first. */
   const guarded = (permission: Permission, saleId: string | null, action: () => Promise<unknown>) => {
@@ -113,9 +117,37 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       copy,
     });
 
+  // Remote actions that need this screen or the printer (P4): reprint any sale rung here, test page, restart.
+  useEffect(() => {
+    rt.ops.setHandlers({
+      reprint: async (saleId) => {
+        const events = await rt.store.eventsForSale(saleId);
+        if (events.length === 0) throw new Error('That sale is not on this register');
+        await hardware.printReceipt(receiptFor(foldSale(saleId, events), 'reprint'));
+        await rt.session.recordReceipt(saleId, 'reprint');
+        return `Reprinted ticket ${saleId.slice(0, 4).toUpperCase()}`;
+      },
+      printerTest: async () => {
+        await hardware.printReceipt([
+          { text: 'AD PAY — PRINTER TEST', style: 'double' },
+          { text: `${rt.identity.merchant_name} · ${rt.identity.register_name}`, style: 'normal' },
+          { text: new Date().toLocaleString(), style: 'normal' },
+          { text: 'If you can read this, the printer works.', style: 'normal' },
+        ]);
+        return 'Test page printed';
+      },
+      restartApp: () => {
+        if (Platform.OS === 'web') window.location.reload();
+        else DevSettings.reload();
+      },
+    });
+    // receiptFor only reads rt, so the handlers stay valid for the life of this screen.
+  }, [rt, hardware]);
+
   async function tender(amount: number) {
     await run(async () => {
       const { sale: done, change } = await rt.session.tenderCash(cents(amount));
+      rt.log.info('cash sale completed', { sale: done.sale_id.slice(0, 8), total_cents: done.cash.total_cents, lines: done.lines.length });
       await hardware.kickDrawer();
       await rt.session.recordDrawer('cash_sale', done.sale_id);
       display.publish(displayFor(rt.identity.merchant_name, done, { amount, change }));
@@ -461,6 +493,8 @@ function DevicePanel({
     ['Last error', status?.lastError ?? '—'],
     ['Catalog', `v${status?.catalogVersion ?? rt.catalog.catalog_version}`],
     ['Packs', rt.identity.enabled_packs.join(', ')],
+    ['Realtime', rt.ops.socketOpen() ? 'connected' : 'not connected (polling)'],
+    ...Object.entries(PREVIEW_HEALTH).map(([slot, h]): [string, string] => [slot.replace('_', ' '), `${h.state}${h.detail ? ` · ${h.detail}` : ''}`]),
   ];
   const queued = status?.queued ?? 0;
   return (

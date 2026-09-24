@@ -1,11 +1,15 @@
 /**
- * Background jobs on Redis + BullMQ. Step 1 has one: keep `sale_events` monthly partitions created
- * ahead of the month boundary (ADR 0001). Redis is a job queue only — never a source of truth.
+ * Background jobs on Redis + BullMQ. Redis is a job queue only, never a source of truth.
+ *  - keep `sale_events` monthly partitions created ahead of the month boundary (ADR 0001);
+ *  - evaluate the alert rules every minute (P4);
+ *  - prune heartbeat history older than 7 days (P4).
  */
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import type pino from 'pino';
 import type { Db } from '../db/db';
+import { evaluateAlerts, logNotifier } from '../services/alerts';
+import { pruneHeartbeats } from '../services/ops';
 
 const QUEUE = 'maintenance';
 
@@ -45,6 +49,9 @@ export async function startJobs(db: Db, redisUrl: string, log: pino.Logger): Pro
 
   const queue = new Queue(QUEUE, { connection });
   await queue.upsertJobScheduler('ensure-partitions', { every: 6 * 60 * 60 * 1000 }, { name: 'ensure-partitions' });
+  await queue.upsertJobScheduler('evaluate-alerts', { every: 60_000 }, { name: 'evaluate-alerts', opts: { removeOnComplete: 50, removeOnFail: 50 } });
+  await queue.upsertJobScheduler('prune-heartbeats', { every: 24 * 60 * 60 * 1000 }, { name: 'prune-heartbeats' });
+  const notifier = logNotifier((obj, msg) => log.info(obj, msg));
 
   const worker = new Worker(
     QUEUE,
@@ -52,6 +59,11 @@ export async function startJobs(db: Db, redisUrl: string, log: pino.Logger): Pro
       if (job.name === 'ensure-partitions') {
         const parts = await ensureUpcomingPartitions(db);
         log.info({ job: job.name, partitions: parts }, 'sale_events partitions ensured');
+      } else if (job.name === 'evaluate-alerts') {
+        const r = await evaluateAlerts(db, notifier, new Date(), `job-${job.id}`);
+        if (r.opened.length || r.resolved) log.info({ job: job.name, opened: r.opened.length, resolved: r.resolved }, 'alerts evaluated');
+      } else if (job.name === 'prune-heartbeats') {
+        log.info({ job: job.name, deleted: await pruneHeartbeats(db) }, 'heartbeat history pruned');
       }
     },
     { connection },
