@@ -2,9 +2,31 @@
   "name": "@adpay/merchant",
   "version": "0.0.0",
   "private": true,
+  "main": "index.ts",
+  "expo": { "install": { "exclude": ["typescript"] } },
   "scripts": {
-    "lint": "echo \"[@adpay/merchant] lint: no sources yet\"",
-    "test": "node --test test/ 2>/dev/null || echo \"[@adpay/merchant] test: no tests yet\"",
-    "typecheck": "echo \"[@adpay/merchant] typecheck: no sources yet\""
+    "start": "expo start",
+    "web": "expo start --web --port 8081",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@adpay/shared": "workspace:*",
+    "@expo/metro-runtime": "~57.0.16",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~57.0.24",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-web": "~0.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.1"
   }
 }

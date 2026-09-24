@@ -1,0 +1,181 @@
+/**
+ * Register event schemas (ADR 0002). Every sale is a sequence of immutable events with
+ * device-generated UUIDs; the server stores them append-only and derives every total by folding.
+ * Corrections (void, refund, line removal) are new events — nothing is edited.
+ *
+ * All payloads are strict objects: an unknown key is rejected, not ignored. That is deliberate —
+ * it means there is no field a card number, track data or CVV could ride in on (CLAUDE.md rule 3).
+ * The only card facts we ever hold are brand, last four and the processor's opaque reference.
+ *
+ * Money fields end in `_cents` and are integers; rates end in `_ppm` and are integers.
+ */
+import { z } from 'zod';
+import { Uuid } from './tenancy';
+
+export const EVENT_SCHEMA_VERSION = 1;
+
+const CentsSchema = z.int();
+const NonNegCents = z.int().nonnegative();
+const RatePpmSchema = z.int().min(0).max(1_000_000);
+const Qty = z.int().min(1).max(10_000);
+
+export const PriceModeSchema = z.enum(['cash', 'card']);
+export const TenderTypeSchema = z.enum(['cash', 'card']);
+
+const SaleOpened = z.strictObject({
+  cashier_user_id: Uuid.nullable(),
+  catalog_version: z.int().nonnegative(),
+});
+
+const LineAdded = z.strictObject({
+  line_id: Uuid,
+  item_id: Uuid,
+  name: z.string().min(1).max(200),
+  category_id: Uuid.nullable(),
+  qty: Qty,
+  /** Both posted prices captured at the moment of sale, so replays are historically exact. */
+  unit_cash_price_cents: NonNegCents,
+  unit_card_price_cents: NonNegCents,
+  taxable: z.boolean(),
+  tax_rate_ppm: RatePpmSchema,
+  min_age: z.int().min(0).max(99).nullable(),
+  /** Sold as the unit or as a pack (case-break); `pack_qty` units per pack. */
+  sell_unit: z.enum(['each', 'pack']).default('each'),
+  pack_qty: z.int().min(1).default(1),
+});
+
+const LineRemoved = z.strictObject({ line_id: Uuid });
+
+const LineDiscounted = z.strictObject({
+  line_id: Uuid,
+  /** Discount per line in the price mode of the sale, already rounded once on the device. */
+  cash_discount_cents: NonNegCents,
+  card_discount_cents: NonNegCents,
+  reason: z.string().max(200).nullable(),
+});
+
+const AgeVerified = z.strictObject({
+  line_id: Uuid,
+  method: z.enum(['manual']),
+  verified_by_user_id: Uuid.nullable(),
+});
+
+const CardResult = z.strictObject({
+  provider: z.string().min(1).max(40),
+  provider_ref: z.string().min(1).max(200),
+  status: z.enum(['approved', 'declined']),
+  approval_code: z.string().max(40).nullable(),
+  brand: z.string().max(40).nullable(),
+  last4: z.string().regex(/^\d{4}$/).nullable(),
+});
+
+const TenderAdded = z.strictObject({
+  tender_id: Uuid,
+  tender_type: TenderTypeSchema,
+  /** Amount applied to the sale. */
+  amount_cents: NonNegCents,
+  /** Cash handed over; change = tendered − amount. Null for card. */
+  tendered_cents: NonNegCents.nullable(),
+  change_cents: NonNegCents.nullable(),
+  card: CardResult.nullable(),
+});
+
+const SaleCompleted = z.strictObject({
+  price_mode: PriceModeSchema,
+  /** Device-computed from the fold at completion; the server re-folds and flags any mismatch. */
+  subtotal_cents: CentsSchema,
+  tax_cents: CentsSchema,
+  total_cents: CentsSchema,
+});
+
+const SaleVoided = z.strictObject({
+  reason: z.string().max(200),
+  by_user_id: Uuid.nullable(),
+});
+
+const SaleRefunded = z.strictObject({
+  refund_id: Uuid,
+  tender_type: TenderTypeSchema,
+  amount_cents: NonNegCents,
+  reason: z.string().max(200),
+  by_user_id: Uuid.nullable(),
+  card: CardResult.nullable(),
+});
+
+const Empty = z.strictObject({});
+
+const ReceiptPrinted = z.strictObject({ copy: z.enum(['original', 'reprint', 'none']) });
+
+const DrawerOpened = z.strictObject({
+  reason: z.enum(['cash_sale', 'manual', 'refund', 'eod']),
+  by_user_id: Uuid.nullable(),
+});
+
+/** Payload schema per event type. Adding a type is additive; changing one bumps the version. */
+export const EventPayloads = {
+  'sale.opened': SaleOpened,
+  'sale.line_added': LineAdded,
+  'sale.line_removed': LineRemoved,
+  'sale.line_discounted': LineDiscounted,
+  'sale.age_verified': AgeVerified,
+  'sale.tender_added': TenderAdded,
+  'sale.completed': SaleCompleted,
+  'sale.voided': SaleVoided,
+  'sale.refunded': SaleRefunded,
+  'sale.suspended': Empty,
+  'sale.resumed': Empty,
+  'receipt.printed': ReceiptPrinted,
+  'drawer.opened': DrawerOpened,
+} as const;
+
+export type EventType = keyof typeof EventPayloads;
+export const EVENT_TYPES = Object.keys(EventPayloads) as EventType[];
+
+/** Events that belong to a sale must carry its sale_id; drawer events may not. */
+const SALELESS: ReadonlySet<EventType> = new Set(['drawer.opened']);
+
+const EnvelopeBase = z.strictObject({
+  event_id: Uuid,
+  schema_version: z.literal(EVENT_SCHEMA_VERSION),
+  sale_id: Uuid.nullable(),
+  /** Monotonic per register; lets the server spot gaps in what a device has sent. */
+  device_seq: z.int().nonnegative(),
+  occurred_at: z.iso.datetime({ offset: true }),
+  org_id: Uuid,
+  merchant_id: Uuid,
+  location_id: Uuid,
+  register_id: Uuid,
+  trace_id: z.string().min(1).max(64),
+  type: z.enum(EVENT_TYPES as [EventType, ...EventType[]]),
+  payload: z.unknown(),
+});
+
+export type EventPayload<T extends EventType> = z.infer<(typeof EventPayloads)[T]>;
+
+export type RegisterEvent = {
+  [T in EventType]: Omit<z.infer<typeof EnvelopeBase>, 'type' | 'payload'> & { type: T; payload: EventPayload<T> };
+}[EventType];
+
+export const RegisterEventSchema = EnvelopeBase.transform((env, ctx) => {
+  const schema = EventPayloads[env.type];
+  const parsed = schema.safeParse(env.payload);
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue({ ...issue, path: ['payload', ...issue.path] } as never);
+    }
+    return z.NEVER;
+  }
+  if (env.sale_id === null && !SALELESS.has(env.type)) {
+    ctx.addIssue({ code: 'custom', path: ['sale_id'], message: `${env.type} requires sale_id` });
+    return z.NEVER;
+  }
+  return { ...env, payload: parsed.data } as RegisterEvent;
+});
+
+export const EventBatchSchema = z.strictObject({
+  events: z.array(z.unknown()).min(1).max(500),
+});
+
+export function parseRegisterEvent(input: unknown): RegisterEvent {
+  return RegisterEventSchema.parse(input);
+}

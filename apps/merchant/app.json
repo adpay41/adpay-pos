@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "AD Pay Merchant",
+    "slug": "adpay-merchant",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "supportsTablet": true, "bundleIdentifier": "us.americandreampay.merchant" },
+    "android": { "package": "us.americandreampay.merchant" },
+    "web": { "bundler": "metro", "name": "AD Pay Merchant" }
+  }
+}

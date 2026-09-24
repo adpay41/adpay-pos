@@ -1,0 +1,41 @@
+# Local datastores for AD Pay POS. Everything runs on this machine — no AWS, no cost.
+#
+#   docker compose up -d --wait     (or: pnpm dev, which does this for you)
+#
+# Ports are deliberately off the defaults (5433, 6380) so they never collide with another
+# Postgres/Redis already running on the machine. Both bind to 127.0.0.1 only.
+#
+# Postgres uses trust auth: it is reachable only from this machine, and it means there is no
+# password anywhere in the repo. Production credentials come from the secret store, never here.
+
+name: adpay
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: adpay
+      POSTGRES_DB: adpay
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - adpay-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adpay -d adpay"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  adpay-pgdata:

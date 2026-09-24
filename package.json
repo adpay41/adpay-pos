@@ -3,14 +3,33 @@
   "private": true,
   "version": "0.0.0",
   "packageManager": "pnpm@9.12.0",
-  "engines": { "node": ">=20 <21" },
+  "engines": { "node": ">=20.19 <21" },
   "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:reset": "node scripts/dev.mjs --reset",
+    "logins": "corepack pnpm --filter @adpay/api db:seed",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @adpay/api db:migrate",
+    "db:seed": "pnpm --filter @adpay/api db:seed",
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
+    "test:pg": "node scripts/test-pg.mjs",
     "typecheck": "pnpm -r --if-present typecheck",
     "build": "pnpm -r --if-present build"
   },
   "devDependencies": {
-    "typescript": "^5.6.2"
+    "@eslint/js": "^10.0.0",
+    "eslint": "^10.11.0",
+    "globals": "^16.0.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.70.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "19.2.3",
+      "react-dom": "19.2.3",
+      "@types/react": "~19.2.2"
+    }
   }
 }
