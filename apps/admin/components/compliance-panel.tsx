@@ -55,7 +55,7 @@ interface ChargeRow {
 }
 
 const KIND_LABELS: Record<ChargeKind, string> = { excise: 'Excise', deposit: 'Deposit', fee: 'Fee', bag: 'Bag fee (own key)' };
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Date().toLocaleDateString('en-CA') /* local YYYY-MM-DD, not UTC */;
 const dollars = (c: number) => formatUsd(cents(c)).replace('$', '');
 
 function toForm(c: ComplianceSnapshot) {

@@ -13,7 +13,7 @@ export interface VerticalPack {
   /** False for stubs: the pack can be enabled without error but contributes nothing yet. */
   implemented: boolean;
   /** Default quick-key categories the setup flow offers a new merchant. */
-  defaultCategories: readonly { name: string; taxable: boolean; min_age: number | null }[];
+  defaultCategories: readonly { name: string; taxable: boolean; min_age: number | null; restriction?: 'tobacco' | 'vape' | 'alcohol' | 'lottery' }[];
 }
 
 export const PACKS: Record<PackId, VerticalPack> = {
@@ -25,8 +25,9 @@ export const PACKS: Record<PackId, VerticalPack> = {
       { name: 'Sandwiches', taxable: true, min_age: null },
       { name: 'Drinks', taxable: true, min_age: null },
       { name: 'Snacks', taxable: true, min_age: null },
-      { name: 'Tobacco', taxable: false, min_age: 21 },
-      { name: 'Lottery', taxable: false, min_age: 18 },
+      // Age checks follow the state's rule for the restriction (P10); min_age stays as the floor.
+      { name: 'Tobacco', taxable: false, min_age: 21, restriction: 'tobacco' },
+      { name: 'Lottery', taxable: false, min_age: 18, restriction: 'lottery' },
       { name: 'Grocery', taxable: false, min_age: null },
     ],
   },

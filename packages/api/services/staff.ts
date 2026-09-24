@@ -163,8 +163,19 @@ export async function createStaff(
   traceId: string,
 ): Promise<{ user_id: string; catalog_version: number }> {
   assertCanManage(actor, input.role === 'owner');
+  return db.tx((q) => insertStaff(q, actor, merchantId, input, traceId));
+}
+
+/** The body of createStaff, inside a caller's transaction (the onboarding wizard adds the owner this way). */
+export async function insertStaff(
+  q: Queryable,
+  actor: StaffActor,
+  merchantId: string,
+  input: StaffCreate,
+  traceId: string,
+): Promise<{ user_id: string; catalog_version: number }> {
   const phone = input.phone ? normalizePhone(input.phone) : null;
-  return db.tx(async (q) => {
+  {
     const m = await merchantRow(q, merchantId);
     let userId: string | null = null;
     if (phone) {
@@ -198,7 +209,7 @@ export async function createStaff(
       trace_id: traceId,
     });
     return { user_id: userId, catalog_version: version };
-  });
+  }
 }
 
 export async function updateStaff(

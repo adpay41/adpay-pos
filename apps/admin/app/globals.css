@@ -181,3 +181,19 @@ textarea { font: inherit; padding: 7px 10px; border: 1px solid #cfcfcf; border-r
 .receipt-logo { display: block; max-width: 70%; max-height: 72px; margin: 0 auto 6px; }
 .receipt-qr { border: 1px dashed #bbb; border-radius: 6px; text-align: center; padding: 6px; margin: 6px 0; font-weight: 800; white-space: normal; }
 .logo-preview { max-width: 160px; max-height: 64px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 4px; }
+
+/* Install kit (P12a): one card per register, one per printed page. */
+.kit { display: grid; gap: 16px; }
+.kit-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+.kit-card h2 { margin: 8px 0 2px; font-size: 18px; }
+.kit-brand { font-weight: 700; }
+.kit-body { display: flex; gap: 20px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.kit-body ol { margin: 0; padding-left: 20px; line-height: 1.6; flex: 1; min-width: 240px; }
+.kit-code { font-family: ui-monospace, monospace; font-size: 18px; letter-spacing: 0.08em; }
+.kit-qr-wait { width: 220px; height: 220px; display: grid; place-items: center; border: 1px dashed var(--line); }
+.kit-foot { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; font-size: 13px; }
+@media print {
+  header.top, .no-print { display: none !important; }
+  main { padding: 0 !important; }
+  .kit-card { break-after: page; border: 0; }
+}

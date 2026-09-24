@@ -23,13 +23,14 @@ export async function createMerchant(
     [input.org_id, input.name, input.legal_name ?? null, packs],
   );
   const m = rows[0]!;
+  await q.query("INSERT INTO merchant_onboarding (merchant_id, org_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [m.merchant_id, m.org_id]);
   if (input.seed_pack_categories !== false) {
     let sort = 0;
     for (const pack of packs) {
       for (const c of PACKS[pack].defaultCategories) {
         await q.query(
-          `INSERT INTO categories (org_id, merchant_id, name, sort, taxable, min_age, pack) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [m.org_id, m.merchant_id, c.name, sort++, c.taxable, c.min_age, pack],
+          `INSERT INTO categories (org_id, merchant_id, name, sort, taxable, min_age, pack, restriction) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [m.org_id, m.merchant_id, c.name, sort++, c.taxable, c.min_age, pack, c.restriction ?? null],
         );
       }
     }
@@ -153,6 +154,8 @@ export async function pairRegister(
     await q.query(`UPDATE registers SET status = 'active', paired_at = now(), last_seen_at = now() WHERE register_id = $1`, [
       code.register_id,
     ]);
+    // The first register paired is the store going live (P12a onboarding pipeline).
+    await q.query(`UPDATE merchant_onboarding SET status = 'live', updated_at = now() WHERE merchant_id = $1 AND status <> 'live'`, [code.merchant_id]);
     return { device_token: token, identity: await deviceIdentity(q, code.register_id) };
   });
 }
