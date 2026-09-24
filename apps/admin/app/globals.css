@@ -208,3 +208,10 @@ textarea { font: inherit; padding: 7px 10px; border: 1px solid #cfcfcf; border-r
 .support-messages { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; margin-bottom: 10px; }
 .support-msg { max-width: 80%; align-self: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: #fff; white-space: pre-wrap; }
 .support-msg.mine { align-self: flex-end; background: #f3f3f3; }
+
+/* Statement analyzer one-pager (P13): fits one Letter page when printed. */
+.onepager { max-width: 760px; margin: 0 auto; }
+@media print {
+  @page { size: letter; margin: 0.6in; }
+  .onepager .panel { break-inside: avoid; }
+}
