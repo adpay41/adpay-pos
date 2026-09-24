@@ -148,7 +148,7 @@ section 5.
 | UPS aware (1.7) | ⛔ | Device power APIs, hardware | P-HW |
 | Time clock (1.8) | ✅ | Clock in/out by the cashier's name, separate from sign-in; punches are events; hours in the merchant app, weekly overtime (P15). | P15 |
 | Shift handover with photo (1.8) | ✅ | Close with count (+photo) → next session starts with that float, outgoing cashier clocked and signed out (P15). | P15 |
-| Training mode (1.8) | ⬜ | Sale path flag that posts nothing | P16 |
+| Training mode (1.8) | ✅ | Separate in-memory session: cash only, no drawer, receipts say TRAINING, never synced (P16a, ADR 0025). | P16 |
 | Receive delivery by scan (1.9) | ⬜ | Inventory model (P22), P5 | P22 |
 | Low-stock badge (1.9) | ⬜ | P22 | P22 |
 | Case-break inventory conversion (1.9) | ⬜ | P22 | P22 |
@@ -180,7 +180,7 @@ section 5.
 | Shrink dashboard (2.4) | ⬜ | P6, P7, P22 | P23 |
 | Hours and payroll export (2.5) | ✅ | Merchant app Hours tab: per person per day, overtime, CSV export (P15). | P15 |
 | Cashier performance (2.5) | ⬜ | P3, P6, P7 | P19 |
-| Alerts: EOD not closed; cash short > $Y (2.6) | ⬜ | P6, EOD (P16) | P16 |
+| Alerts: EOD not closed; cash short > $Y (2.6) | ✅ | eod_missing after 1 a.m. store time (P16a); drawer short > $Y (P6, threshold P11). | P16 |
 | Alerts: big ticket; slow hour; late first sale (2.6) | ⬜ | P4 rules engine | P19 |
 | Alerts: chargeback; deposit low (2.6) | ⛔ | Processor | P-PAY |
 | Daily WhatsApp summary (2.6) | ⛔ | Meta WhatsApp Business account + approved template | P-3P (content built in P19) |
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P15 Cash & time N | #20 | PR open — drop-needed threshold (cashier banner, merchant "in the drawers now", drawer_over alert), counterfeit refusals, denomination counts + count-sheet photo, shift handover, time clock with weekly overtime and payroll CSV, hourly target ribbon. ADR 0024. |
+| P16a End of day & training | #21 | PR open — end of day / Z-report (spec v1): everything since the previous Z, drawer counted first, printed, eod.closed synced; server rebuilds each Z with the same function and flags mismatches; EOD-not-closed alert; merchant app Z list; training mode (in-memory, never synced, cash only, receipts say TRAINING). ADR 0025. |
+| P15 Cash & time N | #20 | merged — drop-needed threshold (cashier banner, merchant "in the drawers now", drawer_over alert), counterfeit refusals, denomination counts + count-sheet photo, shift handover, time clock with weekly overtime and payroll CSV, hourly target ribbon. ADR 0024. |
 | P14 Catalog N | #19 | merged — catalog templates (c-store starter shared with the seed) and generic CSV import through one bulk write (dry-run preview, match by barcode then name, price history); register repeat-last-sale and cashier usuals; merchant-app arrange-keys grid. ADR 0023. |
 | P13 Admin money & portfolio | #18 | merged — statement analyzer (manual entry + offer, savings per plan, printable one-page PDF), residual/margin report per merchant-month (ledger volume, plan revenue, typed processor cost), KPI dashboard (stores live/active/quiet, volume, revenue, margin, effective rate, support load, installs/week). ADR 0022. **Last buildable tier-L phase**: remaining L items are hardware/processor/account-blocked. |
 | P12b Flags, packs, support chat | #17 | merged — feature flags per merchant (code defaults + overrides, in the snapshot, honoured by the register: card, item create, price check, hold; and the app: support chat), pack editor seeding starter categories, support chat (merchant Help tab ↔ admin Support inbox, append-only, unread, live). ADR 0021. |

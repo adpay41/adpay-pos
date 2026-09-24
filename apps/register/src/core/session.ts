@@ -78,7 +78,7 @@ export type CardRefunder = (req: { sale_id: string; refund_id: string; provider_
 }>;
 
 /** Cash drawer events outside a sale (P6). */
-export type DrawerEventType = 'drawer.session_opened' | 'drawer.cash_movement' | 'drawer.session_closed' | 'drawer.opened' | 'drawer.counterfeit';
+export type DrawerEventType = 'drawer.session_opened' | 'drawer.cash_movement' | 'drawer.session_closed' | 'drawer.opened' | 'drawer.counterfeit' | 'eod.closed';
 
 export class SaleSession {
   /** Signed-in person; stamped on every event as `actor_user_id` (P3). */

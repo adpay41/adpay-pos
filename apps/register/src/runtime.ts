@@ -10,12 +10,13 @@ import { Platform } from 'react-native';
 import { PREVIEW_HEALTH } from './core/hardware';
 import { DrawerManager } from './core/drawer';
 import { TimeClock } from './core/timeclock';
+import { EndOfDay } from './core/eod';
 import { NewItemOutbox } from './core/new-items';
 import { DeviceLog, OpsAgent } from './core/ops';
 import { SaleSession, type CardRefunder } from './core/session';
 import { SqliteEventStore } from './core/sqlite-store';
 import { StaffGate } from './core/staff';
-import type { EventStore } from './core/store';
+import { MemoryEventStore, type EventStore } from './core/store';
 import { SyncEngine, type Transport } from './core/sync';
 
 export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
@@ -72,6 +73,10 @@ export interface Runtime {
   /** Card payments through the API's PaymentProvider (P9). Amounts and ids only — never card data. */
   payments: CardPayments;
   /** Cashier presets, "the usual" (P14): online only, delivered back in the snapshot. */
+  /** End of day / Z-report (P16). */
+  eod: EndOfDay;
+  /** Training mode (P16): a practice session that is never saved or synced. */
+  training: SaleSession;
   /** Time clock (P15). */
   clock: TimeClock;
   /** Today so far vs yesterday by this time, for the ribbon; null when offline (P15). */
@@ -165,6 +170,17 @@ export async function boot(token: string): Promise<Runtime> {
   // Time clock (P15): punches are events; who is on the clock here survives a restart.
   const clock = new TimeClock(store, session);
   await clock.restore();
+  // End of day (P16): the Z covers everything on this register since the previous Z.
+  const eod = new EndOfDay(store, session, drawer, identity.register_id, identity.timezone);
+  await eod.restore();
+  // Training mode (P16): an in-memory session with its own store, never synced; nothing it rings is real.
+  const training = new SaleSession({
+    store: new MemoryEventStore(),
+    tenancy: { org_id: identity.org_id, merchant_id: identity.merchant_id, location_id: identity.location_id, register_id: identity.register_id },
+    catalogVersion: () => currentCatalogVersion,
+    uuid: () => Crypto.randomUUID(),
+    compliance: () => ({ snapshot: currentCatalog.compliance, locationRatePpm: currentCatalog.tax_rate_ppm, timezone: identity.timezone }),
+  });
   // Who may sign in comes with the config snapshot; a newer snapshot refreshes it (P3).
   const staff = new StaffGate(store, session);
   await staff.restore(catalog.staff);
@@ -251,5 +267,5 @@ export async function boot(token: string): Promise<Runtime> {
     },
   };
 
-  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, pulse, uploadPhoto, uuid: () => Crypto.randomUUID() };
+  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, pulse, uploadPhoto, eod, training, uuid: () => Crypto.randomUUID() };
 }

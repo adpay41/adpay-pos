@@ -151,6 +151,7 @@ export const ALERT_RULES = {
   no_sale_spike: { label: 'Drawer opened without a sale, many times', severity: 'warning', merchant: true },
   large_refund: { label: 'Large refund or void', severity: 'warning', merchant: true },
   drawer_over: { label: 'Too much cash in a drawer (drop needed)', severity: 'warning', merchant: true },
+  eod_missing: { label: 'End of day not closed', severity: 'warning', merchant: true },
 } as const;
 export type AlertRule = keyof typeof ALERT_RULES;
 

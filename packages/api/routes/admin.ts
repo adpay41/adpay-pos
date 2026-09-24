@@ -20,6 +20,7 @@ import {
 } from '../services/onboarding';
 import { cashReport } from '../services/cash';
 import { timesheet } from '../services/timeclock';
+import { zReports } from '../services/eod';
 import { kpis, listAnalyses, residualReport, saveAnalysis, setProcessorCost } from '../services/money';
 import { merchantConfig, postSupportMessage, setFeatureFlags, setPacks, supportInbox, supportThread } from '../services/merchant-config';
 import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPlans, updateOnboarding } from '../services/merchant-setup';
@@ -102,6 +103,12 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     return { ok: true };
   });
   app.get('/admin/kpis', async () => kpis(db));
+  app.get('/admin/merchants/:merchantId/zreports', async (request) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    const Day = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
+    const r = z.object({ from: Day, to: Day }).parse(request.query);
+    return { reports: await zReports(db, merchantId, r.from, r.to) };
+  });
   app.get('/admin/merchants/:merchantId/timesheet', async (request) => {
     const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
     const Day = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);

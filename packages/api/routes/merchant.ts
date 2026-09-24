@@ -12,6 +12,7 @@ import { tenancyTree } from '../services/onboarding';
 import { cashReport } from '../services/cash';
 import { recentSales, salesCompare, salesSummary } from '../services/reports';
 import { timesheet } from '../services/timeclock';
+import { zReports } from '../services/eod';
 import { merchantConfig, postSupportMessage, supportThread } from '../services/merchant-config';
 import { SupportMessageInput, timesheetCsv } from '@adpay/shared';
 import { forbidden } from '../http/errors';
@@ -76,6 +77,12 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
   // Time clock (P15): hours by person and day, weekly overtime, and the payroll CSV.
   const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
   const Range = z.object({ from: Day, to: Day }).refine((r) => r.from <= r.to && Date.parse(r.to) - Date.parse(r.from) <= 62 * 86_400_000, 'Up to 62 days, from ≤ to');
+  // End of day (P16): Z-reports rebuilt from the events and checked against what the register printed.
+  app.get('/merchant/zreports', reports, async (request) => {
+    const r = Range.parse(request.query);
+    return { reports: await zReports(db, asMerchantUser(request).merchant_id, r.from, r.to) };
+  });
+
   app.get('/merchant/timesheet', reports, async (request) => {
     const r = Range.parse(request.query);
     return timesheet(db, asMerchantUser(request).merchant_id, r.from, r.to);
