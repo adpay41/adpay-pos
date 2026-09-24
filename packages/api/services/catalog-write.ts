@@ -34,7 +34,7 @@ interface MerchantRow {
   merchant_id: string;
 }
 
-async function merchantFor(q: Queryable, merchantId: string): Promise<MerchantRow> {
+export async function merchantFor(q: Queryable, merchantId: string): Promise<MerchantRow> {
   const { rows } = await q.query<MerchantRow>('SELECT org_id, merchant_id FROM merchants WHERE merchant_id = $1', [merchantId]);
   if (!rows[0]) throw notFound('Merchant not found');
   return rows[0];
@@ -67,7 +67,7 @@ async function assertCategory(q: Queryable, merchantId: string, categoryId: stri
 
 const actorId = (a: CatalogActor) => a.user_id;
 
-async function recordPrice(
+export async function recordPrice(
   q: Queryable,
   m: MerchantRow,
   itemId: string,

@@ -7,6 +7,7 @@
  * tamper with. Writes need the `catalog.edit` permission (owners always; managers by default).
  */
 import {
+  CATALOG_TEMPLATES,
   CatalogOrderInput,
   CategoryCreateInput,
   CategoryUpdateInput,
@@ -18,6 +19,7 @@ import {
   MEDIA_TYPES,
   QuickKeysInput,
   ReceiptSettingsInput,
+  parseCatalogCsv,
 } from '@adpay/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -25,6 +27,7 @@ import { asAdmin, asMerchantUser, requireAdmin, requireMerchantUser } from '../h
 import { badRequest, forbidden } from '../http/errors';
 import type { AppDeps } from '../server';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
+import { bulkUpsert, templateRows } from '../services/catalog-bulk';
 import {
   createCategory,
   createItem,
@@ -153,6 +156,38 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId, actor } = scope.resolve(r, true);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return setReceiptSettings(db, actor, merchantId, locationId, ReceiptSettingsInput.parse(r.body), trace(r));
+    });
+
+    // Catalog templates and CSV import (P14, ADR 0023): one bulk path, previewed by a dry run.
+    s.get(`${p}/catalog/templates`, async (r) => {
+      scope.resolve(r, false);
+      return {
+        templates: Object.values(CATALOG_TEMPLATES).map((t) => ({
+          id: t.id,
+          label: t.label,
+          pack: t.pack,
+          description: t.description,
+          categories: t.categories.length,
+          items: t.categories.reduce((n, c) => n + (t.items[c.name]?.length ?? 0), 0),
+        })),
+      };
+    });
+
+    s.post(`${p}/catalog/templates/:templateId/apply`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { templateId } = z.object({ templateId: z.string().max(60) }).parse(r.params);
+      const { dry_run } = z.object({ dry_run: z.boolean().default(false) }).parse(r.body ?? {});
+      return bulkUpsert(db, actor, merchantId, templateRows(templateId), { dryRun: dry_run, source: `template:${templateId}` }, trace(r));
+    });
+
+    s.post(`${p}/catalog/import`, { bodyLimit: 4 * 1024 * 1024 }, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const body = z.strictObject({ csv: z.string().min(1).max(3_000_000), dry_run: z.boolean().default(true), skip_errors: z.boolean().default(false) }).parse(r.body);
+      const parsed = parseCatalogCsv(body.csv);
+      if (parsed.rows.length === 0) return { parse: parsed, result: null };
+      if (!body.dry_run && parsed.errors.length && !body.skip_errors) throw badRequest(`${parsed.errors.length} lines have problems: fix them or import the rest with skip_errors`);
+      const result = await bulkUpsert(db, actor, merchantId, parsed.rows, { dryRun: body.dry_run, source: 'csv' }, trace(r));
+      return { parse: { ...parsed, rows: parsed.rows.slice(0, 20) }, result };
     });
 
     // Tax & compliance rule set for a location (P10, ADR 0018).

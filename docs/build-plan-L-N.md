@@ -118,10 +118,10 @@ section 5.
 
 | Item (Bible §) | Status | Depends on / blocked by | Phase |
 | --- | --- | --- | --- |
-| Quick-key drag-to-arrange from the merchant app (1.1) | ⬜ | P2 layout model | P14 |
+| Quick-key drag-to-arrange from the merchant app (1.1) | ✅ | Merchant app favorites → Arrange keys: the register grid, tap a key then where it goes (P14). | P14 |
 | Unknown barcode UPC database lookup (1.1) | ⛔ | **UPC database licence/API** (e.g. a commercial GS1-sourced feed) | P14 (behind interface) |
-| Repeat-last-sale (1.1) | ⬜ | P5 | P14 |
-| Cashier presets / "the usual" (1.1) | ⬜ | P3, P5 | P14 |
+| Repeat-last-sale (1.1) | ✅ | Register ↻ Repeat last: today's prices, one ID check, skips returned/discontinued (P14). | P14 |
+| Cashier presets / "the usual" (1.1) | ✅ | Save the ticket as a usual at the register; one-tap chips per signed-in cashier on every register (P14, ADR 0023). | P14 |
 | Cash-in-drawer alert on the cashier idle screen (1.2) | ⬜ | P6 | P15 |
 | Counterfeit note flag (1.2) | ⬜ | P6 | P15 |
 | Coin/bill denominations in the count, photo of count sheet (1.2) | ⬜ | P6; photo storage from P2 | P15 |
@@ -195,8 +195,8 @@ section 5.
 
 | Item | Status | Depends on / blocked by | Phase |
 | --- | --- | --- | --- |
-| Catalog templates: c-store 2,000 UPCs (3.1) | ⛔ | **A licensed UPC dataset.** The template mechanism is buildable with our 78 demo items. | P14 |
-| Catalog import from NRS/Clover/Square exports (3.1) | ⛔ | **Sample export files** from each system to build parsers against | P14 (CSV generic first) |
+| Catalog templates: c-store 2,000 UPCs (3.1) | ⛔ | Mechanism ✅ (P14): c-store starter template (~80 items, shared with the demo seed), preview + apply. **The 2,000-UPC dataset needs a licence.** | P14 |
+| Catalog import from NRS/Clover/Square exports (3.1) | ⛔ | Generic CSV ✅ (P14): column names recognised, preview, match by barcode then name, price history. Per-system parsers need **sample export files**. | P14 (CSV generic first) |
 | E-sign merchant agreement (3.1) | ⛔ | E-sign vendor account, or a legal review of a click-accept flow; the **agreement text** from counsel | P-3P |
 | Referral / agent tracking, residual split (3.1) | ⬜ | P12 pricing plans; L50 | P25 |
 | Support tickets with SLA timers, canned fixes (3.2) | ⬜ | P4 | P24 |
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P13 Admin money & portfolio | #18 | PR open — statement analyzer (manual entry + offer, savings per plan, printable one-page PDF), residual/margin report per merchant-month (ledger volume, plan revenue, typed processor cost), KPI dashboard (stores live/active/quiet, volume, revenue, margin, effective rate, support load, installs/week). ADR 0022. **Last buildable tier-L phase**: remaining L items are hardware/processor/account-blocked. |
+| P14 Catalog N | #19 | PR open — catalog templates (c-store starter shared with the seed) and generic CSV import through one bulk write (dry-run preview, match by barcode then name, price history); register repeat-last-sale and cashier usuals; merchant-app arrange-keys grid. ADR 0023. |
+| P13 Admin money & portfolio | #18 | merged — statement analyzer (manual entry + offer, savings per plan, printable one-page PDF), residual/margin report per merchant-month (ledger volume, plan revenue, typed processor cost), KPI dashboard (stores live/active/quiet, volume, revenue, margin, effective rate, support load, installs/week). ADR 0022. **Last buildable tier-L phase**: remaining L items are hardware/processor/account-blocked. |
 | P12b Flags, packs, support chat | #17 | merged — feature flags per merchant (code defaults + overrides, in the snapshot, honoured by the register: card, item create, price check, hold; and the app: support chat), pack editor seeding starter categories, support chat (merchant Help tab ↔ admin Support inbox, append-only, unread, live). ADR 0021. |
 | P12a Onboarding, install kit, pricing | #16 | merged — admin onboarding wizard (one transaction: org, merchant + catalog template, owner, location + draft tax template, registers, plan, install date) and pipeline (live on first pairing; KYB ⛔); printable install kit with setup QR per register (14-day codes, scanner-pairable); append-only pricing plans with history. ADR 0020. P12b (feature flags, pack editor, support chat) follows. |
 | P11 Merchant app, L | #15 | merged — live ticker over `/ws` with register and cashier names, today vs yesterday vs same day last week by hour cut at the same time ("up 12.5%"), per-cashier totals and cashier on tickets, per-merchant alert settings (mute rules, refund/short/no-sale thresholds) honoured by the rules, inbox and push. ADR 0019. |

@@ -92,6 +92,7 @@ purpose: support is one person for the first 200 stores.
 | [0020](docs/decisions/0020-onboarding-install-kit-pricing.md) | Onboarding wizard in one transaction; install kit = fresh 14-day setup codes as QR (first pairing → live); append-only pricing plans with effective dates |
 | [0021](docs/decisions/0021-feature-flags-support-chat.md) | Feature flags = code defaults + per-merchant overrides in the snapshot; pack editor seeds categories; support chat one append-only conversation per merchant over /ws |
 | [0022](docs/decisions/0022-money-analyzer-residuals-kpis.md) | Statement analyzer (manual entry + offer, printable one-pager), residuals from the ledger + plan in force (processor cost typed until Finix data), KPIs on read |
+| [0023](docs/decisions/0023-catalog-n-import-templates-usuals.md) | One bulk catalog write (templates + CSV, dry-run preview, price history); starter template shared with the seed; repeat-last and cashier usuals ring through the session; usuals are server config |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

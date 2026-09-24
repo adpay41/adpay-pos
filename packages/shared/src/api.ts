@@ -4,6 +4,7 @@
  */
 import type { TileColor } from './catalog';
 import type { ComplianceSnapshot, Restriction } from './compliance';
+import type { CashierUsual } from './catalog-templates';
 import type { FeatureFlags } from './flags';
 import type { PackId } from './packs';
 import type { ReceiptSettings } from './receipt-settings';
@@ -101,6 +102,8 @@ export interface CatalogSnapshot {
    * snapshot a register pulls (`/device/catalog`), never in what the apps see.
    */
   staff?: RegisterStaff;
+  /** Cashiers' preset baskets, "the usual" (P14). Register snapshot only. */
+  usuals?: CashierUsual[];
 }
 
 export interface DeviceIdentity {

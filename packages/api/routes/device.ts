@@ -1,7 +1,7 @@
 /**
  * Register routes. Identity and tenancy come from the device token alone.
  */
-import { DeviceItemCreateInput, EventBatchSchema } from '@adpay/shared';
+import { DeviceItemCreateInput, EventBatchSchema, UsualInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asDevice, requireDevice } from '../http/auth-hooks';
@@ -12,6 +12,7 @@ import { ingestEvents } from '../services/events';
 import { deviceIdentity } from '../services/onboarding';
 import { cardRefund, terminalCharge } from '../services/payments';
 import { registerStaff } from '../services/staff';
+import { removeUsual, saveUsual, usualsFor } from '../services/usuals';
 
 export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
@@ -24,13 +25,23 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
     const d = asDevice(request);
     await db.query(`UPDATE registers SET last_seen_at = now() WHERE register_id = $1`, [d.register_id]);
     // The register's config snapshot also carries who can sign in, so PINs work offline (P3).
-    return { ...(await getCatalogSnapshot(db, d.merchant_id, d.location_id)), staff: await registerStaff(db, d.merchant_id) };
+    return { ...(await getCatalogSnapshot(db, d.merchant_id, d.location_id)), staff: await registerStaff(db, d.merchant_id), usuals: await usualsFor(db, d.merchant_id) };
   });
 
   /** Cheap staleness check: the register pulls the full snapshot only when this number moves. */
   app.get('/device/catalog/version', async (request) => {
     const d = asDevice(request);
     return { catalog_version: await catalogVersion(db, d.merchant_id) };
+  });
+
+  /** "The usual" (P14): save a ticket as a cashier's preset, or remove one. Online only; config, not ledger. */
+  app.post('/device/usuals', async (request, reply) => {
+    reply.status(201);
+    return saveUsual(db, asDevice(request), UsualInput.parse(request.body), request.logContext.trace_id);
+  });
+  app.post('/device/usuals/:usualId/remove', async (request) => {
+    const { usualId } = z.object({ usualId: z.uuid() }).parse(request.params);
+    return removeUsual(db, asDevice(request), usualId, request.logContext.trace_id);
   });
 
   /** An item created at this register from an unknown barcode (P5). Idempotent on its device-minted id. */

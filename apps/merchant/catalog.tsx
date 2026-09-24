@@ -398,7 +398,20 @@ function Favorites({ token, catalog, location, onSaved }: { token: string; catal
   const [q, setQ] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Arrange view (P14): the register's key grid; tap a key, then tap where it should go.
+  const [arrange, setArrange] = useState(false);
+  const [picked, setPicked] = useState<number | null>(null);
   const dirty = ids.join() !== catalog.quick_keys.join();
+  const place = (to: number) => {
+    if (picked === null) return setPicked(to);
+    setIds((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(picked, 1);
+      next.splice(to, 0, moved!);
+      return next;
+    });
+    setPicked(null);
+  };
 
   const move = (i: number, d: -1 | 1) =>
     setIds((prev) => {
@@ -430,6 +443,29 @@ function Favorites({ token, catalog, location, onSaved }: { token: string; catal
       <Text style={s.muted}>
         The first page of keys on {location.name}'s register, in this order. Up to {MAX_QUICK_KEYS}.
       </Text>
+      <View style={s.segmentRow}>
+        {(['list', 'arrange'] as const).map((m) => (
+          <Pressable key={m} onPress={() => { setArrange(m === 'arrange'); setPicked(null); }} style={[s.segBtn, arrange === (m === 'arrange') && s.segBtnOn]}>
+            <Text style={arrange === (m === 'arrange') ? { color: '#fff', fontWeight: '700' } : { color: C.ink }}>{m === 'list' ? 'List' : 'Arrange keys'}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {arrange ? (
+        <>
+          <Text style={s.muted}>{picked === null ? 'Tap a key to pick it up.' : `Now tap where “${byId.get(ids[picked]!)?.name}” goes.`}</Text>
+          <View style={s.keyGrid}>
+            {ids.map((id, n) => {
+              const i = byId.get(id)!;
+              const color = i.color ? TILE_COLORS[i.color] : null;
+              return (
+                <Pressable key={id} onPress={() => place(n)} style={[s.key, color && { backgroundColor: color.fill, borderLeftColor: color.stripe, borderLeftWidth: 4 }, picked === n && s.keyPicked]}>
+                  <Text style={s.keyText} numberOfLines={3}>{i.name}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      ) : (
       <View style={s.card}>
         {ids.length === 0 ? <Text style={s.muted}>No favorites yet. Search below to add some.</Text> : null}
         {ids.map((id, n) => {
@@ -447,6 +483,7 @@ function Favorites({ token, catalog, location, onSaved }: { token: string; catal
           );
         })}
       </View>
+      )}
       <TextInput style={s.input} value={q} onChangeText={setQ} placeholder="Add a favorite: search items" autoCorrect={false} />
       {candidates.map((i) => (
         <Pressable
@@ -658,6 +695,13 @@ function SmallButton({ label, onPress }: { label: string; onPress: () => void })
 }
 
 const s = StyleSheet.create({
+  segmentRow: { flexDirection: 'row', gap: 6 },
+  segBtn: { borderWidth: 1, borderColor: C.line, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 14, backgroundColor: '#fff' },
+  segBtnOn: { backgroundColor: C.black, borderColor: C.black },
+  keyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  key: { width: '23.5%', aspectRatio: 1.3, backgroundColor: '#fff', borderWidth: 1, borderColor: C.line, borderRadius: 8, padding: 6, justifyContent: 'center' },
+  keyPicked: { borderColor: C.black, borderWidth: 3 },
+  keyText: { fontSize: 12, fontWeight: '600', color: C.ink },
   page: { padding: 16, gap: 12, maxWidth: 640, width: '100%', alignSelf: 'center' },
   h2: { fontSize: 18, fontWeight: '700', color: C.ink },
   label: { fontSize: 12, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: '600', marginBottom: 4 },

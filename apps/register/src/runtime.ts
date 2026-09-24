@@ -70,6 +70,11 @@ export interface Runtime {
   drawer: DrawerManager;
   /** Card payments through the API's PaymentProvider (P9). Amounts and ids only — never card data. */
   payments: CardPayments;
+  /** Cashier presets, "the usual" (P14): online only, delivered back in the snapshot. */
+  usuals: {
+    save(input: { user_id: string; label: string; lines: { item_id: string; qty: number }[] }): Promise<void>;
+    remove(usualId: string): Promise<void>;
+  };
   uuid: () => string;
 }
 
@@ -208,5 +213,17 @@ export async function boot(token: string): Promise<Runtime> {
     },
   };
 
-  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, uuid: () => Crypto.randomUUID() };
+  // "The usual" (P14): saved and removed online; they arrive back with the next snapshot.
+  const usuals: Runtime['usuals'] = {
+    async save(input) {
+      await call('/device/usuals', token, input);
+      sync.kick();
+    },
+    async remove(usualId) {
+      await call(`/device/usuals/${usualId}/remove`, token, {});
+      sync.kick();
+    },
+  };
+
+  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, uuid: () => Crypto.randomUUID() };
 }
