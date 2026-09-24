@@ -10,6 +10,7 @@ import { HttpError } from './http/errors';
 import type { PaymentProvider } from './payments';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
+import { catalogRoutes } from './routes/catalog';
 import { deviceRoutes } from './routes/device';
 import { merchantRoutes } from './routes/merchant';
 
@@ -48,6 +49,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await app.register(cors, {
     origin: config.corsOrigins,
+    // @fastify/cors defaults to GET/HEAD/POST only; the catalog editor PATCHes from the browser.
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'],
     credentials: false,
     exposedHeaders: ['x-trace-id'],
   });
@@ -65,6 +68,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply
         .status(err.statusCode)
         .send({ error: err.code, message: err.message, details: err.details, trace_id: request.logContext.trace_id });
+    }
+    // Unique-constraint violations are user errors ("that UPC is already on another item"), not 500s.
+    const pgCode = (err as { code?: unknown }).code;
+    if (pgCode === '23505') {
+      const constraint = String((err as { constraint?: unknown }).constraint ?? '');
+      const what = /upc|barcode/.test(constraint) ? 'barcode' : /plu/.test(constraint) ? 'PLU' : /name/.test(constraint) ? 'name' : 'value';
+      return reply.status(409).send({
+        error: 'conflict',
+        message: `That ${what} is already in use in this catalog`,
+        trace_id: request.logContext.trace_id,
+      });
     }
     const status = (err as { statusCode?: number }).statusCode;
     if (status && status >= 400 && status < 500) {
@@ -87,6 +101,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(async (scope) => adminRoutes(scope, deps));
   await app.register(async (scope) => merchantRoutes(scope, deps));
   await app.register(async (scope) => deviceRoutes(scope, deps));
+  await app.register(async (scope) => catalogRoutes(scope, deps));
 
   return app;
 }

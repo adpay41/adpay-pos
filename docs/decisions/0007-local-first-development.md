@@ -26,8 +26,10 @@ undeployed (ADR 0005).
 - **The React Native apps run in the browser** through Expo's web target, so they can be clicked
   through with no emulator and no device. The native Android build (Kotlin printer, drawer and
   customer display module) needs Android Studio from step 2 onwards.
-- **Tests need no services**: the API suite runs the real migrations on PGlite (Postgres compiled to
-  WASM, in process), so CI exercises partitions, triggers and constraints without a database container.
+- **Database tests run on real Postgres 16** (amended 2026-09-24; originally PGlite). CI starts a
+  `postgres:16-alpine` service with `REQUIRE_REAL_POSTGRES=1`, and `pnpm test:pg` does the same
+  against the compose container. The PGlite path in `packages/api/test/helpers.ts` is only a quick
+  local loop and is never authoritative. A test that passes only on PGlite doesn't count.
 
 ## Consequences
 

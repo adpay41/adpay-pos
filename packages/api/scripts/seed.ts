@@ -91,6 +91,11 @@ interface CatalogRow {
   weight: number;
 }
 
+/** Typical cost as a percent of the cash price, by category (demo data only). */
+const COST_PERCENT: Record<string, number> = {
+  Sandwiches: 40, Drinks: 55, Snacks: 60, Tobacco: 88, Lottery: 95, Grocery: 72, Household: 60,
+};
+
 async function seedCatalog(db: Db, org_id: string, merchant_id: string, upcStart: number): Promise<CatalogRow[]> {
   const rows: CatalogRow[] = [];
   let upc = upcStart;
@@ -102,13 +107,21 @@ async function seedCatalog(db: Db, org_id: string, merchant_id: string, upcStart
     );
     const category_id = cat[0]!.category_id;
     for (const item of ITEMS[c.name] ?? []) {
+      // Demo cost at a typical c-store cost ratio for the category, in integer cents.
+      const cost = Math.floor((item.cash * (COST_PERCENT[c.name] ?? 65) + 50) / 100);
       const { rows: ins } = await db.query<{ item_id: string }>(
-        `INSERT INTO items (org_id, merchant_id, category_id, name, sku, upc, cash_price_cents, card_price_cents, sell_unit, pack_qty, attrs)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING item_id`,
+        `INSERT INTO items (org_id, merchant_id, category_id, name, sku, upc, cash_price_cents, card_price_cents, sell_unit, pack_qty, attrs, cost_cents)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING item_id`,
         [
           org_id, merchant_id, category_id, item.name, `SKU-${upc}`, syntheticUpc(upc), item.cash, item.card ?? null,
-          item.pack ? 'pack' : 'each', item.pack ?? 1, JSON.stringify(item.pack ? { case_break: { units: item.pack } } : {}),
+          item.pack ? 'pack' : 'each', item.pack ?? 1, JSON.stringify(item.pack ? { case_break: { units: item.pack } } : {}), cost,
         ],
+      );
+      await db.query(
+        `INSERT INTO item_price_history (org_id, merchant_id, item_id, cash_price_cents, card_price_cents, cost_cents,
+                                         catalog_version, changed_by_kind, changed_at, trace_id)
+         SELECT $1, $2, $3, $4, $5, $6, catalog_version, 'seed', now() - interval '30 days', 'seed' FROM merchants WHERE merchant_id = $2`,
+        [org_id, merchant_id, ins[0]!.item_id, item.cash, item.card ?? null, cost],
       );
       upc++;
       rows.push({

@@ -1,24 +1,34 @@
 'use client';
-import type { CatalogSnapshot, SaleListRow, SalesSummary } from '@adpay/shared';
+import type { SaleListRow, SalesSummary } from '@adpay/shared';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
+import { CatalogEditor } from '../../../components/catalog-editor';
 import { SalesTable, SummaryView } from '../../../components/sales';
-import { ErrorBox, Money, Pct, Shell, useLoad } from '../../../components/ui';
+import { ErrorBox, Shell, useLoad } from '../../../components/ui';
 import { api } from '../../../lib/api';
 
 type Range = SalesSummary['range'];
+
+interface Tree {
+  orgs: { name: string; merchants: { merchant_id: string; name: string }[] }[];
+}
 
 export default function MerchantPage() {
   const { merchantId } = useParams<{ merchantId: string }>();
   const [range, setRange] = useState<Range>('today');
   const [tab, setTab] = useState<'sales' | 'catalog'>('sales');
+  const tree = useLoad(() => api<Tree>('/admin/tenancy'), []);
+  const org = tree.data?.orgs.find((o) => o.merchants.some((m) => m.merchant_id === merchantId));
+  const merchant = org?.merchants.find((m) => m.merchant_id === merchantId);
   const summary = useLoad(() => api<SalesSummary>(`/admin/merchants/${merchantId}/sales/summary?range=${range}`), [merchantId, range]);
-  const catalog = useLoad(() => api<CatalogSnapshot>(`/admin/merchants/${merchantId}/catalog`), [merchantId]);
   const sales = useLoad(() => api<{ sales: SaleListRow[] }>(`/admin/sales?merchant_id=${merchantId}&limit=50`), [merchantId]);
 
   return (
     <Shell>
-      <h1>Merchant</h1>
+      <h1>
+        {merchant?.name ?? 'Merchant'}
+        {org && <span className="muted" style={{ fontWeight: 400, fontSize: 15 }}> · {org.name}</span>}
+      </h1>
       <div className="tabs">
         <button className={tab === 'sales' ? 'active' : ''} onClick={() => setTab('sales')}>
           Sales
@@ -47,55 +57,7 @@ export default function MerchantPage() {
         </>
       )}
 
-      {tab === 'catalog' && (
-        <div className="panel">
-          <ErrorBox error={catalog.error} />
-          {catalog.data && (
-            <>
-              <p className="muted">
-                Catalog v{catalog.data.catalog_version} as posted at the first location: tax <Pct ppm={catalog.data.tax_rate_ppm} />, card
-                price = cash + <Pct ppm={catalog.data.dual_price_rate_ppm} /> unless the item sets its own. Editing arrives with the
-                catalog editor.
-              </p>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Category</th>
-                      <th>Item</th>
-                      <th>UPC</th>
-                      <th className="num">Cash</th>
-                      <th className="num">Card</th>
-                      <th>Flags</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {catalog.data.items.map((i) => (
-                      <tr key={i.item_id}>
-                        <td className="muted">{catalog.data!.categories.find((c) => c.category_id === i.category_id)?.name}</td>
-                        <td>{i.name}</td>
-                        <td className="mono">{i.upc}</td>
-                        <td className="num">
-                          <Money cents={i.cash_price_cents} />
-                        </td>
-                        <td className="num">
-                          <Money cents={i.card_price_cents} />
-                          {i.card_price_override && <span className="muted"> *</span>}
-                        </td>
-                        <td>
-                          {!i.taxable && <span className="pill">non-taxable</span>} {i.min_age && <span className="pill warn">{i.min_age}+</span>}{' '}
-                          {i.sell_unit === 'pack' && <span className="pill">pack of {i.pack_qty}</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="muted">* explicit card price (e.g. lottery at face value)</p>
-            </>
-          )}
-        </div>
-      )}
+      {tab === 'catalog' && <CatalogEditor merchantId={merchantId} />}
     </Shell>
   );
 }
