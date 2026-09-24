@@ -122,9 +122,9 @@ section 5.
 | Unknown barcode UPC database lookup (1.1) | ⛔ | **UPC database licence/API** (e.g. a commercial GS1-sourced feed) | P14 (behind interface) |
 | Repeat-last-sale (1.1) | ✅ | Register ↻ Repeat last: today's prices, one ID check, skips returned/discontinued (P14). | P14 |
 | Cashier presets / "the usual" (1.1) | ✅ | Save the ticket as a usual at the register; one-tap chips per signed-in cashier on every register (P14, ADR 0023). | P14 |
-| Cash-in-drawer alert on the cashier idle screen (1.2) | ⬜ | P6 | P15 |
-| Counterfeit note flag (1.2) | ⬜ | P6 | P15 |
-| Coin/bill denominations in the count, photo of count sheet (1.2) | ⬜ | P6; photo storage from P2 | P15 |
+| Cash-in-drawer alert on the cashier idle screen (1.2) | ✅ | Cashier-side banner over the merchant's drop threshold with a suggested drop; drawer_over alert (P15, ADR 0024). | P15 |
+| Counterfeit note flag (1.2) | ✅ | "Reject a bill" from the cash tender or drawer: logged event, counted in the cash report (P15). | P15 |
+| Coin/bill denominations in the count, photo of count sheet (1.2) | ✅ | Blind close by bill & coin (must add up) + camera photo uploaded via /device/media (P15). | P15 |
 | Debit preference prompt on terminal (1.3) | ⛔ | PAX + Finix | P-HW |
 | Gift cards, physical + digital (1.3) | ⛔ | A gift-card program partner, or an internal stored-value design with legal review (escheat/money-transmission) | P-PAY |
 | Manual card entry for phone orders, PIN-gated (1.3) | ⛔ | Must be keyed **on the terminal or the processor's hosted fields**, never our UI (card-data rule). Needs PAX/Finix. | P-HW |
@@ -146,22 +146,22 @@ section 5.
 | Kitchen/deli ticket to a second printer (1.6) | ⛔ | Second printer hardware | P-HW |
 | Label printing, shelf tags with both prices (1.6) | ⛔ | Label printer hardware. Template + PDF output is buildable. | P21 |
 | UPS aware (1.7) | ⛔ | Device power APIs, hardware | P-HW |
-| Time clock (1.8) | ⬜ | P3 | P15 |
-| Shift handover with photo (1.8) | ⬜ | P6 | P15 |
+| Time clock (1.8) | ✅ | Clock in/out by the cashier's name, separate from sign-in; punches are events; hours in the merchant app, weekly overtime (P15). | P15 |
+| Shift handover with photo (1.8) | ✅ | Close with count (+photo) → next session starts with that float, outgoing cashier clocked and signed out (P15). | P15 |
 | Training mode (1.8) | ⬜ | Sale path flag that posts nothing | P16 |
 | Receive delivery by scan (1.9) | ⬜ | Inventory model (P22), P5 | P22 |
 | Low-stock badge (1.9) | ⬜ | P22 | P22 |
 | Case-break inventory conversion (1.9) | ⬜ | P22 | P22 |
 | Expiry dates, sell-by alerts on idle (1.9) | ⬜ | P22 | P22 |
 | Waste/spoilage/theft write-offs with reason, PIN (1.9) | ⬜ | P3, P22 | P22 |
-| Hourly target ribbon (1.10) | ⬜ | Reports, P4 push | P15 |
+| Hourly target ribbon (1.10) | ✅ | Register top bar: today so far vs yesterday by now, from /device/pulse (P15). | P15 |
 | Mobile register on the owner's phone with Tap to Pay (1.11) | ⛔ | Tap-to-Pay entitlement + processor SDK. Cash-only mobile register is buildable (same RN code). | P-HW |
 
 ### Merchant app (N)
 
 | Item | Status | Depends on / blocked by | Phase |
 | --- | --- | --- | --- |
-| Cash in drawer now, per register; "drop needed" (2.1) | ⬜ | P6 | P15 |
+| Cash in drawer now, per register; "drop needed" (2.1) | ✅ | Merchant app Cash → In the drawers now (P15). | P15 |
 | Multi-store roll-up (2.1) | ⬜ | P11 | P19 |
 | Fees, explained (2.2) | ⛔ | Processor fee data | P-PAY |
 | Dispute center (2.2) | ⛔ | Processor dispute API | P-PAY |
@@ -178,7 +178,7 @@ section 5.
 | Vendor list; one-tap order text/email (2.4) | 🟡-able | Vendor records buildable; sending needs SMS/email provider ⛔ | P23 |
 | Receive by scan, discrepancy report (2.4) | ⬜ | P22 | P22 |
 | Shrink dashboard (2.4) | ⬜ | P6, P7, P22 | P23 |
-| Hours and payroll export (2.5) | ⬜ | Time clock | P15 |
+| Hours and payroll export (2.5) | ✅ | Merchant app Hours tab: per person per day, overtime, CSV export (P15). | P15 |
 | Cashier performance (2.5) | ⬜ | P3, P6, P7 | P19 |
 | Alerts: EOD not closed; cash short > $Y (2.6) | ⬜ | P6, EOD (P16) | P16 |
 | Alerts: big ticket; slow hour; late first sale (2.6) | ⬜ | P4 rules engine | P19 |
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P14 Catalog N | #19 | PR open — catalog templates (c-store starter shared with the seed) and generic CSV import through one bulk write (dry-run preview, match by barcode then name, price history); register repeat-last-sale and cashier usuals; merchant-app arrange-keys grid. ADR 0023. |
+| P15 Cash & time N | #20 | PR open — drop-needed threshold (cashier banner, merchant "in the drawers now", drawer_over alert), counterfeit refusals, denomination counts + count-sheet photo, shift handover, time clock with weekly overtime and payroll CSV, hourly target ribbon. ADR 0024. |
+| P14 Catalog N | #19 | merged — catalog templates (c-store starter shared with the seed) and generic CSV import through one bulk write (dry-run preview, match by barcode then name, price history); register repeat-last-sale and cashier usuals; merchant-app arrange-keys grid. ADR 0023. |
 | P13 Admin money & portfolio | #18 | merged — statement analyzer (manual entry + offer, savings per plan, printable one-page PDF), residual/margin report per merchant-month (ledger volume, plan revenue, typed processor cost), KPI dashboard (stores live/active/quiet, volume, revenue, margin, effective rate, support load, installs/week). ADR 0022. **Last buildable tier-L phase**: remaining L items are hardware/processor/account-blocked. |
 | P12b Flags, packs, support chat | #17 | merged — feature flags per merchant (code defaults + overrides, in the snapshot, honoured by the register: card, item create, price check, hold; and the app: support chat), pack editor seeding starter categories, support chat (merchant Help tab ↔ admin Support inbox, append-only, unread, live). ADR 0021. |
 | P12a Onboarding, install kit, pricing | #16 | merged — admin onboarding wizard (one transaction: org, merchant + catalog template, owner, location + draft tax template, registers, plan, install date) and pipeline (live on first pairing; KYB ⛔); printable install kit with setup QR per register (14-day codes, scanner-pairable); append-only pricing plans with history. ADR 0020. P12b (feature flags, pack editor, support chat) follows. |

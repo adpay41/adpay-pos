@@ -15,7 +15,10 @@ import {
   bagFeesOn,
   effectiveMinAge,
   feeItem,
+  dropSuggestion,
+  hhmm,
   lineTotal,
+  pctChangeText,
   resolveFlags,
   localDate,
   lookupBarcode,
@@ -60,7 +63,7 @@ type Modal =
   | { kind: 'open_price'; item: CatalogItem; qty: number; entry: Entry; ageConfirmed: boolean }
   | { kind: 'unknown'; code: string }
   | { kind: 'price_check'; item: CatalogItem; showCost: boolean }
-  | { kind: 'drawer'; startWithFloat: boolean; thenCash: boolean }
+  | { kind: 'drawer'; startWithFloat: boolean; thenCash: boolean; counterfeit?: boolean }
   | { kind: 'held' }
   | { kind: 'tickets' }
   | { kind: 'card'; phase: CardPhase }
@@ -102,6 +105,24 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   );
 
   const [drawerSession, setDrawerSession] = useState(rt.drawer.current());
+  // Time clock and the hourly ribbon (P15). The clock re-renders each minute while someone is on it.
+  const [, setTick] = useState(0);
+  useEffect(() => rt.clock.subscribe(() => setTick((t) => t + 1)), [rt]);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const [pulse, setPulse] = useState<Awaited<ReturnType<typeof rt.pulse>>>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => void rt.pulse().then((p) => live && setPulse(p));
+    load();
+    const t = setInterval(load, 5 * 60_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [rt, session.lastCompleted?.sale_id]);
   useEffect(() => rt.drawer.subscribe(setDrawerSession), [rt]);
   const [staff, setStaff] = useState<StaffState>(rt.staff.state());
   useEffect(() => rt.staff.subscribe(setStaff), [rt]);
@@ -119,6 +140,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   // Feature flags for this merchant (P12b); an older snapshot without them means everything on.
   const flags = resolveFlags(catalog.flags ?? {});
   const cardOk = sync?.online ?? false;
+  const dropNeed = drawerSession ? dropSuggestion(drawerSession.expected_cents, drawerSession.float_cents, catalog.cash_settings?.drop_over_cents ?? 0) : { needed: false, suggest_cents: 0 };
   // Items created here but not yet in a server snapshot are overlaid, so they ring up offline (P5).
   const [pendingCount, setPendingCount] = useState(0);
   useEffect(() => rt.items.subscribe((p) => setPendingCount(p.length)), [rt]);
@@ -393,6 +415,25 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         <Text style={s.topWhere} numberOfLines={1}>
           {rt.identity.merchant_name} · {rt.identity.location_name} · {rt.identity.register_name}
         </Text>
+        {pulse && pulse.today_cents > 0 ? (
+          // Hourly target ribbon (Bible 1.10): where today is against yesterday by this time. Up is green; down stays white.
+          <Text style={s.ribbon} numberOfLines={1}>
+            Today {usd(pulse.today_cents)} · yesterday by now {usd(pulse.yesterday_cents)}
+            {pulse.vs_yesterday_tenths !== null ? <Text style={pulse.vs_yesterday_tenths > 0 ? s.ribbonUp : undefined}> {pctChangeText(pulse.vs_yesterday_tenths)}</Text> : null}
+          </Text>
+        ) : null}
+        {staff.member ? (
+          <Pressable
+            onPress={() => {
+              const m = staff.member!;
+              void run(() => (rt.clock.since(m.user_id) ? rt.clock.clockOut(m.user_id) : rt.clock.clockIn(m.user_id)));
+            }}
+            style={[s.who, rt.clock.since(staff.member.user_id) ? s.onClock : null]}
+            accessibilityLabel={rt.clock.since(staff.member.user_id) ? 'Clock out' : 'Clock in'}
+          >
+            <Text style={s.whoText}>{rt.clock.since(staff.member.user_id) ? `On the clock ${hhmm(rt.clock.minutes(staff.member.user_id))}` : 'Clock in'}</Text>
+          </Pressable>
+        ) : null}
         {staff.member ? (
           <Pressable onPress={() => void run(() => rt.staff.signOut('manual'))} style={s.who} accessibilityLabel={`Signed in as ${staff.member.name}. Tap to lock.`}>
             <Text style={s.whoText}>{staff.member.name.split(' ')[0]}</Text>
@@ -538,6 +579,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   {usd(cardAmountFor(sale.remaining_cash_cents, sale.cash.total_cents, sale.card.total_cents))} card
                 </Text>
               </View>
+            ) : null}
+            {dropNeed.needed ? (
+              // Bible 1.2: "drawer over $600, drop now", on the cashier's screen only, never the customer's.
+              <Pressable style={s.dropBanner} onPress={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false })}>
+                <Text style={s.dropText}>Drawer is over {usd(catalog.cash_settings?.drop_over_cents ?? 0)}. Drop about {usd(dropNeed.suggest_cents)} to the safe now.</Text>
+              </Pressable>
             ) : null}
             {flags.card_payments && !cardOk && sale?.lines.length ? (
               // Bible 1.7: when the card path is down, say so plainly and keep selling for cash.
@@ -733,6 +780,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           onCancel={() => setModal({ kind: 'none' })}
           onTender={(amt) => void tender(amt)}
           onPart={(amt) => void tender(amt, true)}
+          onCounterfeit={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false, counterfeit: true })}
         />
       )}
 
@@ -951,6 +999,15 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             staff={rt.staff}
             session={drawerSession}
             startWithFloat={modal.startWithFloat}
+            startWithCounterfeit={!!modal.counterfeit}
+            uploadPhoto={cardOk ? rt.uploadPhoto : null}
+            onHandover={() => {
+              const m = staff.member;
+              void run(async () => {
+                if (m) await rt.clock.clockOut(m.user_id, 'handover');
+                await rt.staff.signOut('switch');
+              });
+            }}
             kick={async () => {
               await hardware.kickDrawer();
               rt.sync.kick();
@@ -1085,10 +1142,13 @@ function CashModal({
   onCancel,
   onTender,
   onPart,
+  onCounterfeit,
 }: {
   total: number;
   allowPart: boolean;
   onCancel: () => void;
+  /** Refuse a counterfeit bill (P15): logged, then back to the sale. */
+  onCounterfeit: () => void;
   onTender: (amount: number) => void;
   /** Split: take this much cash now, the rest on a card. */
   onPart: (amount: number) => void;
@@ -1119,6 +1179,9 @@ function CashModal({
       <View style={s.actions}>
         <Pressable style={s.ghost} onPress={onCancel}>
           <Text>Back</Text>
+        </Pressable>
+        <Pressable style={s.ghost} onPress={onCounterfeit}>
+          <Text>Reject a bill</Text>
         </Pressable>
         {/* Black, not red: these buttons carry dollar amounts. */}
         {typed > 0 && typed < total && allowPart ? (
@@ -1234,6 +1297,11 @@ const s = StyleSheet.create({
   pillText: { fontWeight: '700', fontSize: 12 },
   drawerFlash: { position: 'absolute', top: 60, alignSelf: 'center', backgroundColor: C.black, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 16, zIndex: 5 },
   drawerText: { color: '#fff', fontWeight: '700' },
+  ribbon: { color: '#ddd', fontSize: 13, maxWidth: 360 },
+  ribbonUp: { color: '#6fd39b', fontWeight: '700' },
+  onClock: { borderColor: '#2f7d4f' },
+  dropBanner: { backgroundColor: '#fff4e5', borderColor: '#f3d7a8', borderWidth: 1, borderRadius: 8, padding: 10 },
+  dropText: { color: C.ink, fontWeight: '700' },
 
   body: { flex: 1, flexDirection: 'row' },
   catCol: { width: 140, backgroundColor: '#fff', borderRightWidth: 1, borderRightColor: C.line, paddingVertical: 8 },

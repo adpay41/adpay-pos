@@ -104,6 +104,8 @@ export interface CatalogSnapshot {
   staff?: RegisterStaff;
   /** Cashiers' preset baskets, "the usual" (P14). Register snapshot only. */
   usuals?: CashierUsual[];
+  /** Cash handling at the register (P15): ask for a drop above this. Absent in older snapshots. */
+  cash_settings?: { drop_over_cents: number };
 }
 
 export interface DeviceIdentity {

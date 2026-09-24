@@ -184,10 +184,28 @@ const DrawerSessionClosed = z.strictObject({
   /** The closing count, entered before the expected amount is shown (blind count). */
   counted_cents: NonNegCents,
   blind: z.boolean(),
+  /**
+   * P15, additive: the count by denomination (key = face value in cents, value = how many), which
+   * must add up to `counted_cents`; and a photo of the count sheet (a media id).
+   */
+  denominations: z.record(z.string().regex(/^\d{1,5}$/), z.int().min(0).max(100_000)).nullable().default(null),
+  photo_media_id: Uuid.nullable().default(null),
+  /** A shift handover: the next person starts a new session with this count as their float. */
+  handover: z.boolean().default(false),
+});
+
+/** A bill refused as counterfeit (P15, Bible 1.2): logged with who, when, which register. */
+const CounterfeitFlagged = z.strictObject({
+  session_id: Uuid.nullable(),
+  denomination_cents: z.int().min(100).max(10_000),
+  note: z.string().trim().max(200).nullable(),
 });
 
 // Staff at the register (P3). PINs are checked on the device; these events are the record.
 const StaffSignedIn = z.strictObject({ user_id: Uuid, method: z.enum(['pin']) });
+/** Time clock (P15, Bible 1.8). Separate from sign-in: signing in to ring a sale isn't being on the clock. */
+const ClockedIn = z.strictObject({ user_id: Uuid });
+const ClockedOut = z.strictObject({ user_id: Uuid, reason: z.enum(['manual', 'handover']) });
 const StaffSignedOut = z.strictObject({ user_id: Uuid, reason: z.enum(['manual', 'switch', 'idle']) });
 const StaffPinFailed = z.strictObject({
   /** Whose PIN was tried (the name tapped). */
@@ -224,6 +242,9 @@ export const EventPayloads = {
   'drawer.session_opened': DrawerSessionOpened,
   'drawer.cash_movement': DrawerCashMovement,
   'drawer.session_closed': DrawerSessionClosed,
+  'drawer.counterfeit': CounterfeitFlagged,
+  'staff.clocked_in': ClockedIn,
+  'staff.clocked_out': ClockedOut,
   'staff.signed_in': StaffSignedIn,
   'staff.signed_out': StaffSignedOut,
   'staff.pin_failed': StaffPinFailed,
@@ -239,6 +260,9 @@ const SALELESS: ReadonlySet<EventType> = new Set([
   'drawer.session_opened',
   'drawer.cash_movement',
   'drawer.session_closed',
+  'drawer.counterfeit',
+  'staff.clocked_in',
+  'staff.clocked_out',
   'staff.signed_in',
   'staff.signed_out',
   'staff.pin_failed',

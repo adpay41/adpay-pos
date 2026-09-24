@@ -7,7 +7,7 @@
  * The drawer only opens on a cash tender, a recorded movement, or "no sale", and no-sale needs
  * `drawer.no_sale` (or a manager's PIN). The caller kicks the hardware; this records it.
  */
-import { cents, foldDrawer, type CashMovementKind, type Cents, type DrawerSession } from '@adpay/shared';
+import { cents, denominationTotal, foldDrawer, type CashMovementKind, type Cents, type DrawerSession } from '@adpay/shared';
 import type { SaleSession } from './session';
 import type { EventStore } from './store';
 
@@ -96,15 +96,39 @@ export class DrawerManager {
    * Blind close: the count goes in before anyone sees what was expected. Returns the closed session
    * with its over/short (counted − expected, folded from the log).
    */
-  async close(counted: Cents): Promise<DrawerSession> {
+  /**
+   * Close with the blind count. P15: optionally by denomination (must add up), with a photo of the
+   * count sheet, and as a **handover**: the next session starts at once with the counted cash as its float.
+   */
+  async close(
+    counted: Cents,
+    opts: { denominations?: Record<string, number> | null; photo_media_id?: string | null; handover?: boolean } = {},
+  ): Promise<DrawerSession> {
     if (!this.open) throw new Error('The drawer is not started.');
+    if (opts.denominations && denominationTotal(opts.denominations) !== counted) throw new Error('The denominations don’t add up to the count');
     const { session_id, from_seq } = this.open;
     await this.session.recordDrawerEvent('drawer.opened', { reason: 'count', by_user_id: this.session.actorId() });
-    await this.session.recordDrawerEvent('drawer.session_closed', { session_id, counted_cents: cents(counted), blind: true });
+    await this.session.recordDrawerEvent('drawer.session_closed', {
+      session_id,
+      counted_cents: cents(counted),
+      blind: true,
+      denominations: opts.denominations ?? null,
+      photo_media_id: opts.photo_media_id ?? null,
+      handover: !!opts.handover,
+    });
     const { sessions } = foldDrawer(await this.store.eventsSince(from_seq));
     this.open = null;
     await this.store.setMeta(KEY, null);
     await this.refresh();
-    return sessions.find((s) => s.session_id === session_id)!;
+    const closed = sessions.find((s) => s.session_id === session_id)!;
+    // Handover: the cash just counted is the next person's float, so nothing is recounted.
+    if (opts.handover) await this.start(counted);
+    return closed;
+  }
+
+  /** A bill refused as counterfeit (P15): logged with who and when; the drawer doesn't open. */
+  async flagCounterfeit(denominationCents: number, note: string | null): Promise<void> {
+    await this.session.recordDrawerEvent('drawer.counterfeit', { session_id: this.open?.session_id ?? null, denomination_cents: denominationCents, note: note?.trim() || null });
+    await this.refresh();
   }
 }

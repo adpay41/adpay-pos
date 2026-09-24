@@ -19,7 +19,7 @@ describe('percent change, integer tenths', () => {
 
 describe('alert settings', () => {
   it('defaults, and only merchant-facing rules can be muted', () => {
-    expect(AlertSettingsInput.parse({})).toEqual({ muted: [], large_refund_cents: 2_500, drawer_short_cents: 500, no_sale_spike: 5 });
+    expect(AlertSettingsInput.parse({})).toEqual({ muted: [], large_refund_cents: 2_500, drawer_short_cents: 500, no_sale_spike: 5, drop_over_cents: 60_000 });
     expect(AlertSettingsInput.safeParse({ muted: ['register_offline'] }).success).toBe(true);
     expect(AlertSettingsInput.safeParse({ muted: ['events_rejected'] }).success).toBe(false);
   });

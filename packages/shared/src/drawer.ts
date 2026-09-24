@@ -50,6 +50,12 @@ export interface DrawerSession {
   counted_cents: Cents | null;
   /** counted − expected: positive over, negative short. Null while open. */
   over_short_cents: Cents | null;
+  /** P15: the closing count by denomination (face value in cents → how many), photo of the sheet, handover. */
+  denominations: Record<string, number> | null;
+  photo_media_id: string | null;
+  handover: boolean;
+  /** Bills refused as counterfeit during the session (P15). */
+  counterfeits: { denomination_cents: Cents; at: string; by_user_id: string | null; note: string | null }[];
 }
 
 function expectedOf(s: Omit<DrawerSession, 'expected_cents'>): Cents {
@@ -90,6 +96,10 @@ export function foldDrawer(events: readonly RegisterEvent[]): { sessions: Drawer
           closed_by: null,
           counted_cents: null,
           over_short_cents: null,
+          denominations: null,
+          photo_media_id: null,
+          handover: false,
+          counterfeits: [],
         };
         break;
       case 'sale.tender_added':
@@ -113,6 +123,9 @@ export function foldDrawer(events: readonly RegisterEvent[]): { sessions: Drawer
         cur.movements.push({ movement_id: e.payload.movement_id, kind: e.payload.kind, amount_cents: amount, reason: e.payload.reason, at: e.occurred_at, by_user_id: e.actor_user_id });
         break;
       }
+      case 'drawer.counterfeit':
+        if (cur) cur.counterfeits.push({ denomination_cents: cents(e.payload.denomination_cents), at: e.occurred_at, by_user_id: e.actor_user_id, note: e.payload.note });
+        break;
       case 'drawer.opened':
         if (cur && e.payload.reason === 'manual') cur.no_sale_opens++;
         break;
@@ -122,6 +135,9 @@ export function foldDrawer(events: readonly RegisterEvent[]): { sessions: Drawer
         cur.closed_by = e.actor_user_id;
         cur.counted_cents = cents(e.payload.counted_cents);
         cur.over_short_cents = sub(cents(e.payload.counted_cents), expectedOf(cur));
+        cur.denominations = e.payload.denominations ?? null;
+        cur.photo_media_id = e.payload.photo_media_id ?? null;
+        cur.handover = e.payload.handover ?? false;
         sessions.push(finish(cur));
         cur = null;
         break;
@@ -158,5 +174,40 @@ export interface CashReport {
   by_cashier: { user_id: string | null; name: string | null; sessions: number; over_short_cents: number }[];
   /** Over/short per business day (closed sessions), oldest first: the trend. */
   by_day: { date: string; sessions: number; over_short_cents: number }[];
-  totals: { drops_cents: number; paid_out_cents: number; paid_in_cents: number; over_short_cents: number; no_sale_opens: number };
+  totals: { drops_cents: number; paid_out_cents: number; paid_in_cents: number; over_short_cents: number; no_sale_opens: number; counterfeits: number };
+  /** Every drawer open right now (looking back 7 days, so overnight sessions count), with "drop needed" (P15). */
+  open_now: { session_id: string; register_id: string; register_name: string; location_name: string; opened_at: string; expected_cents: number; drop_needed: boolean; suggest_cents: number }[];
+  drop_over_cents: number;
+}
+
+// ───────────────────────────────────────────────────────────────── denominations (P15) ──
+
+/** US bills and coins a drawer holds, largest first, face value in cents. */
+export const DENOMINATIONS: readonly { cents: number; label: string; kind: 'bill' | 'coin' }[] = [
+  { cents: 10_000, label: '$100', kind: 'bill' },
+  { cents: 5_000, label: '$50', kind: 'bill' },
+  { cents: 2_000, label: '$20', kind: 'bill' },
+  { cents: 1_000, label: '$10', kind: 'bill' },
+  { cents: 500, label: '$5', kind: 'bill' },
+  { cents: 200, label: '$2', kind: 'bill' },
+  { cents: 100, label: '$1', kind: 'bill' },
+  { cents: 25, label: '25¢', kind: 'coin' },
+  { cents: 10, label: '10¢', kind: 'coin' },
+  { cents: 5, label: '5¢', kind: 'coin' },
+  { cents: 1, label: '1¢', kind: 'coin' },
+];
+
+/** Total of a count by denomination; integer cents. Unknown keys are ignored. */
+export function denominationTotal(counts: Readonly<Record<string, number>>): Cents {
+  return cents(DENOMINATIONS.reduce((n, d) => n + d.cents * Math.max(0, Math.trunc(counts[String(d.cents)] ?? 0)), 0));
+}
+
+/**
+ * "Drop needed" (P15, Bible 1.2 / 2.1): the drawer holds more than the threshold. The suggested
+ * drop brings it back to the float, in whole $20s so the count stays simple.
+ */
+export function dropSuggestion(expected: number, float: number, threshold: number): { needed: boolean; suggest_cents: number } {
+  if (threshold <= 0 || expected <= threshold) return { needed: false, suggest_cents: 0 };
+  const over = expected - Math.max(float, 0);
+  return { needed: true, suggest_cents: Math.max(2_000, Math.floor(over / 2_000) * 2_000) };
 }

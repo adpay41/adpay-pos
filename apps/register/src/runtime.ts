@@ -9,6 +9,7 @@ import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import { PREVIEW_HEALTH } from './core/hardware';
 import { DrawerManager } from './core/drawer';
+import { TimeClock } from './core/timeclock';
 import { NewItemOutbox } from './core/new-items';
 import { DeviceLog, OpsAgent } from './core/ops';
 import { SaleSession, type CardRefunder } from './core/session';
@@ -71,6 +72,12 @@ export interface Runtime {
   /** Card payments through the API's PaymentProvider (P9). Amounts and ids only — never card data. */
   payments: CardPayments;
   /** Cashier presets, "the usual" (P14): online only, delivered back in the snapshot. */
+  /** Time clock (P15). */
+  clock: TimeClock;
+  /** Today so far vs yesterday by this time, for the ribbon; null when offline (P15). */
+  pulse: () => Promise<{ today_cents: number; yesterday_cents: number; vs_yesterday_tenths: number | null } | null>;
+  /** Upload a JPEG (count-sheet photo, P15); returns its media id. Online only. */
+  uploadPhoto: (blob: Blob) => Promise<string>;
   usuals: {
     save(input: { user_id: string; label: string; lines: { item_id: string; qty: number }[] }): Promise<void>;
     remove(usualId: string): Promise<void>;
@@ -155,6 +162,9 @@ export async function boot(token: string): Promise<Runtime> {
   await session.restore();
   const drawer = new DrawerManager(store, session, () => Crypto.randomUUID());
   await drawer.restore();
+  // Time clock (P15): punches are events; who is on the clock here survives a restart.
+  const clock = new TimeClock(store, session);
+  await clock.restore();
   // Who may sign in comes with the config snapshot; a newer snapshot refreshes it (P3).
   const staff = new StaffGate(store, session);
   await staff.restore(catalog.staff);
@@ -213,6 +223,22 @@ export async function boot(token: string): Promise<Runtime> {
     },
   };
 
+  // Hourly target ribbon (P15): today so far vs yesterday by this time. Online only; null offline.
+  const pulse = async () => {
+    try {
+      return await call<{ today_cents: number; yesterday_cents: number; vs_yesterday_tenths: number | null }>('/device/pulse', token);
+    } catch {
+      return null;
+    }
+  };
+  // A photo of the count sheet (P15): uploaded at once; online only.
+  const uploadPhoto = async (blob: Blob) => {
+    const res = await fetch(`${API_URL}/device/media`, { method: 'POST', headers: { 'content-type': 'image/jpeg', authorization: `Bearer ${token}` }, body: blob });
+    const data = (await res.json().catch(() => ({}))) as { media_id?: string; message?: string };
+    if (!res.ok || !data.media_id) throw new Error(data.message ?? 'The photo didn’t upload');
+    return data.media_id;
+  };
+
   // "The usual" (P14): saved and removed online; they arrive back with the next snapshot.
   const usuals: Runtime['usuals'] = {
     async save(input) {
@@ -225,5 +251,5 @@ export async function boot(token: string): Promise<Runtime> {
     },
   };
 
-  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, uuid: () => Crypto.randomUUID() };
+  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, pulse, uploadPhoto, uuid: () => Crypto.randomUUID() };
 }

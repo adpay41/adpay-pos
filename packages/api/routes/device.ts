@@ -1,13 +1,16 @@
 /**
  * Register routes. Identity and tenancy come from the device token alone.
  */
-import { DeviceItemCreateInput, EventBatchSchema, UsualInput } from '@adpay/shared';
+import { DeviceItemCreateInput, EventBatchSchema, MEDIA_MAX_BYTES, MEDIA_TYPES, UsualInput } from '@adpay/shared';
+import { badRequest } from '../http/errors';
+import { validateImage } from '../services/media';
+import { salesCompare } from '../services/reports';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asDevice, requireDevice } from '../http/auth-hooks';
 import type { AppDeps } from '../server';
 import { getCatalogSnapshot } from '../services/catalog';
-import { catalogVersion, createItemFromDevice } from '../services/catalog-write';
+import { catalogVersion, createItemFromDevice, uploadMedia } from '../services/catalog-write';
 import { ingestEvents } from '../services/events';
 import { deviceIdentity } from '../services/onboarding';
 import { cardRefund, terminalCharge } from '../services/payments';
@@ -17,6 +20,24 @@ import { removeUsual, saveUsual, usualsFor } from '../services/usuals';
 export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
   app.addHook('preHandler', requireDevice);
+  // A photo of the closing count sheet arrives as the raw image body (P15), like product photos.
+  app.addContentTypeParser([...MEDIA_TYPES], { parseAs: 'buffer', bodyLimit: MEDIA_MAX_BYTES }, (_req, body, done) => done(null, body));
+
+  app.post('/device/media', async (request, reply) => {
+    const d = asDevice(request);
+    if (!Buffer.isBuffer(request.body)) throw badRequest('Send the photo as the request body (image/jpeg)');
+    const type = validateImage(request.body, request.headers['content-type']);
+    reply.status(201);
+    return uploadMedia(db, d, d.merchant_id, request.body, type, request.logContext.trace_id);
+  });
+
+  /** The hourly target ribbon (P15, Bible 1.10): today so far vs yesterday by this time, this store. */
+  app.get('/device/pulse', async (request) => {
+    const d = asDevice(request);
+    const c = await salesCompare(db, d.merchant_id, d.location_id);
+    const [today, yesterday] = c.days;
+    return { as_of: c.as_of, today_cents: today!.so_far_cents, yesterday_cents: yesterday!.so_far_cents, vs_yesterday_tenths: c.vs_yesterday_tenths };
+  });
 
   app.get('/device/identity', async (request) => deviceIdentity(db, asDevice(request).register_id));
 

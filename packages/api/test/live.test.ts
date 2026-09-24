@@ -113,7 +113,7 @@ describe('live merchant view', () => {
 
   it('alert settings: a raised threshold holds an alert back; a muted rule is hidden from the merchant only', async () => {
     const defaults = await get<AlertSettings>('/merchant/alert-settings');
-    expect(defaults).toEqual({ muted: [], large_refund_cents: 2_500, drawer_short_cents: 500, no_sale_spike: 5 });
+    expect(defaults).toEqual({ muted: [], large_refund_cents: 2_500, drawer_short_cents: 500, no_sale_spike: 5, drop_over_cents: 60_000 });
 
     const put = (body: object) => app.inject({ method: 'PUT', url: '/merchant/alert-settings', headers: auth(ownerA), payload: body });
     expect((await put({ large_refund_cents: 5_000 })).statusCode).toBe(200);

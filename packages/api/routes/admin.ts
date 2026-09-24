@@ -19,6 +19,7 @@ import {
   tenancyTree,
 } from '../services/onboarding';
 import { cashReport } from '../services/cash';
+import { timesheet } from '../services/timeclock';
 import { kpis, listAnalyses, residualReport, saveAnalysis, setProcessorCost } from '../services/money';
 import { merchantConfig, postSupportMessage, setFeatureFlags, setPacks, supportInbox, supportThread } from '../services/merchant-config';
 import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPlans, updateOnboarding } from '../services/merchant-setup';
@@ -101,6 +102,12 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     return { ok: true };
   });
   app.get('/admin/kpis', async () => kpis(db));
+  app.get('/admin/merchants/:merchantId/timesheet', async (request) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    const Day = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
+    const r = z.object({ from: Day, to: Day }).parse(request.query);
+    return timesheet(db, merchantId, r.from, r.to);
+  });
 
   // Pricing plans with history (L51).
   app.get('/admin/merchants/:merchantId/pricing', async (request) => {

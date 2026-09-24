@@ -424,7 +424,8 @@ export async function reorderCatalog(
 /** Store an uploaded product photo for this merchant (validated by the caller) and audit it. */
 export async function uploadMedia(
   db: Db,
-  actor: CatalogActor,
+  /** A register uploads the photo of a count sheet (P15); it has no user, so created_by is null. */
+  actor: CatalogActor | DevicePrincipal,
   merchantId: string,
   bytes: Buffer,
   contentType: MediaType,
@@ -432,7 +433,7 @@ export async function uploadMedia(
 ): Promise<{ media_id: string; url: string }> {
   return db.tx(async (q) => {
     const m = await merchantFor(q, merchantId);
-    const r = await pgMediaStore.put(q, { ...m, bytes, content_type: contentType, created_by: actorId(actor), trace_id: traceId });
+    const r = await pgMediaStore.put(q, { ...m, bytes, content_type: contentType, created_by: actor.kind === 'device' ? null : actorId(actor), trace_id: traceId });
     if (r.created) {
       await audit(q, {
         actor,
