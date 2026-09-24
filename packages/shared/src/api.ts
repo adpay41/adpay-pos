@@ -54,6 +54,12 @@ export interface DeviceIdentity {
   location_name: string;
   register_name: string;
   enabled_packs: PackId[];
+  /** For the receipt header and store-local times. */
+  address_line1: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  timezone: string;
 }
 
 export interface SalesSummary {
