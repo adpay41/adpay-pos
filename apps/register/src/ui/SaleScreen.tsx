@@ -12,9 +12,13 @@ import {
   deriveCardPrice,
   favoriteKeys,
   foldSale,
+  bagFeesOn,
+  effectiveMinAge,
+  feeItem,
+  lineTotal,
+  localDate,
   lookupBarcode,
   searchCatalog,
-  mulQty,
   quickCashOptions,
   renderReceipt,
   type CatalogItem,
@@ -153,6 +157,10 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     void run(() => rt.session.addItem(item, { qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed }));
   };
   const addItem = (item: CatalogItem) => ring(item, { entry: query ? 'search' : 'key' });
+  // Compliance (P10): bag-fee keys in force today, and each category's effective age check.
+  const today = localDate(new Date(), rt.identity.timezone);
+  const bagFees = bagFeesOn(catalog.compliance?.charges ?? [], today);
+  const catAge = (c: CatalogSnapshot['categories'][number]) => effectiveMinAge(c.min_age, c.restriction ?? null, catalog.compliance?.min_ages ?? null);
 
   /** A scanned (or typed) barcode: ring it, or offer to add it to the catalog if we don't know it. */
   const onCode = (code: string) => {
@@ -401,7 +409,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           {catalog.categories.filter((c) => c.active !== false).map((c) => (
             <Pressable key={c.category_id} onPress={() => setCategory(c.category_id)} style={[s.cat, category === c.category_id && s.catActive]}>
               <Text style={[s.catText, category === c.category_id && { color: '#fff' }]}>{c.name}</Text>
-              {c.min_age ? <Text style={[s.catAge, category === c.category_id && { color: '#ddd' }]}>{c.min_age}+</Text> : null}
+              {catAge(c) ? <Text style={[s.catAge, category === c.category_id && { color: '#ddd' }]}>{catAge(c)}+</Text> : null}
             </Pressable>
           ))}
         </View>
@@ -476,12 +484,13 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                       {l.name}
                     </Text>
                     <Text style={s.mutedSmall}>
-                      card {usd(mulQty(l.unit_card_price_cents, l.qty))}
+                      card {usd(lineTotal(l, 'card'))}
+                      {l.charges.map((c) => ` · incl. ${c.label}`).join('')}
                       {l.min_age ? ` · ${l.min_age}+ checked` : ''}
                       {!l.taxable ? ' · no tax' : ''}
                     </Text>
                   </View>
-                  <Text style={s.lineAmt}>{usd(mulQty(l.unit_cash_price_cents, l.qty))}</Text>
+                  <Text style={s.lineAmt}>{usd(lineTotal(l, 'cash'))}</Text>
                   <Pressable onPress={() => void run(() => rt.session.removeLine(l.line_id))} style={s.remove} accessibilityLabel={`Remove ${l.name}`}>
                     <Text style={s.removeText}>×</Text>
                   </Pressable>
@@ -534,6 +543,21 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 {!cardOk ? <Text style={s.paySub}>offline</Text> : null}
               </Pressable>
             </View>
+            {bagFees.length ? (
+              // Bag fees in force today (P10): one tap adds a bag; tap again for another.
+              <View style={s.actions}>
+                {bagFees.map((r) => (
+                  <Pressable
+                    key={r.rule_id}
+                    style={s.ghost}
+                    onPress={() => void run(() => rt.session.addItem(feeItem(r, catalog.tax_rate_ppm), { entry: 'key', fee: true }))}
+                    accessibilityLabel={`Add ${r.label}`}
+                  >
+                    <Text>+ {r.label} {usd(cents(r.amount_cents ?? 0))}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
             <View style={s.actions}>
               <Pressable
                 style={[s.ghost, !sale && s.disabled]}

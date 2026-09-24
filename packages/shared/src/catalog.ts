@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import type { CatalogItem, CatalogSnapshot } from './api';
+import { RestrictionInput, TaxClassInput } from './compliance';
 
 const Cents = z.int().min(0).max(100_000_000);
 
@@ -108,6 +109,8 @@ export const CategoryCreateInput = z.strictObject({
   name: z.string().trim().min(1).max(60),
   taxable: z.boolean().default(true),
   min_age: z.int().min(1).max(99).nullable().default(null),
+  tax_class: TaxClassInput.default('standard'),
+  restriction: RestrictionInput.nullable().default(null),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
@@ -120,6 +123,8 @@ export const CategoryUpdateInput = z.strictObject({
   name: z.string().trim().min(1).max(60).optional(),
   taxable: z.boolean().optional(),
   min_age: z.int().min(1).max(99).nullable().optional(),
+  tax_class: TaxClassInput.optional(),
+  restriction: RestrictionInput.nullable().optional(),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)

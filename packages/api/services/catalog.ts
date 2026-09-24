@@ -4,7 +4,15 @@
  * on catalog (ADR 0002).
  */
 import {
+  ComplianceSettingsInput,
+  DEFAULT_COMPLIANCE,
   DEFAULT_RECEIPT_SETTINGS,
+  effectiveMinAge,
+  localDate,
+  minAgesFor,
+  taxRateOn,
+  type ComplianceSettings,
+  type Restriction,
   ReceiptSettingsInput,
   resolveDualPrice,
   type CatalogCategory,
@@ -24,6 +32,15 @@ interface LocationRow {
   dual_price_rate_ppm: number;
   catalog_version: number;
   receipt_settings: unknown;
+  compliance: unknown;
+  state: string | null;
+  timezone: string;
+}
+
+/** Stored compliance over the defaults; malformed data falls back to none rather than breaking sales. */
+export function complianceOf(raw: unknown): ComplianceSettings {
+  const parsed = ComplianceSettingsInput.safeParse(raw ?? {});
+  return parsed.success ? parsed.data : DEFAULT_COMPLIANCE;
 }
 
 /** Stored settings over the defaults; anything malformed falls back rather than breaking receipts. */
@@ -48,6 +65,8 @@ interface ItemRow {
   active: boolean;
   taxable: boolean | null;
   min_age: number | null;
+  tax_class: string | null;
+  restriction: Restriction | null;
   barcodes: { barcode: string; pack_qty: number }[] | null;
   color: TileColor | null;
   image_id: string | null;
@@ -61,7 +80,8 @@ export async function getCatalogSnapshot(
   locationId: string,
 ): Promise<CatalogSnapshot> {
   const { rows: locs } = await q.query<LocationRow>(
-    `SELECT l.location_id, l.merchant_id, l.tax_rate_ppm, l.dual_price_rate_ppm, m.catalog_version, l.receipt_settings
+    `SELECT l.location_id, l.merchant_id, l.tax_rate_ppm, l.dual_price_rate_ppm, m.catalog_version, l.receipt_settings,
+            l.compliance, l.state, l.timezone
        FROM locations l JOIN merchants m ON m.merchant_id = l.merchant_id
       WHERE l.location_id = $1 AND l.merchant_id = $2`,
     [locationId, merchantId],
@@ -70,13 +90,13 @@ export async function getCatalogSnapshot(
   if (!loc) throw notFound('Location not found');
 
   const { rows: categories } = await q.query<CatalogCategory>(
-    `SELECT category_id, name, sort, taxable, min_age, color, active
+    `SELECT category_id, name, sort, taxable, min_age, tax_class, restriction, color, active
        FROM categories WHERE merchant_id = $1 ORDER BY sort, name`,
     [merchantId],
   );
   const { rows: items } = await q.query<ItemRow>(
     `SELECT i.item_id, i.category_id, i.name, i.sku, i.upc, i.plu, i.cash_price_cents, i.card_price_cents,
-            i.cost_cents, i.open_price, i.sell_unit, i.pack_qty, i.active, c.taxable, c.min_age, i.color, i.image_id, i.sort,
+            i.cost_cents, i.open_price, i.sell_unit, i.pack_qty, i.active, c.taxable, c.min_age, c.tax_class, c.restriction, i.color, i.image_id, i.sort,
             (SELECT jsonb_agg(jsonb_build_object('barcode', b.barcode, 'pack_qty', b.pack_qty) ORDER BY b.barcode)
                FROM item_barcodes b WHERE b.item_id = i.item_id) AS barcodes
        FROM items i LEFT JOIN categories c ON c.category_id = i.category_id
@@ -88,6 +108,11 @@ export async function getCatalogSnapshot(
     'SELECT item_id FROM location_quick_keys WHERE location_id = $1 ORDER BY position',
     [locationId],
   );
+
+  // Rates and age rules as of today at the store; the register re-resolves rates by date (ADR 0018).
+  const compliance = complianceOf(loc.compliance);
+  const minAges = minAgesFor(loc.state, compliance.age_rules);
+  const today = localDate(new Date(), loc.timezone);
 
   return {
     merchant_id: merchantId,
@@ -114,8 +139,10 @@ export async function getCatalogSnapshot(
         open_price: i.open_price,
         cost_cents: i.cost_cents,
         taxable,
-        tax_rate_ppm: taxable ? loc.tax_rate_ppm : 0,
-        min_age: i.min_age,
+        tax_rate_ppm: taxable ? taxRateOn(compliance.tax_rates, i.tax_class, today, loc.tax_rate_ppm) : 0,
+        tax_class: i.tax_class ?? 'standard',
+        min_age: effectiveMinAge(i.min_age, i.restriction, minAges),
+        restriction: i.restriction,
         sell_unit: i.sell_unit,
         pack_qty: i.pack_qty,
         active: i.active,
@@ -125,6 +152,7 @@ export async function getCatalogSnapshot(
       };
     }),
     quick_keys: favorites.map((f) => f.item_id),
+    compliance: { ...compliance, state: loc.state, min_ages: minAges },
     receipt: (() => {
       const r = receiptSettingsOf(loc.receipt_settings);
       return { ...r, logo_url: r.logo_media_id ? mediaUrl(r.logo_media_id) : null };

@@ -48,7 +48,9 @@ export function refundQuote(sale: FoldedSale, selection: readonly RefundLine[]):
     const discount = mode === 'cash' ? line.cash_discount_cents : line.card_discount_cents;
     // A line discount is spread over its units and the share rounded **up** once, so a partial
     // return never hands back more than was paid for those units (the full return takes the exact rest).
-    taxable.push({ qty: sel.qty, unit_price_cents: unit, discount_cents: Math.ceil((discount * sel.qty) / line.qty), taxable: line.taxable, tax_rate_ppm: line.tax_rate_ppm });
+    // Per-unit charges (a deposit, P10) go back with the unit they were charged on.
+    const charges = line.charges.map((c) => ({ unit_cents: mode === 'cash' ? c.unit_cash_cents : c.unit_card_cents, taxable: c.taxable }));
+    taxable.push({ qty: sel.qty, unit_price_cents: unit, discount_cents: Math.ceil((discount * sel.qty) / line.qty), taxable: line.taxable, tax_rate_ppm: line.tax_rate_ppm, charges });
   }
   if (lines.length === 0) return { lines, amount_cents: ZERO, full: false };
   const remaining = sub(sale.paid_cents, sale.refunded_cents);

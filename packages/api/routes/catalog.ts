@@ -10,6 +10,7 @@ import {
   CatalogOrderInput,
   CategoryCreateInput,
   CategoryUpdateInput,
+  ComplianceSettingsInput,
   ItemCreateInput,
   ItemUpdateInput,
   LocationRatesInput,
@@ -30,6 +31,7 @@ import {
   merchantLocations,
   priceHistory,
   reorderCatalog,
+  setCompliance,
   setLocationRates,
   setQuickKeys,
   setReceiptSettings,
@@ -151,6 +153,19 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId, actor } = scope.resolve(r, true);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return setReceiptSettings(db, actor, merchantId, locationId, ReceiptSettingsInput.parse(r.body), trace(r));
+    });
+
+    // Tax & compliance rule set for a location (P10, ADR 0018).
+    s.get(`${p}/locations/:locationId/compliance`, async (r) => {
+      const { merchantId } = scope.resolve(r, false);
+      const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
+      return (await getCatalogSnapshot(db, merchantId, locationId)).compliance;
+    });
+
+    s.put(`${p}/locations/:locationId/compliance`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
+      return setCompliance(db, actor, merchantId, locationId, ComplianceSettingsInput.parse(r.body), trace(r));
     });
 
     s.put(`${p}/catalog/order`, async (r) => {
