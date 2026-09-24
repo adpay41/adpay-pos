@@ -3,9 +3,10 @@
  * own dual-price rate and tax rate. Registers pull the result as a versioned snapshot — server wins
  * on catalog (ADR 0002).
  */
-import { resolveDualPrice, type CatalogCategory, type CatalogItem, type CatalogSnapshot } from '@adpay/shared';
+import { resolveDualPrice, type CatalogCategory, type CatalogItem, type CatalogSnapshot, type TileColor } from '@adpay/shared';
 import type { Queryable } from '../db/db';
 import { notFound } from '../http/errors';
+import { mediaUrl } from './media';
 
 interface LocationRow {
   location_id: string;
@@ -32,6 +33,9 @@ interface ItemRow {
   taxable: boolean | null;
   min_age: number | null;
   barcodes: { barcode: string; pack_qty: number }[] | null;
+  color: TileColor | null;
+  image_id: string | null;
+  sort: number;
 }
 
 /** `merchantId` always comes from the caller's credential or an admin-scoped route, never the body. */
@@ -56,13 +60,17 @@ export async function getCatalogSnapshot(
   );
   const { rows: items } = await q.query<ItemRow>(
     `SELECT i.item_id, i.category_id, i.name, i.sku, i.upc, i.plu, i.cash_price_cents, i.card_price_cents,
-            i.cost_cents, i.open_price, i.sell_unit, i.pack_qty, i.active, c.taxable, c.min_age,
+            i.cost_cents, i.open_price, i.sell_unit, i.pack_qty, i.active, c.taxable, c.min_age, i.color, i.image_id, i.sort,
             (SELECT jsonb_agg(jsonb_build_object('barcode', b.barcode, 'pack_qty', b.pack_qty) ORDER BY b.barcode)
                FROM item_barcodes b WHERE b.item_id = i.item_id) AS barcodes
        FROM items i LEFT JOIN categories c ON c.category_id = i.category_id
       WHERE i.merchant_id = $1
-      ORDER BY c.sort NULLS LAST, i.name`,
+      ORDER BY c.sort NULLS LAST, i.sort, i.name`,
     [merchantId],
+  );
+  const { rows: favorites } = await q.query<{ item_id: string }>(
+    'SELECT item_id FROM location_quick_keys WHERE location_id = $1 ORDER BY position',
+    [locationId],
   );
 
   return {
@@ -95,8 +103,12 @@ export async function getCatalogSnapshot(
         sell_unit: i.sell_unit,
         pack_qty: i.pack_qty,
         active: i.active,
+        color: i.color,
+        image_url: i.image_id ? mediaUrl(i.image_id) : null,
+        sort: i.sort,
       };
     }),
+    quick_keys: favorites.map((f) => f.item_id),
   };
 }
 

@@ -13,7 +13,7 @@
  * Refuses to run with NODE_ENV=production.
  */
 import { randomUUID } from 'node:crypto';
-import { foldSale, parseRegisterEvent, resolveDualPrice, type RegisterEvent } from '@adpay/shared';
+import { foldSale, parseRegisterEvent, resolveDualPrice, type RegisterEvent, type TileColor } from '@adpay/shared';
 import { hashPassword, hashSetupCode } from '../auth/crypto';
 import type { DevicePrincipal } from '../auth/principal';
 import { loadDatabaseUrl } from '../config';
@@ -96,6 +96,11 @@ const COST_PERCENT: Record<string, number> = {
   Sandwiches: 40, Drinks: 55, Snacks: 60, Tobacco: 88, Lottery: 95, Grocery: 72, Household: 60,
 };
 
+/** Demo quick-key tile colors by category (palette keys; never red). */
+const TILE_BY_CATEGORY: Record<string, TileColor> = {
+  Sandwiches: 'orange', Drinks: 'blue', Snacks: 'yellow', Tobacco: 'brown', Lottery: 'purple', Grocery: 'teal', Household: 'gray',
+};
+
 async function seedCatalog(db: Db, org_id: string, merchant_id: string, upcStart: number): Promise<CatalogRow[]> {
   const rows: CatalogRow[] = [];
   let upc = upcStart;
@@ -106,15 +111,16 @@ async function seedCatalog(db: Db, org_id: string, merchant_id: string, upcStart
       [org_id, merchant_id, c.name, sort, c.taxable, c.min_age, c.color],
     );
     const category_id = cat[0]!.category_id;
-    for (const item of ITEMS[c.name] ?? []) {
+    for (const [itemSort, item] of (ITEMS[c.name] ?? []).entries()) {
       // Demo cost at a typical c-store cost ratio for the category, in integer cents.
       const cost = Math.floor((item.cash * (COST_PERCENT[c.name] ?? 65) + 50) / 100);
       const { rows: ins } = await db.query<{ item_id: string }>(
-        `INSERT INTO items (org_id, merchant_id, category_id, name, sku, upc, cash_price_cents, card_price_cents, sell_unit, pack_qty, attrs, cost_cents)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING item_id`,
+        `INSERT INTO items (org_id, merchant_id, category_id, name, sku, upc, cash_price_cents, card_price_cents, sell_unit, pack_qty, attrs, cost_cents, sort, color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING item_id`,
         [
           org_id, merchant_id, category_id, item.name, `SKU-${upc}`, syntheticUpc(upc), item.cash, item.card ?? null,
           item.pack ? 'pack' : 'each', item.pack ?? 1, JSON.stringify(item.pack ? { case_break: { units: item.pack } } : {}), cost,
+          itemSort, TILE_BY_CATEGORY[c.name] ?? null,
         ],
       );
       await db.query(
@@ -138,6 +144,17 @@ async function seedCatalog(db: Db, org_id: string, merchant_id: string, upcStart
     }
   }
   return rows;
+}
+
+/** A location's favorites: its best sellers (highest demo weight), up to 12, as the first key page. */
+async function seedFavorites(db: Db, location_id: string, catalog: CatalogRow[]) {
+  const top = [...catalog].sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name)).slice(0, 12);
+  await db.query(
+    `INSERT INTO location_quick_keys (org_id, merchant_id, location_id, item_id, position)
+     SELECT l.org_id, l.merchant_id, l.location_id, t.id, t.ord - 1
+       FROM locations l, unnest($2::uuid[]) WITH ORDINALITY AS t(id, ord) WHERE l.location_id = $1`,
+    [location_id, top.map((r) => r.item_id)],
+  );
 }
 
 // ── sales history ───────────────────────────────────────────────────────────────────────────
@@ -348,6 +365,8 @@ async function main() {
     await createRegister(db, { location_id: jc.location_id, name: 'Register 3 (new)' });
     const ast1 = await createRegister(db, { location_id: ast.location_id, name: 'Register 1' });
     const jsqCatalog = await seedCatalog(db, org.org_id, jsq.merchant_id, 10_000);
+    await seedFavorites(db, jc.location_id, jsqCatalog);
+    await seedFavorites(db, ast.location_id, jsqCatalog);
 
     // Tenant 2: a separate org, to show isolation.
     const org2 = await createOrg(db, 'Bayonne Corner Mart');
@@ -360,6 +379,7 @@ async function main() {
     });
     const bay1 = await createRegister(db, { location_id: bay.location_id, name: 'Register 1' });
     const bcmCatalog = await seedCatalog(db, org2.org_id, bcm.merchant_id, 20_000);
+    await seedFavorites(db, bay.location_id, bcmCatalog);
 
     const users: [string, string, string, string, string][] = [
       [org.org_id, jsq.merchant_id, 'owner', 'Nadia Haddad', '+12015550100'],

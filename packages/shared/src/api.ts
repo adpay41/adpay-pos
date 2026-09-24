@@ -2,6 +2,7 @@
  * Wire shapes shared by the API and its clients (admin, merchant app, register). Money fields are
  * integer cents; rates are integer ppm.
  */
+import type { TileColor } from './catalog';
 import type { PackId } from './packs';
 
 export type PrincipalKind = 'admin' | 'merchant_user' | 'device';
@@ -42,6 +43,12 @@ export interface CatalogItem {
   taxable: boolean;
   tax_rate_ppm: number;
   min_age: number | null;
+  /** Quick-key tile color, a `TileColor` from the fixed palette (never red); null = plain white. */
+  color: TileColor | null;
+  /** Path to the product photo on the API (`/media/:id`); null = text-only tile. */
+  image_url: string | null;
+  /** Order within its category on the quick-key grid (ties break by name). */
+  sort: number;
   sell_unit: 'each' | 'pack';
   pack_qty: number;
   active: boolean;
@@ -68,6 +75,8 @@ export interface CatalogSnapshot {
   generated_at: string;
   categories: CatalogCategory[];
   items: CatalogItem[];
+  /** This location's favorites, in tile order: the register's first quick-key page. */
+  quick_keys: string[];
 }
 
 export interface DeviceIdentity {

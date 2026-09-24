@@ -8,6 +8,8 @@
  * form; nothing here does float arithmetic on an amount.
  */
 import {
+  MAX_QUICK_KEYS,
+  TILE_COLORS,
   cents,
   formatUsd,
   parseUsdToCents,
@@ -19,9 +21,10 @@ import {
   type CatalogItem,
   type CatalogSnapshot,
   type PriceHistoryEntry,
+  type TileColor,
 } from '@adpay/shared';
 import { useMemo, useState, type FormEvent } from 'react';
-import { api } from '../lib/api';
+import { API_URL, api, shrinkPhoto, upload } from '../lib/api';
 import { ErrorBox, Money, When, useLoad } from './ui';
 
 interface LocationSummary {
@@ -87,6 +90,7 @@ export function CatalogEditor({ merchantId }: { merchantId: string }) {
           </div>
           <LocationPricing base={base} loc={loc} items={catalog.data.items} onSaved={saved} />
           <Categories base={base} categories={catalog.data.categories} items={catalog.data.items} onSaved={saved} />
+          <Favorites base={base} catalog={catalog.data} locationName={loc.name} onSaved={saved} />
           <Items
             catalog={catalog.data}
             onNew={() => setEditing('new')}
@@ -404,7 +408,10 @@ function Items({ catalog, onNew, onEdit }: { catalog: CatalogSnapshot; onNew: ()
             {rows.map((i) => (
               <tr key={i.item_id} className={`link${i.active ? '' : ' inactive'}`} onClick={() => onEdit(i)}>
                 <td>
-                  <strong>{i.name}</strong>
+                  <span className="item-name">
+                    <Thumb item={i} />
+                    <strong>{i.name}</strong>
+                  </span>
                 </td>
                 <td className="muted">{catName(i.category_id)}</td>
                 <td className="mono">
@@ -474,7 +481,24 @@ function ItemDrawer({
     pack_qty: String(item?.pack_qty ?? 1),
     barcodes: (item?.barcodes ?? []).map((b) => (b.pack_qty > 1 ? `${b.barcode} x${b.pack_qty}` : b.barcode)).join('\n'),
     active: item?.active ?? true,
+    color: (item?.color ?? '') as TileColor | '',
   });
+  // The photo: unchanged (undefined), replaced by a new upload, or removed (null).
+  const [image, setImage] = useState<{ media_id: string; url: string } | null | undefined>(undefined);
+  const imageUrl = image === undefined ? (item?.image_url ?? null) : (image?.url ?? null);
+
+  async function choosePhoto(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    setBusy(true);
+    try {
+      setImage(await upload<{ media_id: string; url: string }>(`${base}/media`, await shrinkPhoto(file)));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const history = useLoad(
@@ -528,6 +552,8 @@ function ItemDrawer({
       pack_qty: f.sell_unit === 'pack' ? packQty : 1,
       barcodes,
       active: f.active,
+      color: f.color || null,
+      ...(image === undefined ? {} : { image_id: image?.media_id ?? null }),
     };
   }
 
@@ -580,6 +606,42 @@ function ItemDrawer({
               ))}
             </select>
           </label>
+
+          <div className="span2 photo-row">
+            {imageUrl ? <img src={`${API_URL}${imageUrl}`} alt="" className="photo" /> : <div className="photo empty">No photo</div>}
+            <div>
+              <label className="button-like">
+                {imageUrl ? 'Replace photo' : 'Add photo'}
+                <input type="file" accept="image/*" hidden onChange={(e) => void choosePhoto(e.target.files?.[0])} />
+              </label>{' '}
+              {imageUrl && (
+                <button type="button" onClick={() => setImage(null)}>
+                  Remove
+                </button>
+              )}
+              <div className="muted tiny">Cropped square and shrunk to 512px before upload.</div>
+            </div>
+          </div>
+
+          <div className="field span2">
+            Tile color on the register
+            <span className="swatches">
+              <button type="button" className={`swatch${f.color === '' ? ' on' : ''}`} onClick={() => set('color', '')} title="None">
+                none
+              </button>
+              {(Object.keys(TILE_COLORS) as TileColor[]).map((k) => (
+                <button
+                  type="button"
+                  key={k}
+                  title={TILE_COLORS[k].label}
+                  aria-label={TILE_COLORS[k].label}
+                  className={`swatch${f.color === k ? ' on' : ''}`}
+                  style={{ background: TILE_COLORS[k].fill, borderTop: `6px solid ${TILE_COLORS[k].stripe}` }}
+                  onClick={() => set('color', k)}
+                />
+              ))}
+            </span>
+          </div>
 
           <label className="check span2">
             <input type="checkbox" checked={f.open_price} onChange={(e) => set('open_price', e.target.checked)} /> Open price — the cashier
@@ -703,6 +765,114 @@ function ItemDrawer({
           </div>
         )}
       </aside>
+    </div>
+  );
+}
+
+function Thumb({ item }: { item: CatalogItem }) {
+  if (item.image_url) return <img src={`${API_URL}${item.image_url}`} alt="" className="thumb" />;
+  const palette = item.color ? TILE_COLORS[item.color] : null;
+  return <span className="thumb" style={palette ? { background: palette.fill, borderTop: `4px solid ${palette.stripe}` } : undefined} />;
+}
+
+/** The location's favorites: the register's first page of quick keys, in order. */
+function Favorites({
+  base,
+  catalog,
+  locationName,
+  onSaved,
+}: {
+  base: string;
+  catalog: CatalogSnapshot;
+  locationName: string;
+  onSaved: (msg: string) => void;
+}) {
+  const byId = useMemo(() => new Map(catalog.items.map((i) => [i.item_id, i])), [catalog.items]);
+  const [ids, setIds] = useState<string[]>(catalog.quick_keys);
+  const version = `${catalog.location_id}:${catalog.catalog_version}`;
+  const [key, setKey] = useState(version);
+  if (key !== version) {
+    setKey(version);
+    setIds(catalog.quick_keys);
+  }
+  const [pick, setPick] = useState('');
+  const [error, setError] = useState<unknown>(null);
+  const dirty = ids.join() !== catalog.quick_keys.join();
+
+  const move = (n: number, d: -1 | 1) =>
+    setIds((prev) => {
+      const next = [...prev];
+      if (n + d < 0 || n + d >= next.length) return prev;
+      [next[n], next[n + d]] = [next[n + d]!, next[n]!];
+      return next;
+    });
+
+  async function save() {
+    setError(null);
+    try {
+      await api(`${base}/locations/${catalog.location_id}/quick-keys`, { method: 'PUT', body: { item_ids: ids } });
+      onSaved(`${locationName}: favorites saved (${ids.length})`);
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h2>
+          Favorites at {locationName} <span className="muted">({ids.length} of {MAX_QUICK_KEYS})</span>
+        </h2>
+        <button className="primary" disabled={!dirty} onClick={() => void save()}>
+          Save favorites
+        </button>
+      </div>
+      <p className="muted" style={{ marginTop: 0 }}>
+        The register opens on this page of keys, in this order.
+      </p>
+      <ol className="favorites">
+        {ids.map((id, n) => {
+          const i = byId.get(id);
+          if (!i) return null;
+          return (
+            <li key={id} className={i.active ? '' : 'inactive'}>
+              <Thumb item={i} /> {i.name}
+              <span className="spacer" />
+              <button onClick={() => move(n, -1)} aria-label={`Move ${i.name} up`}>
+                ↑
+              </button>
+              <button onClick={() => move(n, 1)} aria-label={`Move ${i.name} down`}>
+                ↓
+              </button>
+              <button onClick={() => setIds((p) => p.filter((x) => x !== id))} aria-label={`Remove ${i.name}`}>
+                ✕
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="inline">
+        <select value={pick} onChange={(e) => setPick(e.target.value)}>
+          <option value="">Add an item…</option>
+          {catalog.items
+            .filter((i) => i.active && !ids.includes(i.item_id))
+            .map((i) => (
+              <option key={i.item_id} value={i.item_id}>
+                {i.name}
+              </option>
+            ))}
+        </select>
+        <button
+          disabled={!pick || ids.length >= MAX_QUICK_KEYS}
+          onClick={() => {
+            setIds((p) => [...p, pick]);
+            setPick('');
+          }}
+        >
+          Add
+        </button>
+      </div>
+      <ErrorBox error={error} />
     </div>
   );
 }

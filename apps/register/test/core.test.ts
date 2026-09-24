@@ -21,7 +21,7 @@ function item(name: string, cash: number, card: number, extra: Partial<CatalogIt
   return {
     item_id: randomUUID(), category_id: null, name, sku: null, upc: null, plu: null, barcodes: [], cash_price_cents: cash,
     card_price_cents: card, card_price_override: false, open_price: false, cost_cents: null, taxable: true, tax_rate_ppm: 66_250,
-    min_age: null, sell_unit: 'each', pack_qty: 1, active: true,
+    min_age: null, sell_unit: 'each', pack_qty: 1, active: true, color: null, image_url: null, sort: 0,
     ...extra,
   };
 }
@@ -72,7 +72,7 @@ class FakeServer implements Transport {
     this.pulls++;
     return {
       merchant_id: tenancy.merchant_id, location_id: tenancy.location_id, catalog_version: this.version, dual_price_rate_ppm: 40_000,
-      tax_rate_ppm: 66_250, generated_at: new Date().toISOString(), categories: [], items: this.items,
+      tax_rate_ppm: 66_250, generated_at: new Date().toISOString(), categories: [], items: this.items, quick_keys: [],
     };
   }
 

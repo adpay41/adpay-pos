@@ -1,19 +1,17 @@
 /**
- * AD Pay merchant app — step 1 shell: phone + OTP login against the real API, then today / week /
- * month sales (by tender, hour and register), the latest tickets and the catalog as posted.
- * Item edits, alerts and the live feed arrive in step 5; this exists now so the owner's view of the
- * data can be checked as the foundation is built.
+ * AD Pay merchant app: phone + OTP login against the real API, then today / week / month sales (by
+ * tender, hour and register), the latest tickets, and the catalog — items with photos, favorites,
+ * categories and dual pricing, pushed to the registers (build plan P2). Alerts and the live feed
+ * arrive in later phases.
  */
-import { cents, formatUsd, type CatalogSnapshot, type SaleListRow, type SalesSummary } from '@adpay/shared';
+import { type SaleListRow, type SalesSummary } from '@adpay/shared';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api, tokenStore } from './api';
+import { CatalogTab } from './catalog';
+import { C, usd } from './theme';
 
-const C = { red: '#c8102e', black: '#111', ink: '#1d1d1d', muted: '#6b6b6b', line: '#e4e4e4', ground: '#f6f6f6', green: '#0a7f3f' };
-
-/** Money is formatted only at the edge; never red. */
-const usd = (v: number) => formatUsd(cents(v));
 
 export default function App() {
   const [token, setToken] = useState<string | null | undefined>(undefined);
@@ -165,7 +163,7 @@ function Home({ token, onUnauthorized }: { token: string; onUnauthorized: () => 
       </View>
       {tab === 'sales' && <SalesTab token={token} />}
       {tab === 'tickets' && <TicketsTab token={token} />}
-      {tab === 'items' && <ItemsTab token={token} />}
+      {tab === 'items' && <CatalogTab token={token} />}
     </View>
   );
 }
@@ -284,36 +282,6 @@ function TicketsTab({ token }: { token: string }) {
             </Text>
           </View>
           {t.status === 'completed' ? <Text style={s.money}>{usd(t.total_cents)}</Text> : <Text style={s.voided}>{t.status}</Text>}
-        </View>
-      ))}
-    </ScrollView>
-  );
-}
-
-function ItemsTab({ token }: { token: string }) {
-  const { data, error } = useApi<CatalogSnapshot>('/merchant/catalog', token);
-  return (
-    <ScrollView contentContainerStyle={s.page}>
-      {error ? <Text style={s.error}>{error}</Text> : null}
-      {!data ? <ActivityIndicator /> : null}
-      {data?.categories.map((c) => (
-        <View key={c.category_id} style={s.card}>
-          <Text style={s.label}>
-            {c.name}
-            {c.min_age ? `  ·  ${c.min_age}+` : ''}
-            {!c.taxable ? '  ·  non-taxable' : ''}
-          </Text>
-          {data.items
-            .filter((i) => i.category_id === c.category_id)
-            .map((i) => (
-              <View key={i.item_id} style={s.line}>
-                <Text style={s.lineName}>{i.name}</Text>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={s.money}>{usd(i.cash_price_cents)} cash</Text>
-                  <Text style={s.mutedSmall}>{usd(i.card_price_cents)} card</Text>
-                </View>
-              </View>
-            ))}
         </View>
       ))}
     </ScrollView>

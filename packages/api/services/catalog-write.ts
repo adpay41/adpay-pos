@@ -7,12 +7,13 @@
  * `merchantId` always comes from the caller's credential (merchant user) or an admin-scoped route;
  * every lookup is filtered by it, so an id from another merchant is a 404, never a cross-tenant write.
  */
-import type { CategoryCreateInput, CategoryUpdateInput, ItemCreate, ItemUpdate, LocationRatesInput, PriceHistoryEntry } from '@adpay/shared';
+import type { CategoryCreateInput, CategoryUpdateInput, ItemCreate, ItemUpdate, LocationRatesInput, MediaType, PriceHistoryEntry } from '@adpay/shared';
 import type { z } from 'zod';
 import type { AdminPrincipal, MerchantUserPrincipal } from '../auth/principal';
 import type { Db, Queryable } from '../db/db';
 import { badRequest, notFound } from '../http/errors';
 import { audit } from './audit';
+import { mediaUrl, pgMediaStore } from './media';
 
 export type CatalogActor = AdminPrincipal | MerchantUserPrincipal;
 
@@ -39,6 +40,11 @@ export async function catalogVersion(q: Queryable, merchantId: string): Promise<
   const { rows } = await q.query<{ catalog_version: number }>('SELECT catalog_version FROM merchants WHERE merchant_id = $1', [merchantId]);
   if (!rows[0]) throw notFound('Merchant not found');
   return rows[0].catalog_version;
+}
+
+async function assertImage(q: Queryable, merchantId: string, imageId: string | null | undefined) {
+  if (!imageId) return;
+  if (!(await pgMediaStore.owns(q, merchantId, imageId))) throw badRequest('That photo does not belong to this merchant');
 }
 
 async function assertCategory(q: Queryable, merchantId: string, categoryId: string | null | undefined) {
@@ -86,13 +92,18 @@ export async function createItem(
   return db.tx(async (q) => {
     const m = await merchantFor(q, merchantId);
     await assertCategory(q, merchantId, input.category_id);
+    await assertImage(q, merchantId, input.image_id);
+    // New items go to the end of their category's keys unless an explicit position is given.
     const { rows } = await q.query<{ item_id: string }>(
       `INSERT INTO items (org_id, merchant_id, category_id, name, sku, upc, plu, cash_price_cents, card_price_cents,
-                          cost_cents, open_price, sell_unit, pack_qty, active, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING item_id`,
+                          cost_cents, open_price, sell_unit, pack_qty, active, updated_by, color, image_id, sort)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+               coalesce($18, (SELECT coalesce(max(sort), -1) + 1 FROM items WHERE merchant_id = $2 AND category_id IS NOT DISTINCT FROM $3)))
+       RETURNING item_id`,
       [
         m.org_id, m.merchant_id, input.category_id, input.name, input.sku, input.upc, input.plu, input.cash_price_cents,
         input.card_price_cents, input.cost_cents, input.open_price, input.sell_unit, input.pack_qty, input.active, actorId(actor),
+        input.color, input.image_id, input.sort ?? null,
       ],
     );
     const itemId = rows[0]!.item_id;
@@ -125,11 +136,14 @@ interface ItemRowFull {
   sell_unit: 'each' | 'pack';
   pack_qty: number;
   active: boolean;
+  color: string | null;
+  image_id: string | null;
+  sort: number;
 }
 
 const UPDATABLE = [
   'name', 'category_id', 'cash_price_cents', 'card_price_cents', 'cost_cents', 'upc', 'plu', 'sku',
-  'open_price', 'sell_unit', 'pack_qty', 'active',
+  'open_price', 'sell_unit', 'pack_qty', 'active', 'color', 'image_id', 'sort',
 ] as const;
 
 export async function updateItem(
@@ -144,13 +158,14 @@ export async function updateItem(
     const m = await merchantFor(q, merchantId);
     const { rows } = await q.query<ItemRowFull>(
       `SELECT item_id, name, category_id, cash_price_cents, card_price_cents, cost_cents, upc, plu, sku, open_price,
-              sell_unit, pack_qty, active
+              sell_unit, pack_qty, active, color, image_id, sort
          FROM items WHERE item_id = $1 AND merchant_id = $2 FOR UPDATE`,
       [itemId, merchantId],
     );
     const before = rows[0];
     if (!before) throw notFound('Item not found');
     if (patch.category_id !== undefined) await assertCategory(q, merchantId, patch.category_id);
+    if (patch.image_id !== undefined) await assertImage(q, merchantId, patch.image_id);
 
     const after: ItemRowFull = { ...before };
     const changed: Record<string, { from: unknown; to: unknown }> = {};
@@ -304,4 +319,118 @@ export async function merchantLocations(q: Queryable, merchantId: string): Promi
     [merchantId],
   );
   return rows;
+}
+
+/**
+ * Replace a location's favorites (the register's first quick-key page) with `itemIds`, in order.
+ * Every id must be one of this merchant's items; the whole list is written in one transaction.
+ */
+export async function setQuickKeys(
+  db: Db,
+  actor: CatalogActor,
+  merchantId: string,
+  locationId: string,
+  itemIds: string[],
+  traceId: string,
+): Promise<{ location_id: string; item_ids: string[]; catalog_version: number }> {
+  return db.tx(async (q) => {
+    const { rows: locs } = await q.query<{ org_id: string }>(
+      'SELECT org_id FROM locations WHERE location_id = $1 AND merchant_id = $2 FOR UPDATE',
+      [locationId, merchantId],
+    );
+    const loc = locs[0];
+    if (!loc) throw notFound('Location not found');
+    if (itemIds.length > 0) {
+      const { rows } = await q.query<{ item_id: string }>('SELECT item_id FROM items WHERE merchant_id = $1 AND item_id = ANY($2::uuid[])', [
+        merchantId,
+        itemIds,
+      ]);
+      if (rows.length !== itemIds.length) throw badRequest('Every favorite must be an item in this catalog');
+    }
+    const { rows: prev } = await q.query<{ item_id: string }>(
+      'SELECT item_id FROM location_quick_keys WHERE location_id = $1 ORDER BY position',
+      [locationId],
+    );
+    await q.query('DELETE FROM location_quick_keys WHERE location_id = $1', [locationId]);
+    if (itemIds.length > 0) {
+      await q.query(
+        `INSERT INTO location_quick_keys (org_id, merchant_id, location_id, item_id, position)
+         SELECT $1, $2, $3, id, ord - 1 FROM unnest($4::uuid[]) WITH ORDINALITY AS t(id, ord)`,
+        [loc.org_id, merchantId, locationId, itemIds],
+      );
+    }
+    const version = await bumpCatalogVersion(q, merchantId);
+    await audit(q, {
+      actor,
+      action: 'location.quick_keys_set',
+      tenancy: { org_id: loc.org_id, merchant_id: merchantId, location_id: locationId },
+      target: locationId,
+      details: { from: prev.map((r) => r.item_id), to: itemIds, catalog_version: version },
+      trace_id: traceId,
+    });
+    return { location_id: locationId, item_ids: itemIds, catalog_version: version };
+  });
+}
+
+/** Reorder categories and/or items in one write: each id's `sort` becomes its index in the list. */
+export async function reorderCatalog(
+  db: Db,
+  actor: CatalogActor,
+  merchantId: string,
+  input: { categories?: string[] | undefined; items?: string[] | undefined },
+  traceId: string,
+): Promise<{ catalog_version: number }> {
+  return db.tx(async (q) => {
+    const m = await merchantFor(q, merchantId);
+    for (const [table, key, ids] of [
+      ['categories', 'category_id', input.categories],
+      ['items', 'item_id', input.items],
+    ] as const) {
+      if (!ids?.length) continue;
+      if (new Set(ids).size !== ids.length) throw badRequest(`Each ${key} may appear only once`);
+      const { rows } = await q.query<{ n: number }>(
+        `UPDATE ${table} t SET sort = u.ord - 1
+           FROM unnest($2::uuid[]) WITH ORDINALITY AS u(id, ord)
+          WHERE t.${key} = u.id AND t.merchant_id = $1
+          RETURNING 1 AS n`,
+        [merchantId, ids],
+      );
+      if (rows.length !== ids.length) throw badRequest(`Some ${table} are not in this catalog`);
+    }
+    const version = await bumpCatalogVersion(q, merchantId);
+    await audit(q, {
+      actor,
+      action: 'catalog.reordered',
+      tenancy: m,
+      details: { categories: input.categories?.length ?? 0, items: input.items?.length ?? 0, catalog_version: version },
+      trace_id: traceId,
+    });
+    return { catalog_version: version };
+  });
+}
+
+/** Store an uploaded product photo for this merchant (validated by the caller) and audit it. */
+export async function uploadMedia(
+  db: Db,
+  actor: CatalogActor,
+  merchantId: string,
+  bytes: Buffer,
+  contentType: MediaType,
+  traceId: string,
+): Promise<{ media_id: string; url: string }> {
+  return db.tx(async (q) => {
+    const m = await merchantFor(q, merchantId);
+    const r = await pgMediaStore.put(q, { ...m, bytes, content_type: contentType, created_by: actorId(actor), trace_id: traceId });
+    if (r.created) {
+      await audit(q, {
+        actor,
+        action: 'media.uploaded',
+        tenancy: m,
+        target: r.media_id,
+        details: { content_type: contentType, byte_size: bytes.length },
+        trace_id: traceId,
+      });
+    }
+    return { media_id: r.media_id, url: mediaUrl(r.media_id) };
+  });
 }

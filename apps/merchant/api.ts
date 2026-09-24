@@ -18,9 +18,10 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, token: string | null, body?: unknown): Promise<T> {
+/** GET without a body, POST with one; pass `method` for PATCH / PUT. */
+export async function api<T>(path: string, token: string | null, body?: unknown, method?: 'POST' | 'PATCH' | 'PUT'): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
+    method: method ?? (body === undefined ? 'GET' : 'POST'),
     headers: {
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -31,3 +32,18 @@ export async function api<T>(path: string, token: string | null, body?: unknown)
   if (!res.ok) throw new ApiError(res.status, data.message ?? `HTTP ${res.status}`);
   return data as T;
 }
+
+/** POST a raw binary body (a product photo). */
+export async function upload<T>(path: string, token: string, body: Blob, contentType: string): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': contentType, authorization: `Bearer ${token}` },
+    body,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data.message ?? `HTTP ${res.status}`);
+  return data as T;
+}
+
+/** Absolute URL for a path the API returned (e.g. an item's `image_url`). */
+export const apiUrl = (path: string) => `${API_URL}${path}`;
