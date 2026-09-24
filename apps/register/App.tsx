@@ -92,6 +92,9 @@ function Pair({ onPaired }: { onPaired: (token: string) => void }) {
           Enter the setup code from the admin back-office (Merchants → register → Setup code). In production this arrives as a QR the
           owner scans.
         </Text>
+        {__DEV__ ? (
+          <Text style={s.muted}>Local demo: JSQ3-DEMO (Jersey City · Register 3). More codes are in the README.</Text>
+        ) : null}
         <TextInput
           style={s.codeInput}
           value={code}

@@ -43,6 +43,8 @@ export interface Config {
   jwtIssuer: string;
   deviceTokenTtlDays: number;
   otpDelivery: 'log' | 'twilio';
+  /** The fixed OTP used when otpDelivery is 'log' (local dev only). */
+  devOtpCode: string;
   corsOrigins: string[];
   paymentProvider: string;
 }
@@ -59,6 +61,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     jwtIssuer: str('JWT_ISSUER', 'adpay'),
     deviceTokenTtlDays: int('DEVICE_TOKEN_TTL_DAYS', 365),
     otpDelivery: (process.env.OTP_DELIVERY as Config['otpDelivery']) || 'log',
+    devOtpCode: str('DEV_OTP_CODE', '123456'),
     corsOrigins: str('CORS_ORIGINS', 'http://localhost:3001,http://localhost:8081,http://localhost:8082')
       .split(',')
       .map((s) => s.trim())
@@ -67,6 +70,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     ...overrides,
   };
   if (config.jwtSecret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
+  if (!/^\d{6}$/.test(config.devOtpCode)) throw new Error('DEV_OTP_CODE must be 6 digits');
   if (config.env === 'production' && config.otpDelivery === 'log') {
     throw new Error('OTP_DELIVERY=log is development-only; it would expose login codes in production');
   }

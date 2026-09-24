@@ -20,12 +20,40 @@ npm run dev        # or: pnpm dev
 From a clean clone this creates `.env` (local values, fresh JWT secret, gitignored), installs,
 starts Postgres 16 + Redis in Docker, migrates, seeds a demo c-store and opens:
 
+### How to log in (local demo — fixed values)
+
 | What | URL | Sign in with |
 | --- | --- | --- |
-| Admin back-office | http://localhost:3001 | `admin@adpay.local` / `adpay-demo` |
-| Merchant app | http://localhost:8081 | `(201) 555-0100`, then the code shown on screen |
-| Register | http://localhost:8082 | a setup code — printed by `pnpm dev`, or Admin → Merchants → Setup code |
+| Admin back-office | http://localhost:3001 | `admin@adpay.local` / `adpay-demo` (AD Pay platform admin, sees every tenant) |
+| Merchant app | http://localhost:8081 | phone `2015550100`, then code **`123456`** |
+| Register | http://localhost:8082 | setup code **`JSQ3-DEMO`** |
 | API | http://localhost:3000/health | — |
+
+**Merchant app phones.** Dev mode sends no SMS; the code is always `123456` and is also shown on screen.
+
+| Phone | Who | Sees |
+| --- | --- | --- |
+| `2015550100` | Nadia Haddad, owner | Journal Square Deli & Grocery |
+| `2015550101` | Luis Ortega, manager | Journal Square Deli & Grocery |
+| `2015550142` | Kevin Walsh, owner | Bayonne Corner Mart (a separate tenant) |
+
+**Register setup codes.** Each code pairs one register:
+
+| Code | Register |
+| --- | --- |
+| `JSQ3-DEMO` | Journal Square · Jersey City · Register 3 (new, no sales history) |
+| `JSQ1-DEMO` | Journal Square · Jersey City · Register 1 |
+| `JSQ2-DEMO` | Journal Square · Jersey City · Register 2 |
+| `AST1-DEMO` | Journal Square · Astoria NY · Register 1 |
+| `BAY1-DEMO` | Bayonne Corner Mart · Register 1 |
+
+A code works once. Every `npm run dev` re-arms all five. To re-arm them without restarting, run
+`npm run logins`, which also prints this list. Pairing a register again (with a code, from any browser)
+signs out whichever device held it before. For a register you created yourself, use
+Admin → Merchants → **Setup code**, which issues a random 24-hour code.
+
+These values exist only in development: the API refuses to start in production with dev-mode OTP,
+and the seed refuses to run against a production database.
 
 The demo is **Journal Square Deli & Grocery** (Jersey City NJ + Astoria NY, 4 registers, ~80 items,
 three weeks of sales history) and a separate tenant, **Bayonne Corner Mart** (`(201) 555-0142`), so
