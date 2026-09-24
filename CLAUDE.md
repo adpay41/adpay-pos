@@ -78,6 +78,7 @@ purpose: support is one person for the first 200 stores.
 | [0006](docs/decisions/0006-finix-sandbox-entity-migration.md) | **Finix sandbox is AD11's — migration debt before production** |
 | [0007](docs/decisions/0007-local-first-development.md) | Whole stack runs locally — Docker Postgres/Redis, `pnpm dev`, no AWS, no cost |
 | [0008](docs/decisions/0008-expo-for-react-native-apps.md) | Expo (SDK 57) for the RN apps; web target for development |
+| [0009](docs/decisions/0009-register-core.md) | Register core: expo-sqlite event log, cart = fold of events, sync, text receipts, display channel |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

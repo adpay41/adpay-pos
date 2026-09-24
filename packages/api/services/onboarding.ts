@@ -113,7 +113,8 @@ export async function issueSetupCode(
 export async function deviceIdentity(q: Queryable, registerId: string): Promise<DeviceIdentity> {
   const { rows } = await q.query<DeviceIdentity>(
     `SELECT r.org_id, r.merchant_id, r.location_id, r.register_id, m.name AS merchant_name,
-            l.name AS location_name, r.name AS register_name, m.enabled_packs
+            l.name AS location_name, r.name AS register_name, m.enabled_packs,
+            l.address_line1, l.city, l.state, l.postal_code, l.timezone
        FROM registers r JOIN locations l ON l.location_id = r.location_id JOIN merchants m ON m.merchant_id = r.merchant_id
       WHERE r.register_id = $1`,
     [registerId],
