@@ -11,10 +11,30 @@ import { getSaleTimeline } from '../services/events';
 import { tenancyTree } from '../services/onboarding';
 import { cashReport } from '../services/cash';
 import { recentSales, salesCompare, salesSummary } from '../services/reports';
+import { merchantConfig, postSupportMessage, supportThread } from '../services/merchant-config';
+import { SupportMessageInput } from '@adpay/shared';
+import { forbidden } from '../http/errors';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
   app.addHook('preHandler', requireMerchantUser);
+
+  // Support chat with AD Pay (P12b, L40): anyone on the store's staff with app access, unless the flag is off.
+  const supportOn = async (merchantId: string) => {
+    if (!(await merchantConfig(db, merchantId)).flags.support_chat) throw forbidden('Support chat is not enabled for this store');
+  };
+  app.get('/merchant/support', async (request) => {
+    const me = asMerchantUser(request);
+    await supportOn(me.merchant_id);
+    return { messages: await supportThread(db, me.merchant_id, 'merchant') };
+  });
+  app.post('/merchant/support', async (request, reply) => {
+    const me = asMerchantUser(request);
+    await supportOn(me.merchant_id);
+    reply.status(201);
+    return postSupportMessage(db, me, me.merchant_id, SupportMessageInput.parse(request.body).body, request.logContext.trace_id);
+  });
+  app.get('/merchant/config', async (request) => merchantConfig(db, asMerchantUser(request).merchant_id));
 
   app.get('/merchant/overview', async (request) => {
     const me = asMerchantUser(request);

@@ -16,6 +16,7 @@ import {
   effectiveMinAge,
   feeItem,
   lineTotal,
+  resolveFlags,
   localDate,
   lookupBarcode,
   searchCatalog,
@@ -110,6 +111,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   }, [session.sale, modal.kind, display, rt.identity.merchant_name]);
 
   const sale = session.sale;
+  // Feature flags for this merchant (P12b); an older snapshot without them means everything on.
+  const flags = resolveFlags(catalog.flags ?? {});
   const cardOk = sync?.online ?? false;
   // Items created here but not yet in a server snapshot are overlaid, so they ring up offline (P5).
   const [pendingCount, setPendingCount] = useState(0);
@@ -168,8 +171,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     if (hit) {
       rt.log.info('scan', { matched: hit.matched, qty: hit.qty });
       ring(hit.item, { qty: hit.qty, entry: 'scan' });
-    } else if (priceCheck) {
-      setModal({ kind: 'error', message: `Barcode ${code} isn’t in the catalog.` });
+    } else if (priceCheck || !flags.register_item_create) {
+      setModal({ kind: 'error', message: `Barcode ${code} isn’t in the catalog.${priceCheck ? '' : ' Ask the owner to add it.'}` });
     } else {
       rt.log.info('unknown barcode scanned', { code });
       guarded('item.create', sale?.sale_id ?? null, async () => setModal({ kind: 'unknown', code }));
@@ -519,7 +522,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 </Text>
               </View>
             ) : null}
-            {!cardOk && sale?.lines.length ? (
+            {flags.card_payments && !cardOk && sale?.lines.length ? (
               // Bible 1.7: when the card path is down, say so plainly and keep selling for cash.
               <Pressable style={s.cashOnly} onPress={() => rt.sync.kick()}>
                 <Text style={s.cashOnlyText}>Cash only right now — no connection to the card machine. Tap to retry.</Text>
@@ -534,6 +537,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               >
                 <Text style={s.payText}>Cash</Text>
               </Pressable>
+              {flags.card_payments ? (
               <Pressable
                 style={[s.payBtn, (!sale?.lines.length || !cardOk) && s.disabled]}
                 disabled={!sale?.lines.length || !cardOk}
@@ -542,6 +546,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 <Text style={s.payText}>Card</Text>
                 {!cardOk ? <Text style={s.paySub}>offline</Text> : null}
               </Pressable>
+              ) : null}
             </View>
             {bagFees.length ? (
               // Bag fees in force today (P10): one tap adds a bag; tap again for another.
@@ -569,9 +574,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Pressable style={[s.ghost, !session.lastCompleted && s.disabled]} disabled={!session.lastCompleted} onPress={() => void reprintLast()}>
                 <Text>Reprint last</Text>
               </Pressable>
-              <Pressable style={[s.ghost, !sale?.lines.length && s.disabled]} disabled={!sale?.lines.length} onPress={() => void run(() => rt.session.hold())}>
-                <Text>Hold</Text>
-              </Pressable>
+              {flags.hold_tickets ? (
+                <Pressable style={[s.ghost, !sale?.lines.length && s.disabled]} disabled={!sale?.lines.length} onPress={() => void run(() => rt.session.hold())}>
+                  <Text>Hold</Text>
+                </Pressable>
+              ) : null}
               {session.parked.length ? (
                 <Pressable style={[s.ghost, s.ghostOn]} onPress={() => setModal({ kind: 'held' })}>
                   <Text style={{ color: '#fff' }}>Held ({session.parked.length})</Text>
@@ -580,9 +587,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Pressable style={s.ghost} onPress={() => setModal({ kind: 'tickets' })}>
                 <Text>Tickets</Text>
               </Pressable>
-              <Pressable style={[s.ghost, priceCheck && s.ghostOn]} onPress={() => setPriceCheck((v) => !v)}>
-                <Text style={priceCheck ? { color: '#fff' } : undefined}>Price check</Text>
-              </Pressable>
+              {flags.price_check ? (
+                <Pressable style={[s.ghost, priceCheck && s.ghostOn]} onPress={() => setPriceCheck((v) => !v)}>
+                  <Text style={priceCheck ? { color: '#fff' } : undefined}>Price check</Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         </View>
@@ -615,7 +624,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       {modal.kind === 'cash' && sale && (
         <CashModal
           total={sale.remaining_cash_cents}
-          allowPart={cardOk}
+          allowPart={cardOk && flags.card_payments}
           onCancel={() => setModal({ kind: 'none' })}
           onTender={(amt) => void tender(amt)}
           onPart={(amt) => void tender(amt, true)}

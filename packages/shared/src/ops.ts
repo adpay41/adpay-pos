@@ -4,6 +4,7 @@
  * 200 stores; everything here exists so that person can see and fix a register without a truck roll.
  */
 import { z } from 'zod';
+import type { SupportMessage } from './flags';
 import { Uuid } from './tenancy';
 
 /** How often a register reports in, and when the office starts to worry. */
@@ -260,6 +261,8 @@ export type ServerMessage =
     }
   | { type: 'register'; register_id: string; merchant_id: string; last_heartbeat_at: string }
   | { type: 'alert'; alert: Alert }
+  /** A support chat message (P12b), to that merchant's users and to AD Pay. */
+  | { type: 'support'; message: SupportMessage }
   | { type: 'error'; message: string };
 
 export const ClientAuthMessage = z.strictObject({ type: z.literal('auth'), token: z.string().min(10).max(4000) });

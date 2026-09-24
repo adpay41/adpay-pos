@@ -44,6 +44,7 @@ const NAV = [
   { href: '/onboarding', label: 'Onboarding' },
   { href: '/fleet', label: 'Fleet' },
   { href: '/alerts', label: 'Alerts' },
+  { href: '/support', label: 'Support' },
   { href: '/sales', label: 'Sales' },
   { href: '/audit', label: 'Audit log' },
 ];

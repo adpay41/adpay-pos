@@ -8,6 +8,8 @@ import {
   DEFAULT_COMPLIANCE,
   DEFAULT_RECEIPT_SETTINGS,
   effectiveMinAge,
+  resolveFlags,
+  type PackId,
   localDate,
   minAgesFor,
   taxRateOn,
@@ -33,6 +35,8 @@ interface LocationRow {
   catalog_version: number;
   receipt_settings: unknown;
   compliance: unknown;
+  feature_flags: unknown;
+  enabled_packs: PackId[];
   state: string | null;
   timezone: string;
 }
@@ -81,7 +85,7 @@ export async function getCatalogSnapshot(
 ): Promise<CatalogSnapshot> {
   const { rows: locs } = await q.query<LocationRow>(
     `SELECT l.location_id, l.merchant_id, l.tax_rate_ppm, l.dual_price_rate_ppm, m.catalog_version, l.receipt_settings,
-            l.compliance, l.state, l.timezone
+            l.compliance, l.state, l.timezone, m.feature_flags, m.enabled_packs
        FROM locations l JOIN merchants m ON m.merchant_id = l.merchant_id
       WHERE l.location_id = $1 AND l.merchant_id = $2`,
     [locationId, merchantId],
@@ -153,6 +157,8 @@ export async function getCatalogSnapshot(
     }),
     quick_keys: favorites.map((f) => f.item_id),
     compliance: { ...compliance, state: loc.state, min_ages: minAges },
+    flags: resolveFlags(loc.feature_flags),
+    enabled_packs: loc.enabled_packs,
     receipt: (() => {
       const r = receiptSettingsOf(loc.receipt_settings);
       return { ...r, logo_url: r.logo_media_id ? mediaUrl(r.logo_media_id) : null };

@@ -4,7 +4,7 @@
  * categories and dual pricing, pushed to the registers (build plan P2). Today's view is live (P11):
  * a sales ticker by register and cashier, and today vs yesterday vs last week at the same time.
  */
-import { type MembershipSummary, type Permission, type SaleListRow, type SalesCompare, type SalesSummary } from '@adpay/shared';
+import { type FeatureFlags, type MembershipSummary, type Permission, type SaleListRow, type SalesCompare, type SalesSummary } from '@adpay/shared';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -14,6 +14,7 @@ import { CashTab } from './cash';
 import { CatalogTab } from './catalog';
 import { CashierCard, CompareCard, LiveTicker, tickerFromList, tickerFromMessage, useRealtime, type TickerRow } from './live';
 import { StaffTab, type Me } from './staff';
+import { SupportTab } from './support';
 import { C, usd } from './theme';
 
 
@@ -149,8 +150,8 @@ function Login({ onToken }: { onToken: (t: string) => void }) {
   );
 }
 
-type Tab = 'sales' | 'tickets' | 'cash' | 'items' | 'alerts' | 'staff';
-const TAB_LABEL: Record<Tab, string> = { sales: 'Sales', tickets: 'Tickets', cash: 'Cash', items: 'Items', alerts: 'Alerts', staff: 'Staff' };
+type Tab = 'sales' | 'tickets' | 'cash' | 'items' | 'alerts' | 'staff' | 'help';
+const TAB_LABEL: Record<Tab, string> = { sales: 'Sales', tickets: 'Tickets', cash: 'Cash', items: 'Items', alerts: 'Alerts', staff: 'Staff', help: 'Help' };
 
 interface MeResponse {
   principal: Me & { merchant_id: string };
@@ -161,16 +162,18 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
   const [tab, setTab] = useState<Tab | null>(null);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [stores, setStores] = useState<MembershipSummary[]>([]);
+  const [flags, setFlags] = useState<FeatureFlags | null>(null);
 
   useEffect(() => {
     api<MeResponse>('/auth/me', token).then(setMe, (e) => (e.status === 401 ? onUnauthorized() : undefined));
     api<{ memberships: MembershipSummary[] }>('/auth/merchant/memberships', token).then((r) => setStores(r.memberships), () => undefined);
+    api<{ flags: FeatureFlags }>('/merchant/config', token).then((r) => setFlags(r.flags), () => undefined);
   }, [token, onUnauthorized]);
 
   // Tabs follow what this person may do at this store (P3 permissions).
   const can = (p: Permission) => !!me?.principal.permissions.includes(p);
   const tabs: Tab[] = me
-    ? [...(can('reports.view') ? (['sales', 'tickets', 'cash'] as const) : []), ...(can('catalog.edit') ? (['items'] as const) : []), ...(can('reports.view') ? (['alerts'] as const) : []), 'staff']
+    ? [...(can('reports.view') ? (['sales', 'tickets', 'cash'] as const) : []), ...(can('catalog.edit') ? (['items'] as const) : []), ...(can('reports.view') ? (['alerts'] as const) : []), 'staff', ...(flags?.support_chat ? (['help'] as const) : [])]
     : [];
   const current = tab && tabs.includes(tab) ? tab : (tabs[0] ?? null);
 
@@ -211,6 +214,7 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
       {current === 'items' && <CatalogTab token={token} />}
       {current === 'alerts' && <AlertsTab token={token} />}
       {current === 'staff' && me && <StaffTab token={token} me={{ ...me.principal }} />}
+      {current === 'help' && <SupportTab token={token} />}
     </View>
   );
 }
