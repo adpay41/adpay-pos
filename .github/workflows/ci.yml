@@ -1,8 +1,8 @@
 name: CI
 
 on:
+  # Every PR, including stacked ones based on another step's branch — not only PRs into main.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
