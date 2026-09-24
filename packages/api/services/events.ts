@@ -93,17 +93,18 @@ export async function ingestEvents(
     // case the server's receive time decides (ADR 0002, clock skew).
     await q.query(
       `INSERT INTO sale_events (event_id, org_id, merchant_id, location_id, register_id, sale_id, device_seq, type,
-                                schema_version, occurred_at, received_at, business_date, payload, trace_id)
+                                schema_version, occurred_at, received_at, business_date, payload, trace_id, actor_user_id)
        SELECT x.event_id, x.org_id, x.merchant_id, x.location_id, x.register_id, x.sale_id, x.device_seq, x.type,
               x.schema_version, x.occurred_at, $2::timestamptz,
               CASE WHEN x.occurred_at > $2::timestamptz + interval '5 minutes'
                      OR x.occurred_at < $2::timestamptz - interval '7 days'
                    THEN ($2::timestamptz AT TIME ZONE l.timezone)::date
                    ELSE (x.occurred_at AT TIME ZONE l.timezone)::date END,
-              x.payload, x.trace_id
+              x.payload, x.trace_id, x.actor_user_id
          FROM jsonb_to_recordset($1::jsonb) AS x(
                 event_id uuid, org_id uuid, merchant_id uuid, location_id uuid, register_id uuid, sale_id uuid,
-                device_seq bigint, type text, schema_version int, occurred_at timestamptz, payload jsonb, trace_id text)
+                device_seq bigint, type text, schema_version int, occurred_at timestamptz, payload jsonb, trace_id text,
+                actor_user_id uuid)
          JOIN locations l ON l.location_id = x.location_id`,
       [JSON.stringify(toInsert), receivedAt.toISOString()],
     );

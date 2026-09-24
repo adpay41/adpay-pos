@@ -2,7 +2,7 @@ import type { CatalogSnapshot } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Db } from '../db/db';
-import { auth, createAdmin, createTenant, createTestApp, createTestDb, merchantLogin, pairDevice, type Tenant } from './helpers';
+import { addStaff, auth, createAdmin, createTenant, createTestApp, createTestDb, merchantLogin, pairDevice, type Tenant } from './helpers';
 
 let db: Db;
 let app: FastifyInstance;
@@ -207,10 +207,7 @@ describe('browser access (CORS)', () => {
 
 describe('catalog permissions and tenancy', () => {
   it('a cashier can read but not write', async () => {
-    await db.query(
-      `INSERT INTO users (kind, org_id, merchant_id, role, name, phone) VALUES ('merchant_user', $1, $2, 'cashier', 'Casey', '+12015550177')`,
-      [a.org_id, a.merchant_id],
-    );
+    await addStaff(db, a, 'cashier', 'Casey', '2015550177');
     const cashier = await merchantLogin(app, '201-555-0177');
     expect((await app.inject({ method: 'GET', url: '/merchant/catalog/editor', headers: auth(cashier) })).statusCode).toBe(200);
     const w = await app.inject({ method: 'POST', url: '/merchant/items', headers: auth(cashier), payload: { name: 'X', category_id: null, cash_price_cents: 100 } });

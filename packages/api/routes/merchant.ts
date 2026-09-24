@@ -4,7 +4,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { asMerchantUser, requireMerchantUser } from '../http/auth-hooks';
+import { asMerchantUser, requireMerchantUser, requirePermission } from '../http/auth-hooks';
 import type { AppDeps } from '../server';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
 import { getSaleTimeline } from '../services/events';
@@ -20,7 +20,10 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
     return tenancyTree(db, me.merchant_id);
   });
 
-  app.get('/merchant/sales/summary', async (request) => {
+  // Sales figures are for people the owner lets see them (`reports.view`; cashiers can't by default).
+  const reports = { preHandler: requirePermission('reports.view') };
+
+  app.get('/merchant/sales/summary', reports, async (request) => {
     const me = asMerchantUser(request);
     const q = z
       .object({ range: z.enum(['today', 'week', 'month']).default('today'), location_id: z.uuid().optional() })
@@ -28,13 +31,13 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
     return salesSummary(db, me.merchant_id, q.range, q.location_id ?? null);
   });
 
-  app.get('/merchant/sales', async (request) => {
+  app.get('/merchant/sales', reports, async (request) => {
     const me = asMerchantUser(request);
     const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }).parse(request.query);
     return { sales: await recentSales(db, me.merchant_id, limit) };
   });
 
-  app.get('/merchant/sales/:saleId', async (request) => {
+  app.get('/merchant/sales/:saleId', reports, async (request) => {
     const me = asMerchantUser(request);
     const { saleId } = z.object({ saleId: z.uuid() }).parse(request.params);
     return getSaleTimeline(db, saleId, me.merchant_id);

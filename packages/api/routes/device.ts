@@ -9,6 +9,7 @@ import { getCatalogSnapshot } from '../services/catalog';
 import { catalogVersion } from '../services/catalog-write';
 import { ingestEvents } from '../services/events';
 import { deviceIdentity } from '../services/onboarding';
+import { registerStaff } from '../services/staff';
 
 export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
@@ -20,7 +21,8 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
   app.get('/device/catalog', async (request) => {
     const d = asDevice(request);
     await db.query(`UPDATE registers SET last_seen_at = now() WHERE register_id = $1`, [d.register_id]);
-    return getCatalogSnapshot(db, d.merchant_id, d.location_id);
+    // The register's config snapshot also carries who can sign in, so PINs work offline (P3).
+    return { ...(await getCatalogSnapshot(db, d.merchant_id, d.location_id)), staff: await registerStaff(db, d.merchant_id) };
   });
 
   /** Cheap staleness check: the register pulls the full snapshot only when this number moves. */

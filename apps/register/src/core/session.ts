@@ -43,7 +43,12 @@ export interface SessionState {
   lastCompleted: FoldedSale | null;
 }
 
+/** Events that record who is at the register rather than what was sold. */
+export type StaffEventType = 'staff.signed_in' | 'staff.signed_out' | 'staff.pin_failed' | 'override.granted';
+
 export class SaleSession {
+  /** Signed-in person; stamped on every event as `actor_user_id` (P3). */
+  private actor: string | null = null;
   private saleId: string | null = null;
   private events: RegisterEvent[] = [];
   private lastCompleted: FoldedSale | null = null;
@@ -67,6 +72,22 @@ export class SaleSession {
     const last = await this.deps.store.getMeta(LAST_SALE_KEY);
     if (last) this.lastCompleted = foldSale(last, await this.deps.store.eventsForSale(last));
     this.notify();
+  }
+
+  /** Who is signed in. Set by the StaffGate; null only when the merchant has no PINs set up. */
+  setActor(userId: string | null): void {
+    this.actor = userId;
+  }
+
+  actorId(): string | null {
+    return this.actor;
+  }
+
+  /** Record a sign-in, sign-out, PIN failure or manager override (saleless unless tied to a ticket). */
+  recordStaff<T extends StaffEventType>(type: T, payload: EventPayload<T>, saleId: string | null = null): Promise<void> {
+    return this.serial(async () => {
+      await this.emit(type, payload, saleId);
+    });
   }
 
   subscribe(fn: (s: SessionState) => void): () => void {
@@ -103,6 +124,7 @@ export class SaleSession {
       location_id: t.location_id,
       register_id: t.register_id,
       trace_id: saleId ? saleId.replace(/-/g, '') : this.deps.uuid().replace(/-/g, ''),
+      actor_user_id: this.actor,
       type,
       payload,
     });
@@ -117,7 +139,7 @@ export class SaleSession {
     this.saleId = id;
     this.events = [];
     await this.deps.store.setMeta(OPEN_SALE_KEY, id);
-    await this.emit('sale.opened', { cashier_user_id: null, catalog_version: this.deps.catalogVersion() }, id);
+    await this.emit('sale.opened', { cashier_user_id: this.actor, catalog_version: this.deps.catalogVersion() }, id);
     return id;
   }
 
@@ -160,7 +182,7 @@ export class SaleSession {
         },
         saleId,
       );
-      if (item.min_age) await this.emit('sale.age_verified', { line_id, method: 'manual', verified_by_user_id: null }, saleId);
+      if (item.min_age) await this.emit('sale.age_verified', { line_id, method: 'manual', verified_by_user_id: this.actor }, saleId);
       this.notify();
       return this.state();
     });
@@ -176,11 +198,14 @@ export class SaleSession {
     });
   }
 
-  /** Void the open ticket before tender. (Voiding a completed sale needs a manager PIN — step 4.) */
+  /**
+   * Void the open ticket before tender. The caller checks `ticket.void` (or gets a manager override
+   * first); the event records who was signed in. Voiding a completed sale is P7.
+   */
   voidSale(reason: string): Promise<SessionState> {
     return this.serial(async () => {
       const sale = this.current();
-      await this.emit('sale.voided', { reason, by_user_id: null }, sale.sale_id);
+      await this.emit('sale.voided', { reason, by_user_id: this.actor }, sale.sale_id);
       await this.clearOpen();
       this.notify();
       return this.state();
@@ -228,7 +253,7 @@ export class SaleSession {
 
   recordDrawer(reason: 'cash_sale' | 'manual', saleId: string | null): Promise<void> {
     return this.serial(async () => {
-      await this.emit('drawer.opened', { reason, by_user_id: null }, saleId);
+      await this.emit('drawer.opened', { reason, by_user_id: this.actor }, saleId);
     });
   }
 

@@ -7,6 +7,7 @@ import type { CatalogSnapshot, DeviceIdentity } from '@adpay/shared';
 import * as Crypto from 'expo-crypto';
 import { SaleSession } from './core/session';
 import { SqliteEventStore } from './core/sqlite-store';
+import { StaffGate } from './core/staff';
 import type { EventStore } from './core/store';
 import { SyncEngine, type Transport } from './core/sync';
 
@@ -54,6 +55,7 @@ export interface Runtime {
   catalog: CatalogSnapshot;
   session: SaleSession;
   sync: SyncEngine;
+  staff: StaffGate;
 }
 
 /** Thrown when the device token is no longer valid (re-paired elsewhere, revoked). */
@@ -99,8 +101,12 @@ export async function boot(token: string): Promise<Runtime> {
     uuid: () => Crypto.randomUUID(),
   });
   await session.restore();
+  // Who may sign in comes with the config snapshot; a newer snapshot refreshes it (P3).
+  const staff = new StaffGate(store, session);
+  await staff.restore(catalog.staff);
+  sync.onCatalog((c) => void staff.update(c.staff));
   // Every sale action is pushed as soon as possible; offline, the engine just keeps it queued.
   session.subscribe(() => sync.kick());
   await sync.start();
-  return { store, identity, catalog, session, sync };
+  return { store, identity, catalog, session, sync, staff };
 }

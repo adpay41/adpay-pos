@@ -39,12 +39,12 @@ The **Phase** column refers to section 5.
 | L8 | Split tender, correct dual pricing per portion (1.1) | 🟡 | Fold sums multiple tenders, but a sale has one `price_mode`. Needs a per-portion pricing rule (design in P9) and a card leg. | P9 |
 | L9 | Cash tender keypad with quick-cash buttons (1.2) | ✅ | Exact / next $ / bills, and a cents keypad. | — |
 | L10 | Change on the customer screen in big green (1.2) | ✅ | "Paid" state shows change in green (browser window). | — |
-| L11 | Drawer discipline: opens only on tender or PIN; every open an event with cashier id (1.2) | 🟡 | `drawer.opened` on cash sale. No PIN, no cashier id, no manual/no-sale open. | P3, P6 |
+| L11 | Drawer discipline: opens only on tender or PIN; every open an event with cashier id (1.2) | 🟡 | Cashier id on every drawer event (P3). No-sale open behind `drawer.no_sale` + override comes with P6. | P6 |
 | L12 | Cash drops / safe drops / paid-outs / paid-ins (1.2) | ⬜ | None. | P6 |
 | L13 | Blind cash count at shift end; over/short by cashier; trend (1.2) | ⬜ | No shifts or drawer sessions. | P6 |
 | L14 | Terminal tender, amount pushed to PAX (1.3) | ⛔ | PaymentProvider + stub exist; no API endpoint, no terminal pairing. **Needs PAX A35 + Finix (AD Pay LLC account).** The flow can be built end to end against the stub. | P9 (stub), later P-HW |
 | L15 | Dual pricing correct on every path: cash, card, split, refund, void; both totals on receipt (1.3) | 🟡 | Cash path + receipt both totals ✅. Card (stub), split, refund, void paths missing. | P7, P9 |
-| L16 | Age verification by category, logged with cashier id, time, item (1.4) | 🟡 | Manual prompt + `sale.age_verified` event with time and line. No cashier id; categories for vape/alcohol aren't configurable per state. | P3, P10 |
+| L16 | Age verification by category, logged with cashier id, time, item (1.4) | 🟡 | Manual prompt + `sale.age_verified` with time, line and cashier (P3). Per-state age rules by category: P10. | P10 |
 | L17 | State tax tables, basic: cigarette, vape, sugar, bottle deposit, bag fee, per location, effective dates (1.4) | 🟡 | One sales-tax rate per location + taxable flag per category. No excise, deposits, fees or effective dates. | P10 |
 | L18 | Customer screen: live cart with both prices, tax, totals, large type (1.5) | ✅ | Browser second window. (Android Presentation display ⛔ hardware.) | — |
 | L19 | Customer screen states idle → cart → "tap card" → approved/declined → thanks + change (1.5) | 🟡 | idle/cart/paid exist. No formal state machine; no tap/approved/declined states. | P9 |
@@ -55,7 +55,7 @@ The **Phase** column refers to section 5.
 | L24 | Power-loss safe: tender + completion together before drawer (1.7) | ✅ | Implemented and tested. | — |
 | L25 | Self-healing: crash → auto-restart into same ticket (1.7) | 🟡 | Open ticket restores after reload ✅. OS-level auto-restart ⛔ Android build/kiosk. | P-HW |
 | L26 | Printer/scanner/terminal health on the sync pill; one-tap tests (1.7) | ⛔ | Needs the hardware module. The health model and UI can be built in P4. | P4, P-HW |
-| L27 | Cashier PIN sign-in, roles, permissions per action (1.8) | ⬜ | `users.role` exists (owner/manager/cashier). No PINs, no register sign-in, no permission checks. | P3 |
+| L27 | Cashier PIN sign-in, roles, permissions per action (1.8) | ✅ | P3: tap name → PIN, checked on-device (offline); lockout; 12-action permission matrix; manager override by PIN (ADR 0011). | P3 |
 | L28 | Case-break pricing (1.9, L part) | 🟡 | `sell_unit`/`pack_qty` on items and events; separate carton item in seed. No "scan case barcode → pack". | P5 |
 | L29 | Price check: scan without ringing; cash/card/margin (margin with PIN) (1.9) | 🟡 | Step-1 shell had tap-to-price-check; replaced by the sale screen. No scan, no cost/margin. | P5 |
 
@@ -65,11 +65,11 @@ The **Phase** column refers to section 5.
 | --- | --- | --- | --- | --- |
 | L30 | Live sales ticker, per register, per cashier (2.1) | ⬜ | Tickets tab is a static list; no push channel; no cashier on sales. | P4, P11 |
 | L31 | Today vs yesterday vs same day last week, by hour; "up 12%" (2.1) | ⬜ | Only today/7d/month totals. | P11 |
-| L32 | Multi-store switcher (2.1, L part) | ⬜ | A merchant user belongs to exactly one merchant. Needs a membership model. | P3, P11 |
+| L32 | Multi-store switcher (2.1, L part) | ✅ | P3: memberships (one person, a role per store) + store switcher in the merchant app. Roll-up is N (P19). | P3 |
 | L33 | Deposits, matched to batches (2.2) | ⛔ | Needs a live processor (Finix under AD Pay LLC). Placeholder text exists. | P-PAY |
 | L34 | Item add/edit with photo, pushed to all registers in seconds (2.3) | ✅ | P1 admin editor + P2 merchant app with camera/library photo; registers pick it up on the next sync tick (≤15s; instant with the P4 WebSocket nudge). | P1, P2 |
 | L35 | Dual-price % per location; preview card prices before pushing (2.3) | ✅ | Admin (P1) and merchant app (P2), both with a preview of every card price that changes. | P1, P2 |
-| L36 | Staff list, PINs, roles, permissions from the phone (2.5) | ⬜ | | P3 |
+| L36 | Staff list, PINs, roles, permissions from the phone (2.5) | ✅ | P3: merchant app Staff tab (people, roles, PINs, remove, permission matrix) + admin Staff tab. | P3 |
 | L37 | Alerts: register offline > 5 min; terminal offline; printer out of paper (2.6) | ⬜ | No heartbeat. Terminal/printer parts ⛔ hardware. | P4, P11 |
 | L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | ⬜ | Needs P6/P7 events + alert rules. | P4, P11 |
 | L39 | Delivery channel for alerts (push/SMS/WhatsApp) (2.6) | ⛔ | In-app inbox is buildable. **Push** needs Expo/FCM/APNs accounts; **SMS** a Twilio account; **WhatsApp** a Meta Business account. Those are signups the founder must do. | P4, P11 |
@@ -365,5 +365,6 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P2 Catalog from the phone | #6 | PR open — merchant app: add/edit items with photo (camera or library, shrunk on the phone), tile color, favorite toggle; favorites page, category order/add/hide, dual-price % with preview. Admin: photo, color, favorites panel. Register: ★ Favorites page first, colored tiles with photos. ADR 0010. |
+| P3 Staff, PINs, roles, permissions | #7 | PR open — memberships (store switcher), register sign-in by name + PIN checked on-device, lockout, permission matrix + manager override, `actor_user_id` on every event; Staff tab in the merchant app and admin. ADR 0011. |
+| P2 Catalog from the phone | #6 | merged — merchant app: add/edit items with photo (camera or library, shrunk on the phone), tile color, favorite toggle; favorites page, category order/add/hide, dual-price % with preview. Admin: photo, color, favorites panel. Register: ★ Favorites page first, colored tiles with photos. ADR 0010. |
 | P1 Catalog management | #5 | merged — admin catalog editor (items, categories, barcodes, open price, cost, PLU), dual-price % with card-price preview, price history, `catalog_version` bump; the register picks up changes on its next sync tick (≤15s). 72 tests on real Postgres. |

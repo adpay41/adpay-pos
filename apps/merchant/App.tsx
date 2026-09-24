@@ -4,12 +4,13 @@
  * categories and dual pricing, pushed to the registers (build plan P2). Alerts and the live feed
  * arrive in later phases.
  */
-import { type SaleListRow, type SalesSummary } from '@adpay/shared';
+import { type MembershipSummary, type Permission, type SaleListRow, type SalesSummary } from '@adpay/shared';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api, tokenStore } from './api';
 import { CatalogTab } from './catalog';
+import { StaffTab, type Me } from './staff';
 import { C, usd } from './theme';
 
 
@@ -41,7 +42,14 @@ export default function App() {
       {token === undefined ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
       ) : token ? (
-        <Home token={token} onUnauthorized={signOut} />
+        <Home
+          token={token}
+          onUnauthorized={signOut}
+          onSwitch={(t) => {
+            void tokenStore.set(t);
+            setToken(t);
+          }}
+        />
       ) : (
         <Login
           onToken={(t) => {
@@ -138,32 +146,64 @@ function Login({ onToken }: { onToken: (t: string) => void }) {
   );
 }
 
-type Tab = 'sales' | 'tickets' | 'items';
+type Tab = 'sales' | 'tickets' | 'items' | 'staff';
+const TAB_LABEL: Record<Tab, string> = { sales: 'Sales', tickets: 'Tickets', items: 'Items', staff: 'Staff' };
 
-function Home({ token, onUnauthorized }: { token: string; onUnauthorized: () => void }) {
-  const [tab, setTab] = useState<Tab>('sales');
-  const [me, setMe] = useState<{ user: { name: string; merchant_name: string } | null } | null>(null);
+interface MeResponse {
+  principal: Me & { merchant_id: string };
+  user: { name: string; merchant_name: string } | null;
+}
+
+function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthorized: () => void; onSwitch: (t: string) => void }) {
+  const [tab, setTab] = useState<Tab | null>(null);
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [stores, setStores] = useState<MembershipSummary[]>([]);
 
   useEffect(() => {
-    api<typeof me>('/auth/me', token).then(setMe, (e) => (e.status === 401 ? onUnauthorized() : undefined));
+    api<MeResponse>('/auth/me', token).then(setMe, (e) => (e.status === 401 ? onUnauthorized() : undefined));
+    api<{ memberships: MembershipSummary[] }>('/auth/merchant/memberships', token).then((r) => setStores(r.memberships), () => undefined);
   }, [token, onUnauthorized]);
+
+  // Tabs follow what this person may do at this store (P3 permissions).
+  const can = (p: Permission) => !!me?.principal.permissions.includes(p);
+  const tabs: Tab[] = me ? [...(can('reports.view') ? (['sales', 'tickets'] as const) : []), ...(can('catalog.edit') ? (['items'] as const) : []), 'staff'] : [];
+  const current = tab && tabs.includes(tab) ? tab : (tabs[0] ?? null);
+
+  async function switchTo(merchantId: string) {
+    const r = await api<{ token: string }>('/auth/merchant/switch', token, { merchant_id: merchantId });
+    setTab(null);
+    onSwitch(r.token);
+  }
 
   return (
     <View style={{ flex: 1 }}>
       <View style={s.subheader}>
         <Text style={s.merchantName}>{me?.user?.merchant_name ?? ' '}</Text>
         <Text style={s.muted}>{me?.user?.name ?? ''}</Text>
+        {stores.length > 1 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginTop: 8 }}>
+            {stores.map((st) => {
+              const on = st.merchant_id === me?.principal.merchant_id;
+              return (
+                <Pressable key={st.merchant_id} onPress={() => !on && void switchTo(st.merchant_id)} style={[s.storeChip, on && s.storeChipOn]}>
+                  <Text style={[s.storeChipText, on && { color: '#fff' }]}>{st.merchant_name}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        ) : null}
       </View>
       <View style={s.tabs}>
-        {(['sales', 'tickets', 'items'] as const).map((t) => (
-          <Pressable key={t} onPress={() => setTab(t)} style={[s.tab, tab === t && s.tabActive]}>
-            <Text style={[s.tabText, tab === t && s.tabTextActive]}>{t === 'sales' ? 'Sales' : t === 'tickets' ? 'Tickets' : 'Items'}</Text>
+        {tabs.map((t) => (
+          <Pressable key={t} onPress={() => setTab(t)} style={[s.tab, current === t && s.tabActive]}>
+            <Text style={[s.tabText, current === t && s.tabTextActive]}>{TAB_LABEL[t]}</Text>
           </Pressable>
         ))}
       </View>
-      {tab === 'sales' && <SalesTab token={token} />}
-      {tab === 'tickets' && <TicketsTab token={token} />}
-      {tab === 'items' && <CatalogTab token={token} />}
+      {current === 'sales' && <SalesTab token={token} />}
+      {current === 'tickets' && <TicketsTab token={token} />}
+      {current === 'items' && <CatalogTab token={token} />}
+      {current === 'staff' && me && <StaffTab token={token} me={{ ...me.principal }} />}
     </View>
   );
 }
@@ -315,6 +355,9 @@ const s = StyleSheet.create({
   tabs: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 8, borderBottomWidth: 1, borderBottomColor: C.line },
   tab: { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 3, borderBottomColor: 'transparent' },
   tabActive: { borderBottomColor: C.red },
+  storeChip: { borderWidth: 1, borderColor: C.line, backgroundColor: '#fff', borderRadius: 999, paddingVertical: 5, paddingHorizontal: 12 },
+  storeChipOn: { backgroundColor: C.black, borderColor: C.black },
+  storeChipText: { color: C.ink, fontWeight: '600', fontSize: 13 },
   tabText: { color: C.muted, fontWeight: '600' },
   tabTextActive: { color: C.ink },
   page: { padding: 16, gap: 12, maxWidth: 640, width: '100%', alignSelf: 'center' },

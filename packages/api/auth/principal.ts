@@ -3,7 +3,7 @@
  * (device tokens). Tenancy for merchant users and devices comes from the credential — never from
  * the request body or URL — so a caller cannot widen its own scope.
  */
-import type { TenantContext } from '@adpay/shared';
+import type { Permission, Role, TenantContext } from '@adpay/shared';
 import { EMPTY_TENANT_CONTEXT } from '@adpay/shared';
 import { jwtVerify, SignJWT } from 'jose';
 import type { Queryable } from '../db/db';
@@ -18,8 +18,17 @@ export interface AdminPrincipal {
 export interface MerchantUserPrincipal {
   kind: 'merchant_user';
   user_id: string;
-  role: 'owner' | 'manager' | 'cashier';
+  /** Role and permissions at `merchant_id`, resolved from memberships on every request (P3). */
+  role: Role;
+  permissions: Permission[];
   org_id: string;
+  merchant_id: string;
+}
+
+/** What a merchant token proves: this person, acting at this merchant. The rest comes from the DB. */
+export interface MerchantUserClaims {
+  kind: 'merchant_user';
+  user_id: string;
   merchant_id: string;
 }
 
@@ -47,14 +56,11 @@ export function tenancyOf(p: Principal): TenantContext {
 const USER_TOKEN_TTL = '12h';
 
 export async function signUserToken(
-  p: AdminPrincipal | MerchantUserPrincipal,
+  p: AdminPrincipal | MerchantUserClaims,
   secret: string,
   issuer: string,
 ): Promise<string> {
-  const claims =
-    p.kind === 'admin'
-      ? { kind: p.kind, role: p.role }
-      : { kind: p.kind, role: p.role, org_id: p.org_id, merchant_id: p.merchant_id };
+  const claims = p.kind === 'admin' ? { kind: p.kind, role: p.role } : { kind: p.kind, merchant_id: p.merchant_id };
   return new SignJWT(claims)
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(p.user_id)
@@ -69,7 +75,7 @@ export async function verifyUserToken(
   token: string,
   secret: string,
   issuer: string,
-): Promise<AdminPrincipal | MerchantUserPrincipal | null> {
+): Promise<AdminPrincipal | MerchantUserClaims | null> {
   try {
     const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
       issuer,
@@ -80,19 +86,8 @@ export async function verifyUserToken(
     if (payload.kind === 'admin' && payload.role === 'platform_admin') {
       return { kind: 'admin', user_id: payload.sub, role: 'platform_admin' };
     }
-    if (
-      payload.kind === 'merchant_user' &&
-      typeof payload.org_id === 'string' &&
-      typeof payload.merchant_id === 'string' &&
-      (payload.role === 'owner' || payload.role === 'manager' || payload.role === 'cashier')
-    ) {
-      return {
-        kind: 'merchant_user',
-        user_id: payload.sub,
-        role: payload.role,
-        org_id: payload.org_id,
-        merchant_id: payload.merchant_id,
-      };
+    if (payload.kind === 'merchant_user' && typeof payload.merchant_id === 'string') {
+      return { kind: 'merchant_user', user_id: payload.sub, merchant_id: payload.merchant_id };
     }
     return null;
   } catch {

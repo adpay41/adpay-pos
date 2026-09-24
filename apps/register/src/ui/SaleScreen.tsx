@@ -14,6 +14,7 @@ import {
   type CatalogItem,
   type CatalogSnapshot,
   type FoldedSale,
+  type Permission,
   type ReceiptLine,
 } from '@adpay/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -21,9 +22,11 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-n
 import { createDisplayChannel, displayFor } from '../core/display';
 import { WebPreviewHardware, type Hardware } from '../core/hardware';
 import type { SessionState } from '../core/session';
+import type { StaffState } from '../core/staff';
 import type { SyncStatus } from '../core/sync';
 import type { Runtime } from '../runtime';
 import { QuickKey } from './QuickKey';
+import { OverridePrompt, SignInScreen } from './StaffUI';
 import { C, usd } from './theme';
 
 const FAVORITES = '__favorites__';
@@ -35,6 +38,7 @@ type Modal =
   | { kind: 'done'; sale: FoldedSale; change: number }
   | { kind: 'receipt'; lines: readonly ReceiptLine[]; title: string }
   | { kind: 'device' }
+  | { kind: 'override'; permission: Permission; saleId: string | null; then: () => Promise<unknown> }
   | { kind: 'error'; message: string };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
@@ -59,6 +63,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     [],
   );
 
+  const [staff, setStaff] = useState<StaffState>(rt.staff.state());
+  useEffect(() => rt.staff.subscribe(setStaff), [rt]);
   useEffect(() => rt.session.subscribe(setSession), [rt]);
   useEffect(() => rt.sync.subscribe(setSync), [rt]);
   // A newer catalog (price change, new item, reordered category) replaces the keys in place.
@@ -80,6 +86,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       setModal({ kind: 'error', message: (e as Error).message });
     }
   }, []);
+
+  /** Run `action` if the signed-in person may; otherwise ask for a manager override first. */
+  const guarded = (permission: Permission, saleId: string | null, action: () => Promise<unknown>) => {
+    if (rt.staff.can(permission)) void run(action);
+    else setModal({ kind: 'override', permission, saleId, then: action });
+  };
 
   const addItem = (item: CatalogItem) => {
     if (item.min_age) setModal({ kind: 'age', item });
@@ -137,6 +149,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     if (Platform.OS === 'web') window.open('/?display=customer', 'adpay-customer', 'width=1024,height=640');
   }
 
+  // Nobody signed in (and this store uses PINs): the counter shows "who's working?" and nothing else.
+  if (staff.required && !staff.member) return <SignInScreen gate={rt.staff} storeName={`${rt.identity.merchant_name} · ${rt.identity.location_name}`} />;
+
   return (
     <View style={{ flex: 1 }}>
       <View style={s.topbar}>
@@ -146,6 +161,16 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         <Text style={s.topWhere} numberOfLines={1}>
           {rt.identity.merchant_name} · {rt.identity.location_name} · {rt.identity.register_name}
         </Text>
+        {staff.member ? (
+          <Pressable onPress={() => void run(() => rt.staff.signOut('manual'))} style={s.who} accessibilityLabel={`Signed in as ${staff.member.name}. Tap to lock.`}>
+            <Text style={s.whoText}>{staff.member.name.split(' ')[0]}</Text>
+            <Text style={s.whoLock}>Lock</Text>
+          </Pressable>
+        ) : (
+          <View style={[s.pill, s.pillWarn]}>
+            <Text style={[s.pillText, { color: C.amber }]}>No staff PINs set up</Text>
+          </View>
+        )}
         <SyncPill status={sync} onPress={() => setModal({ kind: 'device' })} />
         {Platform.OS === 'web' ? (
           <Pressable onPress={openCustomerScreen}>
@@ -237,7 +262,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Pressable
                 style={[s.ghost, !sale && s.disabled]}
                 disabled={!sale}
-                onPress={() => void run(() => rt.session.voidSale('Voided at register'))}
+                onPress={() => sale && guarded('ticket.void', sale.sale_id, () => rt.session.voidSale('Voided at register'))}
               >
                 <Text>Void ticket</Text>
               </Pressable>
@@ -318,6 +343,22 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onCatalog={setCatalog}
             onForget={onForget}
             onError={(m) => setModal({ kind: 'error', message: m })}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'override' && (
+        <Overlay>
+          <OverridePrompt
+            gate={rt.staff}
+            permission={modal.permission}
+            saleId={modal.saleId}
+            onCancel={() => setModal({ kind: 'none' })}
+            onApproved={() => {
+              const then = modal.then;
+              setModal({ kind: 'none' });
+              void run(then);
+            }}
           />
         </Overlay>
       )}
@@ -480,6 +521,9 @@ const s = StyleSheet.create({
   topWhere: { color: '#ddd', flex: 1 },
   topLink: { color: '#ddd' },
   pill: { borderRadius: 999, paddingVertical: 4, paddingHorizontal: 12 },
+  who: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 999, borderWidth: 1, borderColor: '#444', paddingVertical: 4, paddingHorizontal: 12 },
+  whoText: { color: '#fff', fontWeight: '700' },
+  whoLock: { color: '#bbb', fontSize: 12 },
   pillOk: { backgroundColor: C.greenBg },
   pillWarn: { backgroundColor: C.amberBg },
   pillText: { fontWeight: '700', fontSize: 12 },

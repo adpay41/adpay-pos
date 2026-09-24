@@ -111,6 +111,24 @@ const DrawerOpened = z.strictObject({
   by_user_id: Uuid.nullable(),
 });
 
+// Staff at the register (P3). PINs are checked on the device; these events are the record.
+const StaffSignedIn = z.strictObject({ user_id: Uuid, method: z.enum(['pin']) });
+const StaffSignedOut = z.strictObject({ user_id: Uuid, reason: z.enum(['manual', 'switch', 'idle']) });
+const StaffPinFailed = z.strictObject({
+  /** Whose PIN was tried (the name tapped). */
+  user_id: Uuid,
+  purpose: z.enum(['sign_in', 'override']),
+  failures: z.int().min(1).max(1000),
+  /** True when this failure locked that person out on this register. */
+  locked: z.boolean(),
+});
+/** A manager or owner approved an action the signed-in cashier lacks, with their own PIN. */
+const OverrideGranted = z.strictObject({
+  action: z.string().min(1).max(40),
+  approver_user_id: Uuid,
+  for_user_id: Uuid.nullable(),
+});
+
 /** Payload schema per event type. Adding a type is additive; changing one bumps the version. */
 export const EventPayloads = {
   'sale.opened': SaleOpened,
@@ -126,13 +144,23 @@ export const EventPayloads = {
   'sale.resumed': Empty,
   'receipt.printed': ReceiptPrinted,
   'drawer.opened': DrawerOpened,
+  'staff.signed_in': StaffSignedIn,
+  'staff.signed_out': StaffSignedOut,
+  'staff.pin_failed': StaffPinFailed,
+  'override.granted': OverrideGranted,
 } as const;
 
 export type EventType = keyof typeof EventPayloads;
 export const EVENT_TYPES = Object.keys(EventPayloads) as EventType[];
 
-/** Events that belong to a sale must carry its sale_id; drawer events may not. */
-const SALELESS: ReadonlySet<EventType> = new Set(['drawer.opened']);
+/** Events that belong to a sale must carry its sale_id; these may stand alone (sale_id null). */
+const SALELESS: ReadonlySet<EventType> = new Set([
+  'drawer.opened',
+  'staff.signed_in',
+  'staff.signed_out',
+  'staff.pin_failed',
+  'override.granted',
+]);
 
 const EnvelopeBase = z.strictObject({
   event_id: Uuid,
@@ -146,6 +174,11 @@ const EnvelopeBase = z.strictObject({
   location_id: Uuid,
   register_id: Uuid,
   trace_id: z.string().min(1).max(64),
+  /**
+   * Who was signed in at the register when this happened (P3). Null before sign-in existed, and
+   * for a register whose merchant has not set up any PINs yet. Additive: older events omit it.
+   */
+  actor_user_id: Uuid.nullable().default(null),
   type: z.enum(EVENT_TYPES as [EventType, ...EventType[]]),
   payload: z.unknown(),
 });

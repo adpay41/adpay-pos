@@ -4,7 +4,7 @@
  *   /merchant/…                     — a merchant's owner or manager, their own merchant only
  *
  * The merchant id for merchant users comes from their credential; there is no id in the path to
- * tamper with. Cashiers can read the catalog but not change it (full per-action permissions are P3).
+ * tamper with. Writes need the `catalog.edit` permission (owners always; managers by default).
  */
 import {
   CatalogOrderInput,
@@ -59,7 +59,7 @@ const MERCHANT: Scope = {
   guard: requireMerchantUser,
   resolve: (r, write) => {
     const me = asMerchantUser(r);
-    if (write && me.role === 'cashier') throw forbidden('Only an owner or manager can change the catalog');
+    if (write && !me.permissions.includes('catalog.edit')) throw forbidden('Your role can’t change the catalog');
     return { merchantId: me.merchant_id, actor: me };
   },
 };

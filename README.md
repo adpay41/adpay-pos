@@ -37,6 +37,22 @@ starts Postgres 16 + Redis in Docker, migrates, seeds a demo c-store and opens:
 | `2015550101` | Luis Ortega, manager | Journal Square Deli & Grocery |
 | `2015550142` | Kevin Walsh, owner | Bayonne Corner Mart (a separate tenant) |
 
+**Register PINs.** The register asks "Who's working?" and takes a PIN. Demo staff, on a fresh
+database (`npm run dev:reset`); a database from before P3 has the people but no PINs, so set
+them in the merchant app under **Staff**:
+
+| Person | Role | PIN | Store |
+| --- | --- | --- | --- |
+| Nadia Haddad | owner | `2580` | Journal Square |
+| Luis Ortega | manager | `1357` | Journal Square |
+| Maria Santos | cashier (register only, no app) | `2468` | Journal Square |
+| Dev Patel | cashier (register only, no app) | `3690` | Journal Square |
+| Kevin Walsh | owner | `2580` | Bayonne Corner Mart |
+| Aisha Khan | cashier (register only, no app) | `4826` | Bayonne Corner Mart |
+
+A manager or owner PIN approves anything a cashier's role doesn't allow (a "manager override").
+Five wrong PINs lock that person out on that register for 5 minutes.
+
 **Register setup codes.** Each code pairs one register:
 
 | Code | Register |
