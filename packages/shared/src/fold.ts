@@ -43,6 +43,8 @@ export interface FoldedSale {
   tenders: FoldedTender[];
   paid_cents: Cents;
   refunded_cents: Cents;
+  /** Units already refunded, per line (P7). */
+  refunded_qty: Record<string, number>;
   /** Totals the device declared on sale.completed, when present. */
   declared: Totals | null;
   /** True when the declared totals disagree with the fold — surfaced in admin, never auto-fixed. */
@@ -69,6 +71,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   let priceMode: PriceMode | null = null;
   let declared: Totals | null = null;
   let refunded: Cents = ZERO;
+  const refundedQty: Record<string, number> = {};
 
   for (const e of ordered) {
     if (seen.has(e.event_id)) continue;
@@ -138,6 +141,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
         break;
       case 'sale.refunded':
         refunded = add(refunded, cents(e.payload.amount_cents));
+        for (const l of e.payload.lines) refundedQty[l.line_id] = (refundedQty[l.line_id] ?? 0) + l.qty;
         break;
       case 'sale.suspended':
         if (status === 'open') status = 'suspended';
@@ -170,6 +174,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
     tenders,
     paid_cents: paid,
     refunded_cents: refunded,
+    refunded_qty: refundedQty,
     declared,
     mismatch,
   };

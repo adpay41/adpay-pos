@@ -44,6 +44,8 @@ const VOID_RATE_PERCENT = 10;
 const DRAWER_SHORT_ALERT_CENTS = 500;
 /** "No sale" drawer opens on one register today before it's an alert (Bible 2.6 "no-sale count spike"). */
 const NO_SALE_SPIKE = 5;
+/** A refund (or the refund inside a void) at least this big, in cents (Bible 2.6 "void/refund over $X"). */
+const LARGE_REFUND_CENTS = 2_500;
 
 async function findings(q: Queryable, now: Date): Promise<Finding[]> {
   const out: Finding[] = [];
@@ -180,6 +182,26 @@ async function findings(q: Queryable, now: Date): Promise<Finding[]> {
         register_id: s.register_id,
       });
     }
+  }
+
+  // Refunds and voids of completed sales over $25 in the last day, one alert each.
+  const refunds = await q.query<{ org_id: string; merchant_id: string; location_id: string; register_id: string; register_name: string; refund_id: string; amount: number; reason: string; by_name: string | null; sale_id: string }>(
+    `SELECT ${reg}, e.payload->>'refund_id' AS refund_id, (e.payload->>'amount_cents')::bigint AS amount, e.payload->>'reason' AS reason,
+            u.name AS by_name, e.sale_id
+       FROM sale_events e JOIN registers r ON r.register_id = e.register_id LEFT JOIN users u ON u.user_id = e.actor_user_id
+      WHERE e.type = 'sale.refunded' AND (e.payload->>'amount_cents')::bigint >= $2
+        AND e.received_at > $1::timestamptz - interval '1 day'`,
+    [now.toISOString(), LARGE_REFUND_CENTS],
+  );
+  for (const r of refunds.rows) {
+    const { refund_id, amount, reason, by_name, sale_id, ...t } = r;
+    out.push({
+      rule: 'large_refund',
+      dedupe_key: `large_refund:${refund_id}`,
+      title: `${r.register_name}: $${Math.trunc(amount / 100)}.${String(amount % 100).padStart(2, '0')} ${reason.startsWith('Void') ? 'voided' : 'refunded'}${by_name ? ` by ${by_name}` : ''}`,
+      details: { amount_cents: amount, reason, sale_id, by: by_name },
+      ...t,
+    });
   }
 
   // Many "no sale" drawer opens on one register today.

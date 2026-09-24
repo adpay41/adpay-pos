@@ -148,6 +148,7 @@ export const ALERT_RULES = {
   high_void_rate: { label: 'Unusually many voids today', severity: 'warning', merchant: true },
   drawer_short: { label: 'Drawer counted short', severity: 'warning', merchant: true },
   no_sale_spike: { label: 'Drawer opened without a sale, many times', severity: 'warning', merchant: true },
+  large_refund: { label: 'Large refund or void', severity: 'warning', merchant: true },
 } as const;
 export type AlertRule = keyof typeof ALERT_RULES;
 export type AlertSeverity = 'info' | 'warning' | 'critical';

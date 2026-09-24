@@ -7,8 +7,12 @@
  * Actions are serialized so device_seq stays strictly increasing even if the UI double-taps.
  */
 import {
+  ZERO,
   changeDue,
   foldSale,
+  refundQuote,
+  refundableQty,
+  type RefundLine,
   parseRegisterEvent,
   type CatalogItem,
   type Cents,
@@ -37,10 +41,19 @@ export class SaleError extends Error {
 
 const OPEN_SALE_KEY = 'open_sale_id';
 const LAST_SALE_KEY = 'last_completed_sale_id';
+const PARKED_KEY = 'parked_sales';
+
+/** A ticket put on hold: "customer forgot wallet; park it, serve the next, recall by tap" (Bible 1.1). */
+export interface ParkedTicket {
+  sale_id: string;
+  held_at: string;
+  label: string | null;
+}
 
 export interface SessionState {
   sale: FoldedSale | null;
   lastCompleted: FoldedSale | null;
+  parked: ParkedTicket[];
 }
 
 /** Events that record who is at the register rather than what was sold. */
@@ -54,6 +67,7 @@ export class SaleSession {
   private saleId: string | null = null;
   private events: RegisterEvent[] = [];
   private lastCompleted: FoldedSale | null = null;
+  private parked: ParkedTicket[] = [];
   private queue: Promise<unknown> = Promise.resolve();
   private listeners = new Set<(s: SessionState) => void>();
   private readonly now: () => Date;
@@ -71,6 +85,7 @@ export class SaleSession {
       const folded = foldSale(open, this.events);
       if (folded.status === 'completed' || folded.status === 'voided') await this.clearOpen();
     }
+    this.parked = JSON.parse((await this.deps.store.getMeta(PARKED_KEY)) ?? '[]') as ParkedTicket[];
     const last = await this.deps.store.getMeta(LAST_SALE_KEY);
     if (last) this.lastCompleted = foldSale(last, await this.deps.store.eventsForSale(last));
     this.notify();
@@ -104,7 +119,7 @@ export class SaleSession {
   }
 
   state(): SessionState {
-    return { sale: this.saleId ? foldSale(this.saleId, this.events) : null, lastCompleted: this.lastCompleted };
+    return { sale: this.saleId ? foldSale(this.saleId, this.events) : null, lastCompleted: this.lastCompleted, parked: this.parked };
   }
 
   private notify() {
@@ -317,6 +332,112 @@ export class SaleSession {
   recordDrawer(reason: 'cash_sale' | 'manual', saleId: string | null): Promise<void> {
     return this.serial(async () => {
       await this.emit('drawer.opened', { reason, by_user_id: this.actor }, saleId);
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────── hold / recall (P7) ──
+
+  private async saveParked() {
+    await this.deps.store.setMeta(PARKED_KEY, this.parked.length ? JSON.stringify(this.parked) : null);
+  }
+
+  /** Park the open ticket (`sale.suspended`) so the next customer can be served. */
+  hold(label: string | null = null): Promise<SessionState> {
+    return this.serial(async () => {
+      const sale = this.current();
+      if (sale.lines.length === 0) throw new SaleError('Nothing to hold');
+      await this.emit('sale.suspended', {}, sale.sale_id);
+      this.parked = [...this.parked, { sale_id: sale.sale_id, held_at: this.now().toISOString(), label: label?.trim() || null }];
+      await this.saveParked();
+      await this.clearOpen();
+      this.notify();
+      return this.state();
+    });
+  }
+
+  /** Bring a held ticket back (`sale.resumed`). Whatever was open is held first, never lost. */
+  recall(saleId: string): Promise<SessionState> {
+    return this.serial(async () => {
+      if (!this.parked.some((p) => p.sale_id === saleId)) throw new SaleError('That ticket is not on hold');
+      if (this.saleId) {
+        const open = this.current();
+        if (open.lines.length > 0) {
+          await this.emit('sale.suspended', {}, open.sale_id);
+          this.parked = [...this.parked, { sale_id: open.sale_id, held_at: this.now().toISOString(), label: null }];
+        }
+      }
+      this.parked = this.parked.filter((p) => p.sale_id !== saleId);
+      await this.saveParked();
+      this.saleId = saleId;
+      this.events = await this.deps.store.eventsForSale(saleId);
+      await this.deps.store.setMeta(OPEN_SALE_KEY, saleId);
+      await this.emit('sale.resumed', {}, saleId);
+      this.notify();
+      return this.state();
+    });
+  }
+
+  /** Held tickets with their current contents, oldest first. */
+  async parkedTickets(): Promise<(ParkedTicket & { sale: FoldedSale })[]> {
+    const out: (ParkedTicket & { sale: FoldedSale })[] = [];
+    for (const p of this.parked) out.push({ ...p, sale: foldSale(p.sale_id, await this.deps.store.eventsForSale(p.sale_id)) });
+    return out;
+  }
+
+  // ─────────────────────────────────────────────────────────── refunds and voids (P7) ──
+
+  /** A sale rung on this register, folded from the local log. */
+  async saleById(saleId: string): Promise<FoldedSale | null> {
+    const events = await this.deps.store.eventsForSale(saleId);
+    return events.length ? foldSale(saleId, events) : null;
+  }
+
+  /**
+   * Refund lines of a completed sale at the price the customer paid (cash price for a cash sale).
+   * The caller checked `sale.refund` (or got an override) and hands the cash back.
+   */
+  refund(saleId: string, lines: RefundLine[], reason: string): Promise<{ sale: FoldedSale; amount: Cents }> {
+    return this.serial(async () => {
+      const sale = await this.saleById(saleId);
+      if (!sale) throw new SaleError('That sale is not on this register');
+      const quote = refundQuote(sale, lines);
+      if (quote.lines.length === 0 || quote.amount_cents <= 0) throw new SaleError('Pick what is coming back');
+      const tender = sale.tenders.find((t) => t.approved)?.tender_type ?? 'cash';
+      if (tender !== 'cash') throw new SaleError('Card refunds go back to the card through the terminal (build plan P9).');
+      await this.emit(
+        'sale.refunded',
+        { refund_id: this.deps.uuid(), tender_type: 'cash', amount_cents: quote.amount_cents, reason, by_user_id: this.actor, card: null, lines: quote.lines },
+        saleId,
+      );
+      await this.emit('drawer.opened', { reason: 'refund', by_user_id: this.actor }, saleId);
+      return { sale: (await this.saleById(saleId))!, amount: quote.amount_cents };
+    });
+  }
+
+  /**
+   * Void a completed sale: everything still paid goes back, then the sale is marked voided. The
+   * caller checked `sale.void` (or got an override).
+   */
+  voidCompleted(saleId: string, reason: string): Promise<{ sale: FoldedSale; amount: Cents }> {
+    return this.serial(async () => {
+      const sale = await this.saleById(saleId);
+      if (!sale) throw new SaleError('That sale is not on this register');
+      if (sale.status !== 'completed') throw new SaleError(sale.status === 'voided' ? 'That sale is already voided' : 'Only a completed sale can be voided here');
+      const left = Object.entries(refundableQty(sale)).filter(([, q]) => q > 0).map(([line_id, qty]) => ({ line_id, qty }));
+      let amount: Cents = ZERO;
+      if (left.length > 0) {
+        const tender = sale.tenders.find((t) => t.approved)?.tender_type ?? 'cash';
+        if (tender !== 'cash') throw new SaleError('Card sales are voided through the terminal (build plan P9).');
+        amount = refundQuote(sale, left).amount_cents;
+        await this.emit(
+          'sale.refunded',
+          { refund_id: this.deps.uuid(), tender_type: 'cash', amount_cents: amount, reason: `Void: ${reason}`, by_user_id: this.actor, card: null, lines: left },
+          saleId,
+        );
+        await this.emit('drawer.opened', { reason: 'refund', by_user_id: this.actor }, saleId);
+      }
+      await this.emit('sale.voided', { reason, by_user_id: this.actor }, saleId);
+      return { sale: (await this.saleById(saleId))!, amount };
     });
   }
 
