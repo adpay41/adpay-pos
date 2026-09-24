@@ -37,9 +37,9 @@ starts Postgres 16 + Redis in Docker, migrates, seeds a demo c-store and opens:
 | `2015550101` | Luis Ortega, manager | Journal Square Deli & Grocery |
 | `2015550142` | Kevin Walsh, owner | Bayonne Corner Mart (a separate tenant) |
 
-**Register PINs.** The register asks "Who's working?" and takes a PIN. Demo staff, on a fresh
-database (`npm run dev:reset`); a database from before P3 has the people but no PINs, so set
-them in the merchant app under **Staff**:
+**Register PINs.** The register asks "Who's working?": tap your name and enter the PIN. Every
+`npm run dev` and `npm run logins` makes sure these people exist with these PINs (an older database
+catches up), prints them, and says if one was changed in the app:
 
 | Person | Role | PIN | Store |
 | --- | --- | --- | --- |
