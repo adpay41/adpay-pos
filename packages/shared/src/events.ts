@@ -111,6 +111,8 @@ const SaleRefunded = z.strictObject({
   reason: z.string().max(200),
   by_user_id: Uuid.nullable(),
   card: CardResult.nullable(),
+  /** What came back (P7): units per line, so a sale can't be refunded twice for the same thing. Additive. */
+  lines: z.array(z.strictObject({ line_id: Uuid, qty: Qty })).max(500).default([]),
 });
 
 const Empty = z.strictObject({});

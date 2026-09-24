@@ -35,7 +35,7 @@ The **Phase** column refers to section 5.
 | L4 | Item search by name/UPC/PLU/first letters, fuzzy (1.1) | ✅ | P5: name prefix / first letters / one-typo fuzzy ("coke zro"), UPC (any spelling), PLU, last digits of a barcode. | P5 |
 | L5 | Unknown barcode flow, manual (1.1) | ✅ | P5: unknown barcode → one screen (name, price, category) → rung at once, offline; synced via idempotent `POST /device/items`, duplicates aliased (ADR 0013). | P5 |
 | L6 | Open-price items with keypad (1.1) | ✅ | P5: open-price items ask for the price on a cents keypad; card price follows the dual %; `price_source: open` on the line. | P5 |
-| L7 | Hold / recall tickets (1.1) | 🟡 | `sale.suspended`/`sale.resumed` event types exist, and fold handles them. No UI; only one open ticket at a time. | P7 |
+| L7 | Hold / recall tickets (1.1) | ✅ | P7: Hold parks the ticket (`sale.suspended`), several at once, survive restart; Recall brings one back and holds whatever was open instead of losing it. | P7 |
 | L8 | Split tender, correct dual pricing per portion (1.1) | 🟡 | Fold sums multiple tenders, but a sale has one `price_mode`. Needs a per-portion pricing rule (design in P9) and a card leg. | P9 |
 | L9 | Cash tender keypad with quick-cash buttons (1.2) | ✅ | Exact / next $ / bills, and a cents keypad. | — |
 | L10 | Change on the customer screen in big green (1.2) | ✅ | "Paid" state shows change in green (browser window). | — |
@@ -43,13 +43,13 @@ The **Phase** column refers to section 5.
 | L12 | Cash drops / safe drops / paid-outs / paid-ins (1.2) | ✅ | P6: safe drops, paid-outs (with payee) and paid-ins, each with a reason, as events; permission-gated; in the merchant app and admin Cash views. | P6 |
 | L13 | Blind cash count at shift end; over/short by cashier; trend (1.2) | ✅ | P6: blind count at close (expected hidden until after); over/short by cashier and by day; drawer-short alert over $5. | P6 |
 | L14 | Terminal tender, amount pushed to PAX (1.3) | ⛔ | PaymentProvider + stub exist; no API endpoint, no terminal pairing. **Needs PAX A35 + Finix (AD Pay LLC account).** The flow can be built end to end against the stub. | P9 (stub), later P-HW |
-| L15 | Dual pricing correct on every path: cash, card, split, refund, void; both totals on receipt (1.3) | 🟡 | Cash path + receipt both totals ✅. Card (stub), split, refund, void paths missing. | P7, P9 |
+| L15 | Dual pricing correct on every path: cash, card, split, refund, void; both totals on receipt (1.3) | 🟡 | Cash, refund and void paths ✅ (P7: refunds at the price mode paid, by line, exact remainder on full return; void = refund rest + void); both totals on every receipt ✅. Card and split paths come with P9. | P7, P9 |
 | L16 | Age verification by category, logged with cashier id, time, item (1.4) | 🟡 | Manual prompt + `sale.age_verified` with time, line and cashier (P3). Per-state age rules by category: P10. | P10 |
 | L17 | State tax tables, basic: cigarette, vape, sugar, bottle deposit, bag fee, per location, effective dates (1.4) | 🟡 | One sales-tax rate per location + taxable flag per category. No excise, deposits, fees or effective dates. | P10 |
 | L18 | Customer screen: live cart with both prices, tax, totals, large type (1.5) | ✅ | Browser second window. (Android Presentation display ⛔ hardware.) | — |
 | L19 | Customer screen states idle → cart → "tap card" → approved/declined → thanks + change (1.5) | 🟡 | idle/cart/paid exist. No formal state machine; no tap/approved/declined states. | P9 |
 | L20 | 80mm receipt with logo, both prices, disclosure, itemized tax, return policy, QR (1.6) | 🟡 | 48-col text receipt with both totals and disclosure ✅. No logo, itemized tax by rate, return policy or QR. Physical printing ⛔ hardware. | P8 |
-| L21 | Reprint any ticket from the register (1.6, L part) | 🟡 | "Reprint last" only. | P7 |
+| L21 | Reprint any ticket from the register (1.6, L part) | ✅ | P7: register Tickets list (last 40) → reprint any ticket; refunds print the ticket with a refund footer. | P7 |
 | L22 | 72h offline on cash, full catalog, receipts, drawer (1.7) | 🟡 | Design + tests prove offline sale and exactly-once sync (browser). Not soak-tested; not on device; new features must keep it true. | every phase |
 | L23 | Store-and-forward status / "cash only" banner + retry (1.7) | 🟡 | Offline sync pill. No terminal status, no cash-only banner. | P9 |
 | L24 | Power-loss safe: tender + completion together before drawer (1.7) | ✅ | Implemented and tested. | — |
@@ -71,7 +71,7 @@ The **Phase** column refers to section 5.
 | L35 | Dual-price % per location; preview card prices before pushing (2.3) | ✅ | Admin (P1) and merchant app (P2), both with a preview of every card price that changes. | P1, P2 |
 | L36 | Staff list, PINs, roles, permissions from the phone (2.5) | ✅ | P3: merchant app Staff tab (people, roles, PINs, remove, permission matrix) + admin Staff tab. | P3 |
 | L37 | Alerts: register offline > 5 min; terminal offline; printer out of paper (2.6) | 🟡 | P4: register offline > 5 min and hardware-error alerts fire and show in the merchant app's Alerts tab. Terminal/paper readings ⛔ hardware; push/SMS delivery ⛔ accounts. | P4, P11 |
-| L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | 🟡 | P6: no-sale spike alert (5+ per register per day). Void/refund over $X comes with P7. | P6, P7 |
+| L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | ✅ | P6: no-sale spike (5+/register/day). P7: refund or void ≥ $25 alert naming who did it. Per-merchant thresholds are N. | P6, P7 |
 | L39 | Delivery channel for alerts (push/SMS/WhatsApp) (2.6) | ⛔ | In-app inbox is buildable. **Push** needs Expo/FCM/APNs accounts; **SMS** a Twilio account; **WhatsApp** a Meta Business account. Those are signups the founder must do. | P4, P11 |
 | L40 | Support chat with "share my screen from the register" (2.8) | ⛔ | Chat is buildable. Screen share needs the MDM vendor (open decision: Esper vs own). | P12 (chat) |
 
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P6 Cash management | #10 | PR open — drawer sessions (counted float), safe drops / paid-outs / paid-ins with reasons, no-sale behind a PIN, blind count, over/short by cashier and day (merchant app Cash tab, admin Cash tab), drawer-short and no-sale-spike alerts. ADR 0014. |
+| P7 Ticket lifecycle | #11 | PR open — hold/recall (several parked tickets), register Tickets list with reprint, refunds by line at the price paid, void of a completed sale (refund rest + void), PIN-gated; large refund/void alert. ADR 0015. |
+| P6 Cash management | #10 | merged — drawer sessions (counted float), safe drops / paid-outs / paid-ins with reasons, no-sale behind a PIN, blind count, over/short by cashier and day (merchant app Cash tab, admin Cash tab), drawer-short and no-sale-spike alerts. ADR 0014. |
 | P5 Register speed | #9 | merged — keyboard-wedge scanning, forgiving search, qty merge + long-press qty, case barcodes, open price, unknown barcode → item minted on the register (offline outbox, idempotent, aliases), price check with cost behind a PIN, sale-speed metric. ADR 0013. |
 | P4 Ops layer | #8 | merged — heartbeat every 30 s, device log ring + upload, remote-action queue (WS push + heartbeat fallback, audited), admin Fleet / Device page / Alert console, alert rules every minute, merchant Alerts tab, realtime `/ws` over LISTEN/NOTIFY (instant catalog nudge, live sales feed). ADR 0012. |
 | P3 Staff, PINs, roles, permissions | #7 | merged — memberships (store switcher), register sign-in by name + PIN checked on-device, lockout, permission matrix + manager override, `actor_user_id` on every event; Staff tab in the merchant app and admin. ADR 0011. |

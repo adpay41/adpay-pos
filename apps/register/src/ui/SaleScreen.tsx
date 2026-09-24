@@ -33,6 +33,7 @@ import type { SyncStatus } from '../core/sync';
 import type { Runtime } from '../runtime';
 import { QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
+import { HeldTickets, TicketBrowser } from './TicketsUI';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
 import { C, usd } from './theme';
@@ -50,6 +51,8 @@ type Modal =
   | { kind: 'unknown'; code: string }
   | { kind: 'price_check'; item: CatalogItem; showCost: boolean }
   | { kind: 'drawer'; startWithFloat: boolean; thenCash: boolean }
+  | { kind: 'held' }
+  | { kind: 'tickets' }
   | { kind: 'cash' }
   | { kind: 'done'; sale: FoldedSale; change: number }
   | { kind: 'receipt'; lines: readonly ReceiptLine[]; title: string }
@@ -193,7 +196,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     rt.sync.kick();
   }
 
-  const receiptFor = (s: FoldedSale, copy: 'original' | 'reprint') =>
+  const receiptFor = (s: FoldedSale, copy: 'original' | 'reprint', footer?: string) =>
     renderReceipt({
       header: {
         merchant_name: rt.identity.merchant_name,
@@ -206,6 +209,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       occurred_at: new Date().toISOString(),
       timezone: rt.identity.timezone,
       copy,
+      ...(footer ? { footer } : {}),
     });
 
   // Remote actions that need this screen or the printer (P4): reprint any sale rung here, test page, restart.
@@ -447,6 +451,17 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Pressable style={[s.ghost, !session.lastCompleted && s.disabled]} disabled={!session.lastCompleted} onPress={() => void reprintLast()}>
                 <Text>Reprint last</Text>
               </Pressable>
+              <Pressable style={[s.ghost, !sale?.lines.length && s.disabled]} disabled={!sale?.lines.length} onPress={() => void run(() => rt.session.hold())}>
+                <Text>Hold</Text>
+              </Pressable>
+              {session.parked.length ? (
+                <Pressable style={[s.ghost, s.ghostOn]} onPress={() => setModal({ kind: 'held' })}>
+                  <Text style={{ color: '#fff' }}>Held ({session.parked.length})</Text>
+                </Pressable>
+              ) : null}
+              <Pressable style={s.ghost} onPress={() => setModal({ kind: 'tickets' })}>
+                <Text>Tickets</Text>
+              </Pressable>
               <Pressable style={[s.ghost, priceCheck && s.ghostOn]} onPress={() => setPriceCheck((v) => !v)}>
                 <Text style={priceCheck ? { color: '#fff' } : undefined}>Price check</Text>
               </Pressable>
@@ -627,6 +642,42 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             }}
             onStarted={modal.thenCash ? () => setModal({ kind: 'cash' }) : undefined}
             onClose={() => setModal({ kind: 'none' })}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'held' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <HeldTickets
+            session={rt.session}
+            onClose={() => setModal({ kind: 'none' })}
+            onRecall={(id) => {
+              setModal({ kind: 'none' });
+              void run(() => rt.session.recall(id));
+            }}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'tickets' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <TicketBrowser
+            store={rt.store}
+            session={rt.session}
+            staff={rt.staff}
+            onClose={() => setModal({ kind: 'none' })}
+            onReprint={async (sale) => {
+              await hardware.printReceipt(receiptFor(sale, 'reprint'));
+              await rt.session.recordReceipt(sale.sale_id, 'reprint');
+              rt.sync.kick();
+            }}
+            onCashBack={async (sale, amount, what) => {
+              rt.log.info(what === 'void' ? 'completed sale voided' : 'refund', { sale: sale.sale_id.slice(0, 8), amount_cents: amount });
+              if (amount > 0) await hardware.kickDrawer();
+              await hardware.printReceipt(receiptFor(sale, 'reprint', what === 'void' ? `VOID - ${usd(amount)} returned` : `REFUND - ${usd(amount)} returned`));
+              await rt.drawer.refresh();
+              rt.sync.kick();
+            }}
           />
         </Overlay>
       )}
