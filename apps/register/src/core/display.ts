@@ -8,7 +8,11 @@
  */
 import { mulQty, sub, type FoldedSale } from '@adpay/shared';
 
-export type DisplayPhase = 'idle' | 'cart' | 'paid';
+/**
+ * The customer screen's states (Bible 1.5): idle → cart → card ("tap on the card machine") →
+ * approved / declined → paid (thank you + change). The register drives it; the screen only shows.
+ */
+export type DisplayPhase = 'idle' | 'cart' | 'card' | 'approved' | 'declined' | 'paid';
 
 export interface DisplayState {
   phase: DisplayPhase;
@@ -20,9 +24,22 @@ export interface DisplayState {
   tax_card_cents: number;
   paid_cents: number | null;
   change_cents: number | null;
+  /** Card phases: the amount on the terminal. */
+  card_amount_cents: number | null;
+  /** Split tender: what's been paid so far (cash part and/or earlier cards). */
+  paid_so_far_cents: number | null;
 }
 
-export function displayFor(merchantName: string, sale: FoldedSale | null, paid?: { amount: number; change: number }): DisplayState {
+export function displayFor(
+  merchantName: string,
+  sale: FoldedSale | null,
+  paid?: { amount: number; change: number },
+  card?: { phase: 'card' | 'approved' | 'declined'; amount: number },
+): DisplayState {
+  if (card && sale) {
+    const soFar = sale.tenders.filter((t) => t.approved).reduce((n, t) => n + t.amount_cents, 0);
+    return { ...base(merchantName, sale), phase: card.phase, card_amount_cents: card.amount, paid_so_far_cents: soFar || null };
+  }
   if (paid && sale) {
     return {
       ...base(merchantName, sale),
@@ -34,7 +51,7 @@ export function displayFor(merchantName: string, sale: FoldedSale | null, paid?:
   if (!sale || sale.lines.length === 0) {
     return {
       phase: 'idle', merchant_name: merchantName, lines: [], cash_total_cents: 0, card_total_cents: 0,
-      tax_cash_cents: 0, tax_card_cents: 0, paid_cents: null, change_cents: null,
+      tax_cash_cents: 0, tax_card_cents: 0, paid_cents: null, change_cents: null, card_amount_cents: null, paid_so_far_cents: null,
     };
   }
   return base(merchantName, sale);
@@ -57,6 +74,8 @@ function base(merchantName: string, sale: FoldedSale): DisplayState {
     tax_card_cents: sale.card.tax_cents,
     paid_cents: null,
     change_cents: null,
+    card_amount_cents: null,
+    paid_so_far_cents: null,
   };
 }
 

@@ -14,6 +14,7 @@ import { ppmToPercent } from './catalog';
 import type { FoldedSale } from './fold';
 import { add, cents, formatUsd, mulQty } from './money';
 import { taxByRate } from './pricing';
+import { splitTaxGroups } from './split';
 import type { ReceiptSettings } from './receipt-settings';
 
 export const RECEIPT_WIDTH = 48;
@@ -89,8 +90,9 @@ export function wrap(text: string, width = RECEIPT_WIDTH): string[] {
 
 export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
   const { header, sale } = input;
-  const mode = sale.price_mode ?? 'cash';
-  const totals = mode === 'card' ? sale.card : sale.cash;
+  // A split sale lists items at the cash price and totals what was actually paid (ADR 0017).
+  const mode = sale.price_mode === 'card' ? 'card' : 'cash';
+  const totals = sale.price_mode === 'split' && sale.declared ? sale.declared : mode === 'card' ? sale.card : sale.cash;
   const out: ReceiptLine[] = [];
   const push = (text: string, style: ReceiptStyle = 'normal') => out.push({ text, style });
 
@@ -126,19 +128,35 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
   push(rule());
   push(pad('Subtotal', money(totals.subtotal_cents)));
   // Tax itemized by rate (Bible 1.6), one line per rate; they add up to the total tax exactly.
-  const groups = taxByRate(
-    sale.lines.map((l) => ({
-      qty: l.qty,
-      unit_price_cents: mode === 'card' ? l.unit_card_price_cents : l.unit_cash_price_cents,
-      discount_cents: mode === 'card' ? l.card_discount_cents : l.cash_discount_cents,
-      taxable: l.taxable,
-      tax_rate_ppm: l.tax_rate_ppm,
-    })),
-  );
+  const groupsAt = (m: 'cash' | 'card') =>
+    taxByRate(
+      sale.lines.map((l) => ({
+        qty: l.qty,
+        unit_price_cents: m === 'card' ? l.unit_card_price_cents : l.unit_cash_price_cents,
+        discount_cents: m === 'card' ? l.card_discount_cents : l.cash_discount_cents,
+        taxable: l.taxable,
+        tax_rate_ppm: l.tax_rate_ppm,
+      })),
+    );
+  const groups =
+    sale.price_mode === 'split'
+      ? splitTaxGroups(
+          groupsAt('cash'),
+          groupsAt('card'),
+          sale.tenders.filter((t) => t.approved),
+          sale.cash.total_cents,
+          totals.tax_cents,
+        )
+      : groupsAt(mode);
   if (groups.length === 0) push(pad('Tax', money(totals.tax_cents)));
   for (const g of groups) push(pad(`Tax ${ppmToPercent(g.rate_ppm)}% on ${money(g.taxable_cents)}`, money(g.tax_cents)));
   push(pad('TOTAL', money(totals.total_cents)), 'bold');
-  push(pad(mode === 'card' ? 'Card price applied' : 'Cash price applied', ''));
+  push(
+    pad(
+      sale.price_mode === 'split' ? 'Split: cash price on cash part' : mode === 'card' ? 'Card price applied' : 'Cash price applied',
+      '',
+    ),
+  );
   push('');
 
   for (const t of sale.tenders) {
@@ -146,7 +164,10 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
       push(pad('Cash', money(add(t.amount_cents, t.change_cents))));
       push(pad('Change', money(t.change_cents)), 'bold');
     } else {
-      push(pad(`Card ${t.approved ? 'APPROVED' : 'DECLINED'}`, money(t.amount_cents)));
+      // Brand and last four only: the only card facts we ever hold (CLAUDE.md rule 3).
+      const card = t.card ? `${(t.card.brand ?? 'Card').toUpperCase()} ****${t.card.last4 ?? '----'}` : 'Card';
+      push(pad(`${card} ${t.approved ? 'APPROVED' : 'DECLINED'}`, money(t.amount_cents)));
+      if (t.approved && t.card?.approval_code) push(`   Auth ${t.card.approval_code}`);
     }
   }
   if (sale.status === 'voided') push(center('*** VOID ***'), 'double');

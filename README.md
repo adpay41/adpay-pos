@@ -74,7 +74,8 @@ and the seed refuses to run against a production database.
 The demo is **Journal Square Deli & Grocery** (Jersey City NJ + Astoria NY, 4 registers, ~80 items,
 three weeks of sales history) and a separate tenant, **Bayonne Corner Mart** (`(201) 555-0142`), so
 tenant isolation is visible. Card sales go through the **stub** payment provider; nothing reaches a
-processor. Demo logins are local-only and exist only in your throwaway database.
+processor. The stub approves every amount except those ending in **.13** (e.g. $1.13), which it
+declines, so the decline path can be clicked through. Demo logins are local-only and exist only in your throwaway database.
 
 | Command | Does |
 | --- | --- |

@@ -6,6 +6,10 @@
 import type { RegisterEvent } from './events';
 import { add, cents, sub, sum, ZERO, type Cents } from './money';
 import { computeTotals, type PriceMode, type TaxableLine, type Totals } from './pricing';
+import { coverForCard, splitTotals } from './split';
+
+/** How a completed sale was paid: at the cash price, the card price, or split between them (P9). */
+export type CompletionMode = PriceMode | 'split';
 
 export type SaleStatus = 'open' | 'suspended' | 'completed' | 'voided';
 
@@ -30,6 +34,10 @@ export interface FoldedTender {
   amount_cents: Cents;
   change_cents: Cents;
   approved: boolean;
+  /** Cash-price cents of the sale this tender paid for (ADR 0017). */
+  covers_cash_cents: Cents;
+  /** Card facts for a card tender: brand, last four, processor ref. Never card data. */
+  card: { brand: string | null; last4: string | null; provider: string; provider_ref: string; approval_code: string | null } | null;
 }
 
 export interface FoldedSale {
@@ -39,8 +47,10 @@ export interface FoldedSale {
   /** Both price modes, so the customer screen can show cash and card side by side. */
   cash: Totals;
   card: Totals;
-  price_mode: PriceMode | null;
+  price_mode: CompletionMode | null;
   tenders: FoldedTender[];
+  /** Cash-price cents not yet paid for; the card equivalent is `cardAmountFor(remaining, cash, card)`. */
+  remaining_cash_cents: Cents;
   paid_cents: Cents;
   refunded_cents: Cents;
   /** Units already refunded, per line (P7). */
@@ -68,7 +78,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   const lines = new Map<string, FoldedLine>();
   const tenders: FoldedTender[] = [];
   let status: SaleStatus = 'open';
-  let priceMode: PriceMode | null = null;
+  let priceMode: CompletionMode | null = null;
+  const covers: (number | null)[] = [];
   let declared: Totals | null = null;
   let refunded: Cents = ZERO;
   const refundedQty: Record<string, number> = {};
@@ -124,7 +135,10 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           amount_cents: cents(p.amount_cents),
           change_cents: cents(p.change_cents ?? 0),
           approved: p.tender_type === 'cash' || p.card?.status === 'approved',
+          covers_cash_cents: ZERO, // settled after the loop, once the totals are known
+          card: p.card ? { brand: p.card.brand, last4: p.card.last4, provider: p.card.provider, provider_ref: p.card.provider_ref, approval_code: p.card.approval_code } : null,
         });
+        covers.push(p.covers_cash_cents);
         break;
       }
       case 'sale.completed':
@@ -157,8 +171,29 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   const active = [...lines.values()];
   const cash = computeTotals(toTaxable(active, 'cash'));
   const card = computeTotals(toTaxable(active, 'card'));
+  // What each approved tender paid for, in cash-price cents (explicit on new events, derived on old).
+  let remaining: number = cash.total_cents;
+  tenders.forEach((t, i) => {
+    if (!t.approved) return;
+    const explicit = covers[i];
+    const cover =
+      explicit !== null && explicit !== undefined
+        ? Math.min(explicit, remaining)
+        : t.tender_type === 'cash'
+          ? Math.min(t.amount_cents, remaining)
+          : coverForCard(t.amount_cents, remaining, cash.total_cents, card.total_cents);
+    t.covers_cash_cents = cents(cover);
+    remaining -= cover;
+  });
   const paid = sum(tenders.filter((t) => t.approved).map((t) => t.amount_cents));
-  const expected = priceMode === 'card' ? card : priceMode === 'cash' ? cash : null;
+  const expected =
+    priceMode === 'card'
+      ? card
+      : priceMode === 'cash'
+        ? cash
+        : priceMode === 'split'
+          ? splitTotals(cash, card, tenders.filter((t) => t.approved).map((t) => ({ tender_type: t.tender_type, amount_cents: t.amount_cents, covers_cash_cents: t.covers_cash_cents })))
+          : null;
   const mismatch =
     declared !== null &&
     expected !== null &&
@@ -172,6 +207,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
     card,
     price_mode: priceMode,
     tenders,
+    remaining_cash_cents: cents(Math.max(0, remaining)),
     paid_cents: paid,
     refunded_cents: refunded,
     refunded_qty: refundedQty,

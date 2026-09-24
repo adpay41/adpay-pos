@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { createDisplayChannel, type DisplayState } from '../core/display';
+import { CUSTOMER_COPY as T } from './copy';
 import { C, usd } from './theme';
 
 export function CustomerScreen() {
@@ -18,7 +19,7 @@ export function CustomerScreen() {
           <Text style={s.mark}> AD </Text> Pay
         </Text>
         <Text style={s.welcome}>{state?.merchant_name ?? 'Welcome'}</Text>
-        <Text style={s.muted}>Cash and card prices are both shown before you pay.</Text>
+        <Text style={s.muted}>{T.welcome_note}</Text>
       </View>
     );
   }
@@ -26,9 +27,33 @@ export function CustomerScreen() {
   if (state.phase === 'paid') {
     return (
       <View style={[s.root, s.center]}>
-        <Text style={s.thanks}>Thank you!</Text>
-        <Text style={s.paid}>Paid {usd(state.paid_cents ?? 0)}</Text>
-        {state.change_cents ? <Text style={s.change}>Your change {usd(state.change_cents)}</Text> : null}
+        <Text style={s.thanks}>{T.thanks}</Text>
+        <Text style={s.paid}>
+          {T.paid} {usd(state.paid_cents ?? 0)}
+        </Text>
+        {state.change_cents ? (
+          <Text style={s.change}>
+            {T.your_change} {usd(state.change_cents)}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
+
+  // Card: a still, clear instruction. No processor name, no spinner (Bible Part 4).
+  if (state.phase === 'card' || state.phase === 'approved' || state.phase === 'declined') {
+    return (
+      <View style={[s.root, s.center]}>
+        {state.paid_so_far_cents ? (
+          <Text style={s.muted}>
+            {T.paid_so_far} {usd(state.paid_so_far_cents)}
+          </Text>
+        ) : null}
+        <Text style={s.cardLabel}>{T.card_amount}</Text>
+        <Text style={s.cardAmount}>{usd(state.card_amount_cents ?? 0)}</Text>
+        {state.phase === 'card' ? <Text style={s.cardPrompt}>{T.tap_card}</Text> : null}
+        {state.phase === 'approved' ? <Text style={s.approved}>{T.approved}</Text> : null}
+        {state.phase === 'declined' ? <Text style={s.declined}>{T.declined}</Text> : null}
       </View>
     );
   }
@@ -57,12 +82,12 @@ export function CustomerScreen() {
       </ScrollView>
       <View style={s.totals}>
         <View style={s.totalBox}>
-          <Text style={s.totalLabel}>Pay with cash</Text>
+          <Text style={s.totalLabel}>{T.pay_cash}</Text>
           <Text style={s.totalValue}>{usd(state.cash_total_cents)}</Text>
           <Text style={s.mutedSmall}>incl. tax {usd(state.tax_cash_cents)}</Text>
         </View>
         <View style={s.totalBox}>
-          <Text style={s.totalLabel}>Pay with card</Text>
+          <Text style={s.totalLabel}>{T.pay_card}</Text>
           <Text style={s.totalValue}>{usd(state.card_total_cents)}</Text>
           <Text style={s.mutedSmall}>incl. tax {usd(state.tax_card_cents)}</Text>
         </View>
@@ -80,6 +105,12 @@ const s = StyleSheet.create({
   muted: { color: C.muted, fontSize: 16 },
   mutedSmall: { color: C.muted, fontSize: 13 },
   thanks: { fontSize: 48, fontWeight: '800', color: C.green },
+  cardLabel: { fontSize: 20, color: C.muted, fontWeight: '700' },
+  cardAmount: { fontSize: 64, fontWeight: '800', color: C.black, fontVariant: ['tabular-nums'] },
+  cardPrompt: { fontSize: 26, fontWeight: '700', color: C.ink, textAlign: 'center', maxWidth: 640 },
+  approved: { fontSize: 32, fontWeight: '800', color: C.green },
+  // Declined is ink, not red: it sits right under an amount.
+  declined: { fontSize: 24, fontWeight: '700', color: C.ink, textAlign: 'center', maxWidth: 640 },
   paid: { fontSize: 28, color: C.ink },
   change: { fontSize: 32, fontWeight: '700', color: C.green },
   head: { backgroundColor: C.black, padding: 16 },
