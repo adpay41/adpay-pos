@@ -25,6 +25,7 @@ import {
 } from '@adpay/shared';
 import { useMemo, useState, type FormEvent } from 'react';
 import { API_URL, api, shrinkPhoto, upload } from '../lib/api';
+import { ReceiptPanel } from './receipt-panel';
 import { ErrorBox, Money, When, useLoad } from './ui';
 
 interface LocationSummary {
@@ -45,7 +46,7 @@ function marginText(cash: number, cost: number | null): string {
   return `${tenths / 10}%`;
 }
 
-export function CatalogEditor({ merchantId }: { merchantId: string }) {
+export function CatalogEditor({ merchantId, merchantName = 'Your store' }: { merchantId: string; merchantName?: string }) {
   const base = `/admin/merchants/${merchantId}`;
   const locations = useLoad(() => api<{ locations: LocationSummary[] }>(`${base}/locations`), [merchantId]);
   const [locationId, setLocationId] = useState<string | null>(null);
@@ -89,6 +90,7 @@ export function CatalogEditor({ merchantId }: { merchantId: string }) {
             </span>
           </div>
           <LocationPricing base={base} loc={loc} items={catalog.data.items} onSaved={saved} />
+          {catalog.data.receipt && <ReceiptPanel base={base} loc={loc} merchantName={merchantName} current={catalog.data.receipt} onSaved={saved} />}
           <Categories base={base} categories={catalog.data.categories} items={catalog.data.items} onSaved={saved} />
           <Favorites base={base} catalog={catalog.data} locationName={loc.name} onSaved={saved} />
           <Items

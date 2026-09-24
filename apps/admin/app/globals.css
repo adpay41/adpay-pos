@@ -171,3 +171,13 @@ textarea { font: inherit; padding: 7px 10px; border: 1px solid #cfcfcf; border-r
 
 /* P6: cash (short is amber, never red near an amount) */
 .short, .short .money { color: #8a5300; }
+
+/* P8: receipt editor and paper preview */
+.receipt-editor { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .receipt-editor { grid-template-columns: 1fr; } }
+.receipt-paper { background: #fffef8; border: 1px solid var(--line); border-radius: 6px; padding: 14px 10px; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; line-height: 1.35; white-space: pre; overflow-x: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.receipt-line.bold { font-weight: 800; }
+.receipt-line.double { font-size: 14px; font-weight: 800; }
+.receipt-logo { display: block; max-width: 70%; max-height: 72px; margin: 0 auto 6px; }
+.receipt-qr { border: 1px dashed #bbb; border-radius: 6px; text-align: center; padding: 6px; margin: 6px 0; font-weight: 800; white-space: normal; }
+.logo-preview { max-width: 160px; max-height: 64px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 4px; }

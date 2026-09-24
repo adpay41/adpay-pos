@@ -16,6 +16,7 @@ import {
   MEDIA_MAX_BYTES,
   MEDIA_TYPES,
   QuickKeysInput,
+  ReceiptSettingsInput,
 } from '@adpay/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -31,6 +32,7 @@ import {
   reorderCatalog,
   setLocationRates,
   setQuickKeys,
+  setReceiptSettings,
   updateCategory,
   updateItem,
   uploadMedia,
@@ -137,6 +139,18 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId, actor } = scope.resolve(r, true);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return setQuickKeys(db, actor, merchantId, locationId, QuickKeysInput.parse(r.body).item_ids, trace(r));
+    });
+
+    s.get(`${p}/locations/:locationId/receipt`, async (r) => {
+      const { merchantId } = scope.resolve(r, false);
+      const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
+      return (await getCatalogSnapshot(db, merchantId, locationId)).receipt;
+    });
+
+    s.put(`${p}/locations/:locationId/receipt`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
+      return setReceiptSettings(db, actor, merchantId, locationId, ReceiptSettingsInput.parse(r.body), trace(r));
     });
 
     s.put(`${p}/catalog/order`, async (r) => {

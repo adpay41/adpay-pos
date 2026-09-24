@@ -29,7 +29,7 @@ The **Phase** column refers to section 5.
 
 | # | Item (Bible §) | Status | What exists / what's missing | Phase |
 | --- | --- | --- | --- | --- |
-| L1 | Scan-first, zero-tap sale (1.1) | 🟡 | P5: scan-first works (keyboard-wedge scanner; scan rings at once, same item again raises qty). Zero-tap receipt default is P8. | P5, P8 |
+| L1 | Scan-first, zero-tap sale (1.1) | ✅ | P5 scan-first + P8 zero-tap: with "no receipt unless asked", scan → Exact → the register clears itself for the next customer (change still shown). | P5, P8 |
 | L2 | Quick-key grid with per-store layout, colors, images, favorites (1.1, L part) | ✅ | P2: per-location favorites page, category + item order, fixed-palette tile colors, product photos (ADR 0010). Drag-to-arrange is N (P14). | P2 |
 | L3 | Quantity intelligence: tap twice = qty 2; long-press keypad; case barcode = pack qty (1.1) | ✅ | P5: ring the same item again = qty +1 (`sale.line_qty_changed`); long-press tile or line for a typed qty; case barcode = pack qty. | P5 |
 | L4 | Item search by name/UPC/PLU/first letters, fuzzy (1.1) | ✅ | P5: name prefix / first letters / one-typo fuzzy ("coke zro"), UPC (any spelling), PLU, last digits of a barcode. | P5 |
@@ -48,7 +48,7 @@ The **Phase** column refers to section 5.
 | L17 | State tax tables, basic: cigarette, vape, sugar, bottle deposit, bag fee, per location, effective dates (1.4) | 🟡 | One sales-tax rate per location + taxable flag per category. No excise, deposits, fees or effective dates. | P10 |
 | L18 | Customer screen: live cart with both prices, tax, totals, large type (1.5) | ✅ | Browser second window. (Android Presentation display ⛔ hardware.) | — |
 | L19 | Customer screen states idle → cart → "tap card" → approved/declined → thanks + change (1.5) | 🟡 | idle/cart/paid exist. No formal state machine; no tap/approved/declined states. | P9 |
-| L20 | 80mm receipt with logo, both prices, disclosure, itemized tax, return policy, QR (1.6) | 🟡 | 48-col text receipt with both totals and disclosure ✅. No logo, itemized tax by rate, return policy or QR. Physical printing ⛔ hardware. | P8 |
+| L20 | 80mm receipt with logo, both prices, disclosure, itemized tax, return policy, QR (1.6) | 🟡 | P8: logo, both prices + disclosure, tax itemized by rate, return policy, QR (store link), per-location settings with live preview. Physical 80mm printing ⛔ hardware module; digital-receipt QR ⛔ hosting (N). | P8, P-HW |
 | L21 | Reprint any ticket from the register (1.6, L part) | ✅ | P7: register Tickets list (last 40) → reprint any ticket; refunds print the ticket with a refund footer. | P7 |
 | L22 | 72h offline on cash, full catalog, receipts, drawer (1.7) | 🟡 | Design + tests prove offline sale and exactly-once sync (browser). Not soak-tested; not on device; new features must keep it true. | every phase |
 | L23 | Store-and-forward status / "cash only" banner + retry (1.7) | 🟡 | Offline sync pill. No terminal status, no cash-only banner. | P9 |
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P7 Ticket lifecycle | #11 | PR open — hold/recall (several parked tickets), register Tickets list with reprint, refunds by line at the price paid, void of a completed sale (refund rest + void), PIN-gated; large refund/void alert. ADR 0015. |
+| P8 Receipt v2 | #12 | PR open — per-location receipt settings (logo, header lines, return policy, footer, QR link, after-sale ask/print/none) edited in admin and the merchant app with a live preview; tax itemized by rate; zero-tap cash sale. ADR 0016. |
+| P7 Ticket lifecycle | #11 | merged — hold/recall (several parked tickets), register Tickets list with reprint, refunds by line at the price paid, void of a completed sale (refund rest + void), PIN-gated; large refund/void alert. ADR 0015. |
 | P6 Cash management | #10 | merged — drawer sessions (counted float), safe drops / paid-outs / paid-ins with reasons, no-sale behind a PIN, blind count, over/short by cashier and day (merchant app Cash tab, admin Cash tab), drawer-short and no-sale-spike alerts. ADR 0014. |
 | P5 Register speed | #9 | merged — keyboard-wedge scanning, forgiving search, qty merge + long-press qty, case barcodes, open price, unknown barcode → item minted on the register (offline outbox, idempotent, aliases), price check with cost behind a PIN, sale-speed metric. ADR 0013. |
 | P4 Ops layer | #8 | merged — heartbeat every 30 s, device log ring + upload, remote-action queue (WS push + heartbeat fallback, audited), admin Fleet / Device page / Alert console, alert rules every minute, merchant Alerts tab, realtime `/ws` over LISTEN/NOTIFY (instant catalog nudge, live sales feed). ADR 0012. |

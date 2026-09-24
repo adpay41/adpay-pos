@@ -3,7 +3,16 @@
  * own dual-price rate and tax rate. Registers pull the result as a versioned snapshot — server wins
  * on catalog (ADR 0002).
  */
-import { resolveDualPrice, type CatalogCategory, type CatalogItem, type CatalogSnapshot, type TileColor } from '@adpay/shared';
+import {
+  DEFAULT_RECEIPT_SETTINGS,
+  ReceiptSettingsInput,
+  resolveDualPrice,
+  type CatalogCategory,
+  type CatalogItem,
+  type CatalogSnapshot,
+  type ReceiptSettings,
+  type TileColor,
+} from '@adpay/shared';
 import type { Queryable } from '../db/db';
 import { notFound } from '../http/errors';
 import { mediaUrl } from './media';
@@ -14,6 +23,13 @@ interface LocationRow {
   tax_rate_ppm: number;
   dual_price_rate_ppm: number;
   catalog_version: number;
+  receipt_settings: unknown;
+}
+
+/** Stored settings over the defaults; anything malformed falls back rather than breaking receipts. */
+export function receiptSettingsOf(raw: unknown): ReceiptSettings {
+  const parsed = ReceiptSettingsInput.safeParse(raw ?? {});
+  return parsed.success ? parsed.data : DEFAULT_RECEIPT_SETTINGS;
 }
 
 interface ItemRow {
@@ -45,7 +61,7 @@ export async function getCatalogSnapshot(
   locationId: string,
 ): Promise<CatalogSnapshot> {
   const { rows: locs } = await q.query<LocationRow>(
-    `SELECT l.location_id, l.merchant_id, l.tax_rate_ppm, l.dual_price_rate_ppm, m.catalog_version
+    `SELECT l.location_id, l.merchant_id, l.tax_rate_ppm, l.dual_price_rate_ppm, m.catalog_version, l.receipt_settings
        FROM locations l JOIN merchants m ON m.merchant_id = l.merchant_id
       WHERE l.location_id = $1 AND l.merchant_id = $2`,
     [locationId, merchantId],
@@ -109,6 +125,10 @@ export async function getCatalogSnapshot(
       };
     }),
     quick_keys: favorites.map((f) => f.item_id),
+    receipt: (() => {
+      const r = receiptSettingsOf(loc.receipt_settings);
+      return { ...r, logo_url: r.logo_media_id ? mediaUrl(r.logo_media_id) : null };
+    })(),
   };
 }
 
