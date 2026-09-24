@@ -53,9 +53,11 @@ export default function LoginPage() {
         <button className="primary" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-          Local demo: the seed prints the admin login in the terminal when you run <code>pnpm dev</code>.
-        </p>
+        {process.env.NODE_ENV === 'development' && (
+          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+            Local demo (dev builds only): <code>admin@adpay.local</code> / <code>adpay-demo</code>
+          </p>
+        )}
       </form>
     </div>
   );

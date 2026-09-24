@@ -14,14 +14,14 @@
  */
 import { randomUUID } from 'node:crypto';
 import { foldSale, parseRegisterEvent, resolveDualPrice, type RegisterEvent } from '@adpay/shared';
-import { hashPassword } from '../auth/crypto';
+import { hashPassword, hashSetupCode } from '../auth/crypto';
 import type { DevicePrincipal } from '../auth/principal';
 import { loadDatabaseUrl } from '../config';
 import { createPgDb, type Db } from '../db/db';
 import { migrate } from '../db/migrate';
 import { createPaymentProvider } from '../payments';
 import { ingestEvents } from '../services/events';
-import { createLocation, createMerchant, createOrg, createRegister, issueSetupCode } from '../services/onboarding';
+import { createLocation, createMerchant, createOrg, createRegister } from '../services/onboarding';
 import { CATEGORIES, ITEMS, syntheticUpc } from './seed-data';
 
 if (process.env.NODE_ENV === 'production') {
@@ -383,6 +383,36 @@ async function main() {
   }
 }
 
+/**
+ * Fixed, documented setup codes for the demo registers (local dev only), so anyone can pair a
+ * register from the README without reading a terminal. Every seed run — i.e. every `npm run dev`
+ * or `npm run logins` — re-arms them, so a code that was already used works again.
+ * Registers created later in admin get random codes from Admin → Merchants → Setup code.
+ */
+const DEMO_SETUP_CODES: Record<string, string> = {
+  'Journal Square Deli & Grocery · Jersey City · Register 3 (new)': 'JSQ3-DEMO',
+  'Journal Square Deli & Grocery · Jersey City · Register 1': 'JSQ1-DEMO',
+  'Journal Square Deli & Grocery · Jersey City · Register 2': 'JSQ2-DEMO',
+  'Journal Square Deli & Grocery · Astoria · Register 1': 'AST1-DEMO',
+  'Bayonne Corner Mart · Broadway · Register 1': 'BAY1-DEMO',
+};
+const DEV_OTP_CODE = process.env.DEV_OTP_CODE || '123456';
+
+async function armDemoSetupCode(db: Db, registerId: string, code: string) {
+  const hash = hashSetupCode(code);
+  await db.tx(async (q) => {
+    await q.query(`UPDATE register_setup_codes SET expires_at = now() WHERE register_id = $1 AND used_at IS NULL AND expires_at > now()`, [
+      registerId,
+    ]);
+    await q.query(`DELETE FROM register_setup_codes WHERE code_hash = $1`, [hash]);
+    await q.query(
+      `INSERT INTO register_setup_codes (code_hash, org_id, merchant_id, location_id, register_id, expires_at)
+       SELECT $1, org_id, merchant_id, location_id, register_id, now() + interval '365 days' FROM registers WHERE register_id = $2`,
+      [hash, registerId],
+    );
+  });
+}
+
 async function printLogins(db: Db) {
   const { rows } = await db.query<{ register_id: string; label: string }>(
     `SELECT r.register_id, m.name || ' · ' || l.name || ' · ' || r.name AS label
@@ -391,20 +421,23 @@ async function printLogins(db: Db) {
   );
   const codes: string[] = [];
   for (const r of rows) {
-    const { code } = await db.tx((q) => issueSetupCode(q, r.register_id, null, 24 * 30));
+    const code = DEMO_SETUP_CODES[r.label];
+    if (!code) continue;
+    await armDemoSetupCode(db, r.register_id, code);
     codes.push(`    ${code}   ${r.label}`);
   }
   console.log(
     [
       '',
       '──────────────────────────── AD Pay demo logins (local only) ────────────────────────────',
-      `  Admin back-office    ${ADMIN_EMAIL}  /  ${ADMIN_PASSWORD}`,
-      '  Merchant app         (201) 555-0100  Nadia Haddad, owner — Journal Square Deli & Grocery',
-      '                       (201) 555-0101  Luis Ortega, manager — same merchant',
-      '                       (201) 555-0142  Kevin Walsh, owner — Bayonne Corner Mart',
-      '                       The 6-digit code appears on screen (dev mode; no SMS is sent).',
-      '  Register setup codes (fresh each run, valid 30 days; pairing again revokes the old device):',
+      `  Admin back-office    http://localhost:3001   ${ADMIN_EMAIL}  /  ${ADMIN_PASSWORD}   (platform admin)`,
+      `  Merchant app         http://localhost:8081   phone (201) 555-0100, then code ${DEV_OTP_CODE}`,
+      '                       (201) 555-0100 Nadia Haddad, owner · (201) 555-0101 Luis Ortega, manager',
+      '                       (201) 555-0142 Kevin Walsh, owner of the separate Bayonne tenant',
+      `                       Dev mode sends no SMS; the code is always ${DEV_OTP_CODE} (also shown on screen).`,
+      '  Register             http://localhost:8082   enter a setup code:',
       ...codes,
+      '                       Codes are re-armed on every `npm run dev` or `npm run logins`.',
       '──────────────────────────────────────────────────────────────────────────────────────────',
       '',
     ].join('\n'),

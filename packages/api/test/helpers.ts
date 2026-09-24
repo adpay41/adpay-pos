@@ -95,6 +95,7 @@ export const TEST_CONFIG: Config = {
   jwtIssuer: 'adpay',
   deviceTokenTtlDays: 30,
   otpDelivery: 'log',
+  devOtpCode: '123456',
   corsOrigins: [],
   paymentProvider: 'stub',
 };

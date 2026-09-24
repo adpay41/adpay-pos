@@ -54,7 +54,9 @@ export async function authRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
       `SELECT user_id FROM users WHERE kind = 'merchant_user' AND phone = $1 AND disabled_at IS NULL`,
       [phone],
     );
-    const code = newOtpCode();
+    // Local dev (OTP_DELIVERY=log): one fixed, documented code so nobody has to hunt for it.
+    // loadConfig refuses OTP_DELIVERY=log in production, so this can never ship as a real login.
+    const code = config.otpDelivery === 'log' ? config.devOtpCode : newOtpCode();
     const { rows } = await db.query<{ challenge_id: string }>(
       `INSERT INTO otp_challenges (phone, code_hash, expires_at) VALUES ($1, '', now() + make_interval(mins => $2))
        RETURNING challenge_id`,

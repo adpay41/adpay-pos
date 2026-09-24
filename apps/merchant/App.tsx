@@ -105,6 +105,9 @@ function Login({ onToken }: { onToken: (t: string) => void }) {
             onSubmitEditing={request}
           />
           <Button label={busy ? 'Sending…' : 'Text me a code'} onPress={request} disabled={busy || phone.replace(/\D/g, '').length < 10} />
+          {__DEV__ ? (
+            <Text style={s.muted}>Local demo: (201) 555-0100, then code 123456. No SMS is sent in dev.</Text>
+          ) : null}
         </>
       ) : (
         <>
