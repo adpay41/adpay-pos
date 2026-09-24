@@ -12,6 +12,7 @@ import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { catalogRoutes } from './routes/catalog';
 import { deviceRoutes } from './routes/device';
+import { lotteryRoutes } from './routes/lottery';
 import { merchantRoutes } from './routes/merchant';
 import { opsRoutes } from './routes/ops';
 import { RealtimeHub } from './realtime/hub';
@@ -113,6 +114,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(async (scope) => catalogRoutes(scope, deps));
   await app.register(async (scope) => staffRoutes(scope, deps));
   await app.register(async (scope) => opsRoutes(scope, deps));
+  await app.register(async (scope) => lotteryRoutes(scope, deps));
 
   const hub = new RealtimeHub(db, config, systemLogger(logger));
   await hub.register(app);

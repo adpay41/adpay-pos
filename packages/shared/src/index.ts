@@ -26,3 +26,4 @@ export * from './timeclock';
 export * from './zreport';
 export * from './idscan';
 export * from './tax-report';
+export * from './lottery';

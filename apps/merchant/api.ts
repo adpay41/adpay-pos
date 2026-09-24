@@ -47,3 +47,11 @@ export async function upload<T>(path: string, token: string, body: Blob, content
 
 /** Absolute URL for a path the API returned (e.g. an item's `image_url`). */
 export const apiUrl = (path: string) => `${API_URL}${path}`;
+
+/** GET a text body (a CSV export). */
+export async function apiText(path: string, token: string): Promise<string> {
+  const res = await fetch(`${API_URL}${path}`, { headers: { authorization: `Bearer ${token}` } });
+  const text = await res.text();
+  if (!res.ok) throw new ApiError(res.status, (JSON.parse(text || '{}') as { message?: string }).message ?? `HTTP ${res.status}`);
+  return text;
+}
