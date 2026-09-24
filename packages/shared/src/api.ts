@@ -4,6 +4,7 @@
  */
 import type { TileColor } from './catalog';
 import type { ComplianceSnapshot, Restriction } from './compliance';
+import type { FeatureFlags } from './flags';
 import type { PackId } from './packs';
 import type { ReceiptSettings } from './receipt-settings';
 import type { RegisterStaff } from './staff';
@@ -92,6 +93,9 @@ export interface CatalogSnapshot {
   receipt?: ReceiptSettings & { logo_url: string | null };
   /** Tax schedule, per-unit charges and age rules for this location (P10). Absent in older cached snapshots. */
   compliance?: ComplianceSnapshot;
+  /** This merchant's feature flags and vertical packs (P12b). Absent in older cached snapshots: everything on. */
+  flags?: FeatureFlags;
+  enabled_packs?: PackId[];
   /**
    * Who can sign in at this register, with PIN hashes and permissions (P3). Present only in the
    * snapshot a register pulls (`/device/catalog`), never in what the apps see.

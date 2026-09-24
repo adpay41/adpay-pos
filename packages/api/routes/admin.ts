@@ -1,7 +1,7 @@
 /**
  * Admin (AD Pay staff) routes. Cross-tenant by role; every write is audited.
  */
-import { KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput } from '@adpay/shared';
+import { FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asAdmin, requireAdmin } from '../http/auth-hooks';
@@ -18,6 +18,7 @@ import {
   tenancyTree,
 } from '../services/onboarding';
 import { cashReport } from '../services/cash';
+import { merchantConfig, postSupportMessage, setFeatureFlags, setPacks, supportInbox, supportThread } from '../services/merchant-config';
 import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPlans, updateOnboarding } from '../services/merchant-setup';
 import { recentSales, salesSummary } from '../services/reports';
 
@@ -54,6 +55,28 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
     return installKit(db, asAdmin(request), merchantId, request.logContext.trace_id);
   });
+  // Feature flags and vertical packs per merchant (P12b, L52).
+  const MerchantParams = z.object({ merchantId: z.uuid() });
+  app.get('/admin/merchants/:merchantId/config', async (request) => merchantConfig(db, MerchantParams.parse(request.params).merchantId));
+  app.put('/admin/merchants/:merchantId/flags', async (request) => {
+    const { merchantId } = MerchantParams.parse(request.params);
+    return setFeatureFlags(db, asAdmin(request), merchantId, FeatureFlagOverridesInput.parse(request.body), request.logContext.trace_id);
+  });
+  app.put('/admin/merchants/:merchantId/packs', async (request) => {
+    const { merchantId } = MerchantParams.parse(request.params);
+    const { enabled_packs } = z.strictObject({ enabled_packs: z.array(z.enum(PACK_IDS)).min(1).refine((p) => new Set(p).size === p.length, 'Each pack once') }).parse(request.body);
+    return setPacks(db, asAdmin(request), merchantId, enabled_packs, request.logContext.trace_id);
+  });
+
+  // Support chat (P12b, L40): AD Pay's inbox and one conversation per merchant.
+  app.get('/admin/support', async () => ({ conversations: await supportInbox(db) }));
+  app.get('/admin/support/:merchantId', async (request) => ({ messages: await supportThread(db, MerchantParams.parse(request.params).merchantId, 'admin') }));
+  app.post('/admin/support/:merchantId', async (request, reply) => {
+    const { merchantId } = MerchantParams.parse(request.params);
+    reply.status(201);
+    return postSupportMessage(db, asAdmin(request), merchantId, SupportMessageInput.parse(request.body).body, request.logContext.trace_id);
+  });
+
   // Pricing plans with history (L51).
   app.get('/admin/merchants/:merchantId/pricing', async (request) => {
     const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);

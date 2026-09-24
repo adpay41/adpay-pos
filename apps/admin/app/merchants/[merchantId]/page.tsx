@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { CashPanel } from '../../../components/cash-panel';
 import { CatalogEditor } from '../../../components/catalog-editor';
+import { ConfigPanel } from '../../../components/config-panel';
 import { PricingPanel } from '../../../components/pricing-panel';
 import { SalesTable, SummaryView } from '../../../components/sales';
 import { StaffPanel } from '../../../components/staff-panel';
@@ -46,7 +47,7 @@ export default function MerchantPage() {
           Staff
         </button>
         <button className={tab === 'plan' ? 'active' : ''} onClick={() => setTab('plan')}>
-          Plan & install
+          Plan & setup
         </button>
       </div>
 
@@ -72,7 +73,12 @@ export default function MerchantPage() {
       {tab === 'cash' && <CashPanel merchantId={merchantId} />}
       {tab === 'catalog' && <CatalogEditor merchantId={merchantId} merchantName={merchant?.name ?? 'Your store'} />}
       {tab === 'staff' && <StaffPanel merchantId={merchantId} />}
-      {tab === 'plan' && <PricingPanel merchantId={merchantId} />}
+      {tab === 'plan' && (
+        <>
+          <PricingPanel merchantId={merchantId} />
+          <ConfigPanel merchantId={merchantId} />
+        </>
+      )}
     </Shell>
   );
 }

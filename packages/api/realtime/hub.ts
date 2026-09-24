@@ -14,7 +14,7 @@
  * that drops WebSockets still works.
  */
 import websocket from '@fastify/websocket';
-import { ALERT_RULES, ClientAuthMessage, type ServerMessage } from '@adpay/shared';
+import { ALERT_RULES, ClientAuthMessage, type ServerMessage, type SupportMessage } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import type pino from 'pino';
 import type { WebSocket } from 'ws';
@@ -54,6 +54,7 @@ export class RealtimeHub {
       this.stops.push(await this.db.listen('adpay_sale', (p) => this.onSale(p)));
       this.stops.push(await this.db.listen('adpay_register', (p) => this.onRegister(p)));
       this.stops.push(await this.db.listen('adpay_alert', (p) => void this.onAlert(p)));
+      this.stops.push(await this.db.listen('adpay_support', (p) => this.onSupport(p)));
     }
     this.ping = setInterval(() => this.heartbeat(), PING_MS);
     app.addHook('onClose', async () => {
@@ -176,6 +177,15 @@ export class RealtimeHub {
   private onRegister(payload: string) {
     const r = JSON.parse(payload) as { register_id: string; merchant_id: string; last_heartbeat_at: string };
     for (const c of this.forMerchant(r.merchant_id)) this.send(c, { type: 'register', ...r });
+  }
+
+  /** Support chat (P12b): to that merchant's app users and to AD Pay admins. */
+  private onSupport(payload: string) {
+    const message = JSON.parse(payload) as SupportMessage;
+    for (const c of this.forMerchant(message.merchant_id)) {
+      if (c.principal.kind === 'device') continue;
+      this.send(c, { type: 'support', message });
+    }
   }
 
   private async onAlert(payload: string) {

@@ -73,7 +73,7 @@ The **Phase** column refers to section 5.
 | L37 | Alerts: register offline > 5 min; terminal offline; printer out of paper (2.6) | 🟡 | P4: register offline > 5 min and hardware-error alerts fire and show in the merchant app's Alerts tab. Alert settings in the merchant app: mute any merchant rule (P11). Terminal/paper readings ⛔ hardware; push/SMS delivery ⛔ accounts. | P4, P11 |
 | L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | ✅ | P6: no-sale spike (5+/register/day). P7: refund or void ≥ $25 alert naming who did it. Per-merchant thresholds (refund/void $, drawer short $, no-sale count) set in the merchant app (P11). | P6, P7, P11 |
 | L39 | Delivery channel for alerts (push/SMS/WhatsApp) (2.6) | ⛔ | In-app inbox is buildable. **Push** needs Expo/FCM/APNs accounts; **SMS** a Twilio account; **WhatsApp** a Meta Business account. Those are signups the founder must do. | P4, P11 |
-| L40 | Support chat with "share my screen from the register" (2.8) | ⛔ | Chat is buildable. Screen share needs the MDM vendor (open decision: Esper vs own). | P12 (chat) |
+| L40 | Support chat with "share my screen from the register" (2.8) | ⛔ | Chat ✅ (P12b): merchant app Help tab ↔ admin Support inbox, live over `/ws`, unread counts, per-merchant flag. Screen share needs the MDM vendor (open decision: Esper vs own). | P12 (chat) |
 
 ### Admin
 
@@ -90,7 +90,7 @@ The **Phase** column refers to section 5.
 | L49 | Settlement & fee reconciliation (3.3) | ⛔ | Needs live processor settlement files. | P-PAY |
 | L50 | Residual/margin report per merchant per month (3.3) | ⛔ | Our revenue side is computable from pricing plans. **Processor cost needs the Finix rate card and real interchange data.** Report shell + manual cost inputs are buildable. | P13 |
 | L51 | Pricing plans: dual %, IC+, flat, POS subscription, with history (3.3) | ✅ | Append-only plans with effective dates (dual / IC+ / flat + monthly + per register); current = latest started; dual plan can set location markups (P12a). | P12 |
-| L52 | Feature flags & vertical packs per merchant; pack editor (3.4) | 🟡 | `merchants.enabled_packs` exists; no flags table, no UI. | P12 |
+| L52 | Feature flags & vertical packs per merchant; pack editor (3.4) | ✅ | Code-defined flags with per-merchant overrides in the snapshot (card payments, item create, price check, hold, support chat), honoured by the register and app; pack editor seeds starter categories (P12b, ADR 0021). | P12 |
 | L53 | KPIs: active stores, volume, effective rate, margin, churn, support load, installs/week (3.5) | ⬜ | Volume/active stores computable now; margin/effective rate depend on L50. | P13 |
 
 ### End customer (Part 4)
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P12a Onboarding, install kit, pricing | #16 | PR open — admin onboarding wizard (one transaction: org, merchant + catalog template, owner, location + draft tax template, registers, plan, install date) and pipeline (live on first pairing; KYB ⛔); printable install kit with setup QR per register (14-day codes, scanner-pairable); append-only pricing plans with history. ADR 0020. P12b (feature flags, pack editor, support chat) follows. |
+| P12b Flags, packs, support chat | #17 | PR open — feature flags per merchant (code defaults + overrides, in the snapshot, honoured by the register: card, item create, price check, hold; and the app: support chat), pack editor seeding starter categories, support chat (merchant Help tab ↔ admin Support inbox, append-only, unread, live). ADR 0021. |
+| P12a Onboarding, install kit, pricing | #16 | merged — admin onboarding wizard (one transaction: org, merchant + catalog template, owner, location + draft tax template, registers, plan, install date) and pipeline (live on first pairing; KYB ⛔); printable install kit with setup QR per register (14-day codes, scanner-pairable); append-only pricing plans with history. ADR 0020. P12b (feature flags, pack editor, support chat) follows. |
 | P11 Merchant app, L | #15 | merged — live ticker over `/ws` with register and cashier names, today vs yesterday vs same day last week by hour cut at the same time ("up 12.5%"), per-cashier totals and cashier on tickets, per-merchant alert settings (mute rules, refund/short/no-sale thresholds) honoured by the rules, inbox and push. ADR 0019. |
 | P10 Tax & compliance tables | #14 | merged — per-location dated sales-tax schedule by class, per-unit charges (deposit, excise, fee; fixed or %) with dates, bag-fee key on the register, age rules by state and restriction kind, NJ/NY/NYC draft templates; resolved at ring time by store-local date and captured in the line event; charges itemized on the receipt and refunded with the unit. Admin editor + merchant-app restriction toggle. ADR 0018. |
 | P9 Card & split tender | #13 | merged — card on the stub through an idempotent `terminal-charge` endpoint, split tender (cash + card, two cards) with dual pricing per portion, card refunds and split voids, customer-screen card states, cash-only banner and safe retry, card attempts in the sale timeline. ADR 0017. |
