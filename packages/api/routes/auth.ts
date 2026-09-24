@@ -5,19 +5,12 @@ import { signUserToken, type AdminPrincipal, type MerchantUserPrincipal } from '
 import type { AppDeps } from '../server';
 import { audit } from '../services/audit';
 import { deviceIdentity, pairRegister } from '../services/onboarding';
-import { badRequest, tooMany, unauthorized } from '../http/errors';
+import { membershipsOf, normalizePhone, resolveMembership } from '../services/staff';
+import { notFound, tooMany, unauthorized } from '../http/errors';
 
 const OTP_TTL_MINUTES = 5;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_MAX_PER_15_MIN = 5;
-
-/** E.164, US only in v1: +1 and ten digits. Accepts common human formatting. */
-function normalizePhone(input: string): string {
-  const digits = input.replace(/\D/g, '');
-  const ten = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
-  if (!/^\d{10}$/.test(ten)) throw badRequest('Enter a 10-digit US phone number');
-  return `+1${ten}`;
-}
 
 export async function authRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db, config } = deps;
@@ -85,14 +78,37 @@ export async function authRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
       const ch = rows[0];
       if (!ch || ch.code_hash !== hashOtp(body.challenge_id, body.code)) return null;
       await q.query(`UPDATE otp_challenges SET consumed_at = now() WHERE challenge_id = $1`, [body.challenge_id]);
-      const { rows: users } = await q.query<Omit<MerchantUserPrincipal, 'kind'>>(
-        `SELECT user_id, role, org_id, merchant_id FROM users
-          WHERE kind = 'merchant_user' AND phone = $1 AND disabled_at IS NULL`,
+      const { rows: users } = await q.query<{ user_id: string }>(
+        `SELECT user_id FROM users WHERE kind = 'merchant_user' AND phone = $1 AND disabled_at IS NULL`,
         [ch.phone],
       );
-      return users[0] ? ({ kind: 'merchant_user', ...users[0] } as MerchantUserPrincipal) : null;
+      if (!users[0]) return null;
+      // Sign in to the first store they work at; the app offers a switcher when there are more.
+      const [first] = await membershipsOf(q, users[0].user_id);
+      if (!first) return null;
+      const m = await resolveMembership(q, users[0].user_id, first.merchant_id);
+      return m ? ({ kind: 'merchant_user', user_id: users[0].user_id, merchant_id: first.merchant_id, ...m } as MerchantUserPrincipal) : null;
     });
     if (!principal) throw unauthorized('That code is wrong or has expired');
+    return { token: await signUserToken(principal, config.jwtSecret, config.jwtIssuer), principal };
+  });
+
+  /** Every store this person works at (for the merchant app's store switcher, Bible L32). */
+  app.get('/auth/merchant/memberships', async (request) => {
+    const p = request.principal;
+    if (p?.kind !== 'merchant_user') throw unauthorized();
+    return { current: p.merchant_id, memberships: await membershipsOf(db, p.user_id) };
+  });
+
+  /** Switch to another store this person works at: a new token scoped to that merchant. */
+  app.post('/auth/merchant/switch', async (request) => {
+    const p = request.principal;
+    if (p?.kind !== 'merchant_user') throw unauthorized();
+    const { merchant_id } = z.object({ merchant_id: z.uuid() }).parse(request.body);
+    const m = await resolveMembership(db, p.user_id, merchant_id);
+    // Not a member there: 404, like any other cross-tenant id.
+    if (!m) throw notFound('Store not found');
+    const principal: MerchantUserPrincipal = { kind: 'merchant_user', user_id: p.user_id, merchant_id, ...m };
     return { token: await signUserToken(principal, config.jwtSecret, config.jwtIssuer), principal };
   });
 
@@ -117,8 +133,8 @@ export async function authRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
     if (p.kind === 'device') return { principal: p, identity: await deviceIdentity(db, p.register_id) };
     const { rows } = await db.query<{ name: string; email: string | null; phone: string | null; merchant_name: string | null }>(
       `SELECT u.name, u.email, u.phone, m.name AS merchant_name FROM users u
-         LEFT JOIN merchants m ON m.merchant_id = u.merchant_id WHERE u.user_id = $1`,
-      [p.user_id],
+         LEFT JOIN merchants m ON m.merchant_id = $2 WHERE u.user_id = $1`,
+      [p.user_id, p.kind === 'merchant_user' ? p.merchant_id : null],
     );
     return { principal: p, user: rows[0] ?? null };
   });

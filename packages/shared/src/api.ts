@@ -4,6 +4,7 @@
  */
 import type { TileColor } from './catalog';
 import type { PackId } from './packs';
+import type { RegisterStaff } from './staff';
 
 export type PrincipalKind = 'admin' | 'merchant_user' | 'device';
 
@@ -77,6 +78,11 @@ export interface CatalogSnapshot {
   items: CatalogItem[];
   /** This location's favorites, in tile order: the register's first quick-key page. */
   quick_keys: string[];
+  /**
+   * Who can sign in at this register, with PIN hashes and permissions (P3). Present only in the
+   * snapshot a register pulls (`/device/catalog`), never in what the apps see.
+   */
+  staff?: RegisterStaff;
 }
 
 export interface DeviceIdentity {

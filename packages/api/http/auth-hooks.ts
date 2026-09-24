@@ -2,6 +2,7 @@
  * Authentication and multi-tenant guards. Every non-public route declares which principal kinds
  * may call it; the principal's tenancy is bound to the request logger as soon as it is known.
  */
+import type { Permission } from '@adpay/shared';
 import type { FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pino from 'pino';
 import {
@@ -15,6 +16,7 @@ import {
 } from '../auth/principal';
 import type { Config } from '../config';
 import type { Db } from '../db/db';
+import { resolveMembership } from '../services/staff';
 import { bindRequestLogger } from './context';
 import { forbidden, unauthorized } from './errors';
 
@@ -30,10 +32,17 @@ export function makeAuthenticate(db: Db, config: Config, baseLogger: pino.Logger
     request.principal = null;
     if (!header?.startsWith('Bearer ')) return;
     const token = header.slice('Bearer '.length).trim();
-    const principal = token.startsWith('dev_')
+    const verified = token.startsWith('dev_')
       ? await resolveDeviceToken(db, token)
       : await verifyUserToken(token, config.jwtSecret, config.jwtIssuer);
-    if (!principal) return;
+    if (!verified) return;
+    let principal: Principal = verified as Principal;
+    if (verified.kind === 'merchant_user') {
+      // Current role and permissions from the membership, so a change or a removal is immediate.
+      const m = await resolveMembership(db, verified.user_id, verified.merchant_id);
+      if (!m) return;
+      principal = { ...verified, ...m };
+    }
     request.principal = principal;
     bindRequestLogger(baseLogger, request, tenancyOf(principal));
   };
@@ -49,6 +58,15 @@ function requireKind<K extends Principal['kind']>(...kinds: K[]): preHandlerAsyn
 
 export const requireAdmin = requireKind('admin');
 export const requireMerchantUser = requireKind('merchant_user');
+
+/** Guard for merchant-user routes that need one permission (admins pass: they are cross-tenant staff). */
+export function requirePermission(permission: Permission): preHandlerAsyncHookHandler {
+  return async function guard(request: FastifyRequest) {
+    const p = request.principal;
+    if (!p) throw unauthorized();
+    if (p.kind === 'merchant_user' && !p.permissions.includes(permission)) throw forbidden('Your role can’t do that here');
+  };
+}
 export const requireDevice = requireKind('device');
 
 export function asAdmin(r: FastifyRequest): AdminPrincipal {

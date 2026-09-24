@@ -13,6 +13,7 @@ import { authRoutes } from './routes/auth';
 import { catalogRoutes } from './routes/catalog';
 import { deviceRoutes } from './routes/device';
 import { merchantRoutes } from './routes/merchant';
+import { staffRoutes } from './routes/staff';
 
 export interface AppDeps {
   db: Db;
@@ -102,6 +103,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(async (scope) => merchantRoutes(scope, deps));
   await app.register(async (scope) => deviceRoutes(scope, deps));
   await app.register(async (scope) => catalogRoutes(scope, deps));
+  await app.register(async (scope) => staffRoutes(scope, deps));
 
   return app;
 }

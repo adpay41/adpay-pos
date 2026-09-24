@@ -13,6 +13,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
+import { hashPin, type Role } from '@adpay/shared';
 import { hashPassword } from '../auth/crypto';
 import type { Config } from '../config';
 import { createPgDb, type Db, type Queryable } from '../db/db';
@@ -129,10 +130,7 @@ export async function createTenant(db: Db, label: string, phone: string): Promis
     dual_price_rate_ppm: 40_000,
   });
   const reg = await createRegister(db, { location_id: loc.location_id, name: 'Register 1' });
-  await db.query(
-    `INSERT INTO users (kind, org_id, merchant_id, role, name, phone) VALUES ('merchant_user', $1, $2, 'owner', $3, $4)`,
-    [org.org_id, m.merchant_id, `${label} Owner`, `+1${phone.replace(/\D/g, '')}`],
-  );
+  await addStaff(db, { org_id: org.org_id, merchant_id: m.merchant_id }, 'owner', `${label} Owner`, phone);
   const { rows } = await db.query<{ category_id: string }>(
     `SELECT category_id FROM categories WHERE merchant_id = $1 AND name = 'Sandwiches'`,
     [m.merchant_id],
@@ -142,6 +140,28 @@ export async function createTenant(db: Db, label: string, phone: string): Promis
     [org.org_id, m.merchant_id, rows[0]!.category_id, `0${Math.floor(Math.random() * 1e10)}`],
   );
   return { ...reg, owner_phone: phone };
+}
+
+/** A person on a merchant's staff (a user + membership); `phone` gives them merchant-app access. */
+export async function addStaff(
+  db: Db,
+  t: { org_id: string; merchant_id: string },
+  role: Role,
+  name: string,
+  phone: string | null = null,
+  pin: string | null = null,
+): Promise<string> {
+  const { rows } = await db.query<{ user_id: string }>(
+    `INSERT INTO users (kind, name, phone) VALUES ('merchant_user', $1, $2) RETURNING user_id`,
+    [name, phone ? `+1${phone.replace(/\D/g, '').slice(-10)}` : null],
+  );
+  const userId = rows[0]!.user_id;
+  await db.query(
+    `INSERT INTO memberships (user_id, org_id, merchant_id, role, pin_hash, pin_set_at)
+     VALUES ($1, $2, $3, $4, $5, CASE WHEN $5::text IS NULL THEN NULL ELSE now() END)`,
+    [userId, t.org_id, t.merchant_id, role, pin ? hashPin(pin) : null],
+  );
+  return userId;
 }
 
 export async function createAdmin(db: Db, email = 'admin@test.local', password = 'correct horse battery'): Promise<void> {

@@ -6,5 +6,6 @@ export * from './fold';
 export * from './packs';
 export * from './api';
 export * from './catalog';
+export * from './staff';
 export * from './tender';
 export * from './receipt';

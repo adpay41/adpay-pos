@@ -13,7 +13,7 @@
  * Refuses to run with NODE_ENV=production.
  */
 import { randomUUID } from 'node:crypto';
-import { foldSale, parseRegisterEvent, resolveDualPrice, type RegisterEvent, type TileColor } from '@adpay/shared';
+import { foldSale, hashPin, parseRegisterEvent, resolveDualPrice, type RegisterEvent, type Role, type TileColor } from '@adpay/shared';
 import { hashPassword, hashSetupCode } from '../auth/crypto';
 import type { DevicePrincipal } from '../auth/principal';
 import { loadDatabaseUrl } from '../config';
@@ -381,15 +381,24 @@ async function main() {
     const bcmCatalog = await seedCatalog(db, org2.org_id, bcm.merchant_id, 20_000);
     await seedFavorites(db, bay.location_id, bcmCatalog);
 
-    const users: [string, string, string, string, string][] = [
-      [org.org_id, jsq.merchant_id, 'owner', 'Nadia Haddad', '+12015550100'],
-      [org.org_id, jsq.merchant_id, 'manager', 'Luis Ortega', '+12015550101'],
-      [org2.org_id, bcm.merchant_id, 'owner', 'Kevin Walsh', '+12015550142'],
+    // Demo staff with register PINs (local only; README lists them). Cashiers need no phone:
+    // they only sign in at the register, never to the merchant app.
+    const staff: [string, string, Role, string, string | null, string][] = [
+      [org.org_id, jsq.merchant_id, 'owner', 'Nadia Haddad', '+12015550100', '2580'],
+      [org.org_id, jsq.merchant_id, 'manager', 'Luis Ortega', '+12015550101', '1357'],
+      [org.org_id, jsq.merchant_id, 'cashier', 'Maria Santos', null, '2468'],
+      [org.org_id, jsq.merchant_id, 'cashier', 'Dev Patel', null, '3690'],
+      [org2.org_id, bcm.merchant_id, 'owner', 'Kevin Walsh', '+12015550142', '2580'],
+      [org2.org_id, bcm.merchant_id, 'cashier', 'Aisha Khan', null, '4826'],
     ];
-    for (const [o, m, role, name, phone] of users) {
+    for (const [o, m, role, name, phone, pin] of staff) {
+      const { rows: u } = await db.query<{ user_id: string }>(
+        `INSERT INTO users (kind, name, phone) VALUES ('merchant_user', $1, $2) RETURNING user_id`,
+        [name, phone],
+      );
       await db.query(
-        `INSERT INTO users (kind, org_id, merchant_id, role, name, phone) VALUES ('merchant_user', $1, $2, $3, $4, $5)`,
-        [o, m, role, name, phone],
+        `INSERT INTO memberships (user_id, org_id, merchant_id, role, pin_hash, pin_set_at) VALUES ($1, $2, $3, $4, $5, now())`,
+        [u[0]!.user_id, o, m, role, hashPin(pin)],
       );
     }
 
