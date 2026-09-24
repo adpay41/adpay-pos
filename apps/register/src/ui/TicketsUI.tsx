@@ -3,7 +3,7 @@
  * the list of tickets rung here with reprint; refunds by line at the price paid; and voiding a
  * completed sale. Refunds and voids are permission-gated with a manager's PIN in place.
  */
-import { mulQty, refundQuote, refundableQty, type FoldedSale, type Permission } from '@adpay/shared';
+import { lineTotal, refundQuote, refundableQty, type FoldedSale, type Permission } from '@adpay/shared';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { CardRefunder, ParkedTicket, SaleSession } from '../core/session';
@@ -206,7 +206,6 @@ function TicketDetail({
       </Text>
       <ScrollView style={{ maxHeight: 300 }}>
         {sale.lines.map((l) => {
-          const unit = mode === 'card' ? l.unit_card_price_cents : l.unit_cash_price_cents;
           const can = left[l.line_id] ?? 0;
           const n = pick[l.line_id] ?? 0;
           return (
@@ -218,7 +217,7 @@ function TicketDetail({
                 </Text>
                 {(sale.refunded_qty[l.line_id] ?? 0) > 0 ? <Text style={s.muted}>{sale.refunded_qty[l.line_id]} returned</Text> : null}
               </View>
-              <Text style={s.money}>{usd(mulQty(unit, l.qty))}</Text>
+              <Text style={s.money}>{usd(lineTotal(l, mode === 'card' ? 'card' : 'cash'))}</Text>
               {refundable && can > 0 ? (
                 <View style={s.stepper}>
                   <Pressable style={s.step} onPress={() => setPick((p) => ({ ...p, [l.line_id]: Math.max(0, n - 1) }))} accessibilityLabel={`Return one less ${l.name}`}>

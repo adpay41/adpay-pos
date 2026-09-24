@@ -126,6 +126,10 @@ export async function boot(token: string): Promise<Runtime> {
   if (!catalog) throw new Error('No catalog yet. Connect once so the register can download it.');
 
   let currentCatalogVersion = catalog.catalog_version;
+  let currentCatalog = catalog;
+  sync.onCatalog((c) => {
+    currentCatalog = c;
+  });
   sync.subscribe((s) => {
     if (s.catalogVersion !== null) currentCatalogVersion = s.catalogVersion;
   });
@@ -140,6 +144,8 @@ export async function boot(token: string): Promise<Runtime> {
     },
     catalogVersion: () => currentCatalogVersion,
     uuid: () => Crypto.randomUUID(),
+    // Tax schedule and charges resolve at ring time by the store-local date (P10).
+    compliance: () => ({ snapshot: currentCatalog.compliance, locationRatePpm: currentCatalog.tax_rate_ppm, timezone: identity.timezone }),
   });
   await session.restore();
   const drawer = new DrawerManager(store, session, () => Crypto.randomUUID());

@@ -35,10 +35,25 @@ export interface TaxableLine {
   discount_cents: number;
   taxable: boolean;
   tax_rate_ppm: number;
+  /**
+   * Per-unit charges on the line in this price mode (P10: deposit, excise, fee). They are part of
+   * what the customer pays; `taxable` ones are also part of the item's sales-tax base.
+   */
+  charges?: readonly { unit_cents: number; taxable: boolean }[];
 }
 
+const perUnit = (line: TaxableLine, onlyTaxable: boolean): Cents =>
+  cents((line.charges ?? []).filter((c) => !onlyTaxable || c.taxable).reduce((n, c) => n + c.unit_cents, 0));
+
+/** What the line costs: price × qty − discount + charges × qty. */
 export function lineNet(line: TaxableLine): Cents {
-  return sub(mulQty(cents(line.unit_price_cents), line.qty), cents(line.discount_cents));
+  return add(sub(mulQty(cents(line.unit_price_cents), line.qty), cents(line.discount_cents)), mulQty(perUnit(line, false), line.qty));
+}
+
+/** The line's sales-tax base: its net price plus its taxable charges; zero for an untaxed item. */
+export function lineTaxBase(line: TaxableLine): Cents {
+  if (!line.taxable || line.tax_rate_ppm === 0) return cents(0);
+  return add(sub(mulQty(cents(line.unit_price_cents), line.qty), cents(line.discount_cents)), mulQty(perUnit(line, true), line.qty));
 }
 
 /**
@@ -58,7 +73,7 @@ export function taxByRate(lines: readonly TaxableLine[]): { rate_ppm: number; ta
   for (const line of lines) {
     if (!line.taxable || line.tax_rate_ppm === 0) continue;
     const bucket = byRate.get(line.tax_rate_ppm) ?? [];
-    bucket.push(lineNet(line));
+    bucket.push(lineTaxBase(line));
     byRate.set(line.tax_rate_ppm, bucket);
   }
   return [...byRate.entries()]

@@ -3,6 +3,7 @@
  * integer cents; rates are integer ppm.
  */
 import type { TileColor } from './catalog';
+import type { ComplianceSnapshot, Restriction } from './compliance';
 import type { PackId } from './packs';
 import type { ReceiptSettings } from './receipt-settings';
 import type { RegisterStaff } from './staff';
@@ -15,6 +16,10 @@ export interface CatalogCategory {
   sort: number;
   taxable: boolean;
   min_age: number | null;
+  /** Sales-tax class (P10); 'standard' = the location's ordinary rate. */
+  tax_class?: string;
+  /** Restricted-sale kind (P10): the state's age rule for it applies. */
+  restriction?: Restriction | null;
   color: string | null;
   active: boolean;
 }
@@ -43,8 +48,12 @@ export interface CatalogItem {
   /** Merchant's cost; null until entered. Shown on the register only behind a PIN (step P5). */
   cost_cents: number | null;
   taxable: boolean;
+  /** Rate in force when the snapshot was built; the register re-resolves it by date (P10). */
   tax_rate_ppm: number;
+  tax_class?: string;
+  /** Effective age: the stricter of the category's own and its restriction's rule at this location. */
   min_age: number | null;
+  restriction?: Restriction | null;
   /** Quick-key tile color, a `TileColor` from the fixed palette (never red); null = plain white. */
   color: TileColor | null;
   /** Path to the product photo on the API (`/media/:id`); null = text-only tile. */
@@ -81,6 +90,8 @@ export interface CatalogSnapshot {
   quick_keys: string[];
   /** This location's receipt settings, logo resolved to a `/media/…` path (P8). Absent in older cached snapshots. */
   receipt?: ReceiptSettings & { logo_url: string | null };
+  /** Tax schedule, per-unit charges and age rules for this location (P10). Absent in older cached snapshots. */
+  compliance?: ComplianceSnapshot;
   /**
    * Who can sign in at this register, with PIN hashes and permissions (P3). Present only in the
    * snapshot a register pulls (`/device/catalog`), never in what the apps see.

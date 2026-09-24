@@ -11,7 +11,7 @@
  * maps them to CSS. See docs/decisions/0009-register-core.md.
  */
 import { ppmToPercent } from './catalog';
-import type { FoldedSale } from './fold';
+import { toTaxable, type FoldedSale } from './fold';
 import { add, cents, formatUsd, mulQty } from './money';
 import { taxByRate } from './pricing';
 import { splitTaxGroups } from './split';
@@ -122,22 +122,18 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
     push(pad(`${qtyPrefix}${line.name}${line.taxable ? '' : ' N'}`, money(mulQty(unit, line.qty))));
     if (line.qty > 1) push(`   @ ${money(unit)} ea`);
     if (discount > 0) push(pad('   Discount', `-${money(discount)}`));
+    // Per-unit charges (P10): deposit, excise, fee, each on its own line under the item.
+    for (const c of line.charges) {
+      const each = cents(mode === 'card' ? c.unit_card_cents : c.unit_cash_cents);
+      push(pad(`   ${c.label}${line.qty > 1 ? ` ${line.qty} x ${money(each)}` : ''}`, money(mulQty(each, line.qty))));
+    }
     if (line.min_age) push(`   Age ${line.min_age}+ ${line.age_verified ? 'verified' : 'NOT verified'}`);
   }
 
   push(rule());
   push(pad('Subtotal', money(totals.subtotal_cents)));
   // Tax itemized by rate (Bible 1.6), one line per rate; they add up to the total tax exactly.
-  const groupsAt = (m: 'cash' | 'card') =>
-    taxByRate(
-      sale.lines.map((l) => ({
-        qty: l.qty,
-        unit_price_cents: m === 'card' ? l.unit_card_price_cents : l.unit_cash_price_cents,
-        discount_cents: m === 'card' ? l.card_discount_cents : l.cash_discount_cents,
-        taxable: l.taxable,
-        tax_rate_ppm: l.tax_rate_ppm,
-      })),
-    );
+  const groupsAt = (m: 'cash' | 'card') => taxByRate(toTaxable(sale.lines, m));
   const groups =
     sale.price_mode === 'split'
       ? splitTaxGroups(

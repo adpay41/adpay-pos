@@ -10,6 +10,7 @@
  */
 import {
   deriveCardPrice,
+  effectiveMinAge,
   cents,
   type CatalogItem,
   type CatalogSnapshot,
@@ -111,7 +112,9 @@ export function pendingItem(snapshot: CatalogSnapshot, p: DeviceItemCreate): Cat
     cost_cents: null,
     taxable,
     tax_rate_ppm: taxable ? snapshot.tax_rate_ppm : 0,
-    min_age: cat?.min_age ?? null,
+    tax_class: cat?.tax_class ?? 'standard',
+    min_age: effectiveMinAge(cat?.min_age ?? null, cat?.restriction ?? null, snapshot.compliance?.min_ages ?? null),
+    restriction: cat?.restriction ?? null,
     color: null,
     image_url: null,
     sort: 1_000_000,

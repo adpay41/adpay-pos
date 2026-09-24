@@ -86,6 +86,8 @@ purpose: support is one person for the first 200 stores.
 | [0014](docs/decisions/0014-cash-drawer.md) | Cash drawer: sessions folded from events (one shared fold), blind count, drops/paid-outs/paid-ins with reasons, over/short by cashier |
 | [0015](docs/decisions/0015-ticket-lifecycle.md) | Ticket lifecycle: hold/recall, refunds by line at the price paid (exact remainder on full return), void = refund rest + void |
 | [0016](docs/decisions/0016-receipt-v2.md) | Receipt v2: per-location settings in the snapshot, logo/QR image lines, tax itemized by rate, ask / print / no-receipt after a sale |
+| [0017](docs/decisions/0017-card-and-split-tender.md) | Card on the stub via an idempotent terminal-charge endpoint; split tender with dual pricing per portion (coverage in cash-price cents) |
+| [0018](docs/decisions/0018-tax-compliance-tables.md) | Tax & compliance per location: dated tax schedule by class, per-unit charges (deposit/excise/fee/bag), age by state; resolved at ring time, captured in the event |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

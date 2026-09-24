@@ -9,6 +9,7 @@
  */
 import type {
   CategoryCreateInput,
+  ComplianceSettings,
   CategoryUpdateInput,
   DeviceItemCreate,
   DeviceItemResult,
@@ -226,10 +227,10 @@ export async function createCategory(
   return db.tx(async (q) => {
     const m = await merchantFor(q, merchantId);
     const { rows } = await q.query<{ category_id: string }>(
-      `INSERT INTO categories (org_id, merchant_id, name, sort, taxable, min_age, color)
-       VALUES ($1, $2, $3, coalesce($4, (SELECT coalesce(max(sort), -1) + 1 FROM categories WHERE merchant_id = $2)), $5, $6, $7)
+      `INSERT INTO categories (org_id, merchant_id, name, sort, taxable, min_age, color, tax_class, restriction)
+       VALUES ($1, $2, $3, coalesce($4, (SELECT coalesce(max(sort), -1) + 1 FROM categories WHERE merchant_id = $2)), $5, $6, $7, $8, $9)
        RETURNING category_id`,
-      [m.org_id, m.merchant_id, input.name, input.sort ?? null, input.taxable, input.min_age, input.color],
+      [m.org_id, m.merchant_id, input.name, input.sort ?? null, input.taxable, input.min_age, input.color, input.tax_class, input.restriction],
     );
     const version = await bumpCatalogVersion(q, merchantId);
     await audit(q, { actor, action: 'catalog.category_created', tenancy: m, target: rows[0]!.category_id, details: { ...input, catalog_version: version }, trace_id: traceId });
@@ -247,7 +248,7 @@ export async function updateCategory(
 ): Promise<{ category_id: string; catalog_version: number }> {
   return db.tx(async (q) => {
     const m = await merchantFor(q, merchantId);
-    const keys = (['name', 'taxable', 'min_age', 'color', 'sort', 'active'] as const).filter((k) => patch[k] !== undefined);
+    const keys = (['name', 'taxable', 'min_age', 'tax_class', 'restriction', 'color', 'sort', 'active'] as const).filter((k) => patch[k] !== undefined);
     const { rows } = await q.query<{ category_id: string }>(
       `UPDATE categories SET ${keys.length ? keys.map((k, i) => `${k} = $${i + 3}`).join(', ') : 'name = name'}
         WHERE category_id = $1 AND merchant_id = $2 RETURNING category_id`,
@@ -555,6 +556,48 @@ export async function setReceiptSettings(
       tenancy: { org_id: rows[0].org_id, merchant_id: merchantId, location_id: locationId },
       target: locationId,
       details: { from: rows[0].receipt_settings, to: settings, catalog_version: version },
+      trace_id: traceId,
+    });
+    return { location_id: locationId, catalog_version: version };
+  });
+}
+
+/**
+ * Replace a location's tax & compliance rule set (P10, ADR 0018). Charge targets must be this
+ * merchant's own categories and items. Bumps the catalog version so registers pull it.
+ */
+export async function setCompliance(
+  db: Db,
+  actor: CatalogActor,
+  merchantId: string,
+  locationId: string,
+  settings: ComplianceSettings,
+  traceId: string,
+): Promise<{ location_id: string; catalog_version: number }> {
+  return db.tx(async (q) => {
+    const { rows } = await q.query<{ org_id: string; compliance: unknown }>(
+      'SELECT org_id, compliance FROM locations WHERE location_id = $1 AND merchant_id = $2 FOR UPDATE',
+      [locationId, merchantId],
+    );
+    if (!rows[0]) throw notFound('Location not found');
+    const catIds = [...new Set(settings.charges.flatMap((c) => c.category_ids))];
+    const itemIds = [...new Set(settings.charges.flatMap((c) => c.item_ids))];
+    if (catIds.length) {
+      const { rows: n } = await q.query<{ n: number }>('SELECT count(*)::int AS n FROM categories WHERE merchant_id = $1 AND category_id = ANY($2::uuid[])', [merchantId, catIds]);
+      if (n[0]!.n !== catIds.length) throw badRequest('A charge points at a category that is not in this catalog');
+    }
+    if (itemIds.length) {
+      const { rows: n } = await q.query<{ n: number }>('SELECT count(*)::int AS n FROM items WHERE merchant_id = $1 AND item_id = ANY($2::uuid[])', [merchantId, itemIds]);
+      if (n[0]!.n !== itemIds.length) throw badRequest('A charge points at an item that is not in this catalog');
+    }
+    await q.query('UPDATE locations SET compliance = $3 WHERE location_id = $1 AND merchant_id = $2', [locationId, merchantId, JSON.stringify(settings)]);
+    const version = await bumpCatalogVersion(q, merchantId);
+    await audit(q, {
+      actor,
+      action: 'location.compliance_set',
+      tenancy: { org_id: rows[0].org_id, merchant_id: merchantId, location_id: locationId },
+      target: locationId,
+      details: { from: rows[0].compliance, to: settings, catalog_version: version },
       trace_id: traceId,
     });
     return { location_id: locationId, catalog_version: version };

@@ -27,6 +27,16 @@ const SaleOpened = z.strictObject({
   catalog_version: z.int().nonnegative(),
 });
 
+/** One per-unit charge on a line, in each price mode (a percentage charge differs by mode). */
+const LineChargeSchema = z.strictObject({
+  rule_id: Uuid,
+  kind: z.enum(['excise', 'deposit', 'fee', 'bag']),
+  label: z.string().min(1).max(32),
+  unit_cash_cents: NonNegCents,
+  unit_card_cents: NonNegCents,
+  taxable: z.boolean(),
+});
+
 const LineAdded = z.strictObject({
   line_id: Uuid,
   item_id: Uuid,
@@ -47,9 +57,16 @@ const LineAdded = z.strictObject({
    * (the card price then follows the location's dual-price %); or a price override (P7).
    * Additive: older events default to catalog.
    */
-  price_source: z.enum(['catalog', 'open', 'override']).default('catalog'),
+  price_source: z.enum(['catalog', 'open', 'override', 'fee']).default('catalog'),
   /** How it was rung: tapped key, scanned barcode, search result, or a device-created item (P5). */
   entry: z.enum(['key', 'scan', 'search', 'new_item']).default('key'),
+  /**
+   * Compliance captured at the moment of sale (P10, ADR 0018), all additive: the tax class the rate
+   * came from, the restriction kind behind `min_age`, and per-unit charges (deposit, excise, fee).
+   */
+  tax_class: z.string().max(24).nullable().default(null),
+  restriction: z.enum(['tobacco', 'vape', 'alcohol', 'lottery']).nullable().default(null),
+  charges: z.array(LineChargeSchema).max(10).default([]),
 });
 
 const LineRemoved = z.strictObject({ line_id: Uuid });

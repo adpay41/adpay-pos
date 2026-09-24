@@ -9,6 +9,8 @@
  */
 import {
   MAX_QUICK_KEYS,
+  RESTRICTIONS,
+  RESTRICTION_LABELS,
   TILE_COLORS,
   parseUsdToCents,
   percentToPpm,
@@ -510,12 +512,21 @@ function Categories({ token, catalog, onSaved }: { token: string; catalog: Catal
                 <Text style={s.lineName}>{c.name}</Text>
                 <Text style={s.mutedSmall}>
                   {count} items{c.min_age ? ` · ${c.min_age}+` : ''}
+                  {c.restriction ? ' · ' + RESTRICTION_LABELS[c.restriction] : ''}
                   {c.taxable ? '' : ' · no tax'}
                   {c.active ? '' : ' · hidden'}
                 </Text>
               </View>
               <SmallButton label="↑" onPress={() => move(n, -1)} />
               <SmallButton label="↓" onPress={() => move(n, 1)} />
+              <SmallButton
+                label={c.restriction ? RESTRICTION_LABELS[c.restriction] : 'Not restricted'}
+                onPress={() => {
+                  // Cycle: none → tobacco → vape → alcohol → lottery → none. The state's age rule applies (P10).
+                  const next = c.restriction ? (RESTRICTIONS[RESTRICTIONS.indexOf(c.restriction) + 1] ?? null) : RESTRICTIONS[0];
+                  void patch(c, { restriction: next }, next ? '“' + c.name + '” now asks for an ID check (' + RESTRICTION_LABELS[next] + ').' : '“' + c.name + '” is no longer restricted.');
+                }}
+              />
               <SmallButton label={c.active ? 'Hide' : 'Show'} onPress={() => void patch(c, { active: !c.active }, `“${c.name}” ${c.active ? 'hidden' : 'shown'}.`)} />
             </View>
           );
@@ -539,7 +550,7 @@ function Categories({ token, catalog, onSaved }: { token: string; catalog: Catal
           }
         />
       </View>
-      <Text style={s.mutedSmall}>Age checks and tax settings per category are managed by AD Pay support for now.</Text>
+      <Text style={s.mutedSmall}>Tap the restriction to cycle it: restricted categories ask for an ID check at your state’s age. Tax rates and deposits are set in the back office.</Text>
       {error ? <Text style={s.error}>{error}</Text> : null}
     </>
   );

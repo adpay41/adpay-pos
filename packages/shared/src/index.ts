@@ -15,3 +15,4 @@ export * from './split';
 export * from './tender';
 export * from './receipt';
 export * from './receipt-settings';
+export * from './compliance';

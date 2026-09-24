@@ -6,7 +6,7 @@
  *
  * Spec: the customer sees cash price and card price side by side before tender, every sale.
  */
-import { mulQty, sub, type FoldedSale } from '@adpay/shared';
+import { lineTotal, type FoldedSale } from '@adpay/shared';
 
 /**
  * The customer screen's states (Bible 1.5): idle → cart → card ("tap on the card machine") →
@@ -65,8 +65,8 @@ function base(merchantName: string, sale: FoldedSale): DisplayState {
       line_id: l.line_id,
       name: l.name,
       qty: l.qty,
-      cash_cents: sub(mulQty(l.unit_cash_price_cents, l.qty), l.cash_discount_cents),
-      card_cents: sub(mulQty(l.unit_card_price_cents, l.qty), l.card_discount_cents),
+      cash_cents: lineTotal(l, 'cash'),
+      card_cents: lineTotal(l, 'card'),
     })),
     cash_total_cents: sale.cash.total_cents,
     card_total_cents: sale.card.total_cents,

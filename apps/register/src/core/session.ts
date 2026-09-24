@@ -9,6 +9,9 @@
 import {
   ZERO,
   cardAmountFor,
+  lineCompliance,
+  localDate,
+  type ComplianceSnapshot,
   cents,
   changeDue,
   coverForCard,
@@ -35,6 +38,8 @@ export interface SessionDeps {
   catalogVersion: () => number;
   uuid: () => string;
   now?: () => Date;
+  /** The location's tax schedule and charges (P10); absent in tests and older snapshots. */
+  compliance?: () => { snapshot: ComplianceSnapshot | undefined; locationRatePpm: number; timezone: string };
 }
 
 export class SaleError extends Error {
@@ -206,6 +211,8 @@ export class SaleSession {
       entry?: 'key' | 'scan' | 'search' | 'new_item';
       /** Typed at the register for an open-price item: both prices, card derived by the caller. */
       price?: { cash: Cents; card: Cents };
+      /** A fee rung as its own line (bag fee, P10). */
+      fee?: boolean;
     } = {},
   ): Promise<SessionState> {
     return this.serial(async () => {
@@ -223,6 +230,12 @@ export class SaleSession {
       if (item.open_price && !opts.price) throw new SaleError(`Enter a price for ${item.name}`);
       const saleId = await this.ensureOpen();
       const line_id = this.deps.uuid();
+      const unit = { cash: opts.price?.cash ?? item.cash_price_cents, card: opts.price?.card ?? item.card_price_cents };
+      // Rate and per-unit charges as of today at this store, captured in the event (ADR 0018).
+      const ctx = this.deps.compliance?.();
+      const comp = ctx
+        ? lineCompliance(item, ctx.snapshot, ctx.locationRatePpm, localDate(this.now(), ctx.timezone), unit)
+        : { tax_rate_ppm: item.tax_rate_ppm, tax_class: item.tax_class ?? null, charges: [] };
       await this.emit(
         'sale.line_added',
         {
@@ -231,14 +244,17 @@ export class SaleSession {
           name: item.name,
           category_id: item.category_id,
           qty,
-          unit_cash_price_cents: opts.price?.cash ?? item.cash_price_cents,
-          unit_card_price_cents: opts.price?.card ?? item.card_price_cents,
+          unit_cash_price_cents: unit.cash,
+          unit_card_price_cents: unit.card,
           taxable: item.taxable,
-          tax_rate_ppm: item.tax_rate_ppm,
+          tax_rate_ppm: comp.tax_rate_ppm,
           min_age: item.min_age,
+          tax_class: comp.tax_class,
+          restriction: item.restriction ?? null,
+          charges: comp.charges,
           sell_unit: item.sell_unit,
           pack_qty: item.pack_qty,
-          price_source: opts.price ? 'open' : 'catalog',
+          price_source: opts.fee ? 'fee' : opts.price ? 'open' : 'catalog',
           entry: opts.entry ?? 'key',
         },
         saleId,

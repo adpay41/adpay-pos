@@ -9,6 +9,8 @@
  */
 import {
   MAX_QUICK_KEYS,
+  RESTRICTIONS,
+  RESTRICTION_LABELS,
   TILE_COLORS,
   cents,
   formatUsd,
@@ -25,6 +27,7 @@ import {
 } from '@adpay/shared';
 import { useMemo, useState, type FormEvent } from 'react';
 import { API_URL, api, shrinkPhoto, upload } from '../lib/api';
+import { CompliancePanel } from './compliance-panel';
 import { ReceiptPanel } from './receipt-panel';
 import { ErrorBox, Money, When, useLoad } from './ui';
 
@@ -91,6 +94,9 @@ export function CatalogEditor({ merchantId, merchantName = 'Your store' }: { mer
           </div>
           <LocationPricing base={base} loc={loc} items={catalog.data.items} onSaved={saved} />
           {catalog.data.receipt && <ReceiptPanel base={base} loc={loc} merchantName={merchantName} current={catalog.data.receipt} onSaved={saved} />}
+          {catalog.data.compliance && (
+            <CompliancePanel base={base} loc={loc} categories={catalog.data.categories} current={catalog.data.compliance} onSaved={saved} />
+          )}
           <Categories base={base} categories={catalog.data.categories} items={catalog.data.items} onSaved={saved} />
           <Favorites base={base} catalog={catalog.data} locationName={loc.name} onSaved={saved} />
           <Items
@@ -292,6 +298,8 @@ function Categories({
                   <th>Name</th>
                   <th className="num">Items</th>
                   <th>Taxable</th>
+                  <th>Tax class</th>
+                  <th>Restricted</th>
                   <th>Age check</th>
                   <th>Status</th>
                   <th />
@@ -309,6 +317,24 @@ function Categories({
                     <td className="num">{items.filter((i) => i.category_id === c.category_id).length}</td>
                     <td>
                       <input type="checkbox" checked={c.taxable} onChange={(e) => patch(c, { taxable: e.target.checked })} />
+                    </td>
+                    <td>
+                      <input
+                        defaultValue={c.tax_class ?? 'standard'}
+                        style={{ width: 110 }}
+                        onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== (c.tax_class ?? 'standard') && patch(c, { tax_class: e.target.value.trim() })}
+                      />
+                    </td>
+                    <td>
+                      {/* The state's age rule for this kind applies on top of the category's own age check (P10). */}
+                      <select value={c.restriction ?? ''} onChange={(e) => patch(c, { restriction: e.target.value || null })}>
+                        <option value="">—</option>
+                        {RESTRICTIONS.map((r) => (
+                          <option key={r} value={r}>
+                            {RESTRICTION_LABELS[r]}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td>
                       <select value={c.min_age ?? ''} onChange={(e) => patch(c, { min_age: e.target.value ? Number(e.target.value) : null })}>

@@ -6,6 +6,7 @@
 import type { RegisterEvent } from './events';
 import { add, cents, sub, sum, ZERO, type Cents } from './money';
 import { computeTotals, type PriceMode, type TaxableLine, type Totals } from './pricing';
+import type { LineCharge } from './compliance';
 import { coverForCard, splitTotals } from './split';
 
 /** How a completed sale was paid: at the cash price, the card price, or split between them (P9). */
@@ -26,6 +27,12 @@ export interface FoldedLine {
   tax_rate_ppm: number;
   min_age: number | null;
   age_verified: boolean;
+  /** Restriction kind behind the age check, when the line has one (P10). */
+  restriction: 'tobacco' | 'vape' | 'alcohol' | 'lottery' | null;
+  /** Per-unit charges captured at sale (deposit, excise, fee), P10. */
+  charges: LineCharge[];
+  /** A bag fee or other fee rung as its own line (not an item). */
+  is_fee: boolean;
 }
 
 export interface FoldedTender {
@@ -61,14 +68,20 @@ export interface FoldedSale {
   mismatch: boolean;
 }
 
-function toTaxable(lines: FoldedLine[], mode: PriceMode): TaxableLine[] {
+export function toTaxable(lines: FoldedLine[], mode: PriceMode): TaxableLine[] {
   return lines.map((l) => ({
     qty: l.qty,
     unit_price_cents: mode === 'cash' ? l.unit_cash_price_cents : l.unit_card_price_cents,
     discount_cents: mode === 'cash' ? l.cash_discount_cents : l.card_discount_cents,
     taxable: l.taxable,
     tax_rate_ppm: l.tax_rate_ppm,
+    charges: l.charges.map((c) => ({ unit_cents: mode === 'cash' ? c.unit_cash_cents : c.unit_card_cents, taxable: c.taxable })),
   }));
+}
+
+/** What one line costs in a price mode: price × qty − discount + per-unit charges × qty. */
+export function lineTotal(line: FoldedLine, mode: PriceMode): Cents {
+  return computeTotals(toTaxable([line], mode)).subtotal_cents;
 }
 
 /** Fold one sale's events. Events are ordered by device_seq; duplicates by event_id are ignored. */
@@ -103,6 +116,9 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           tax_rate_ppm: p.tax_rate_ppm,
           min_age: p.min_age,
           age_verified: false,
+          restriction: p.restriction ?? null,
+          charges: p.charges ?? [],
+          is_fee: p.price_source === 'fee',
         });
         break;
       }
