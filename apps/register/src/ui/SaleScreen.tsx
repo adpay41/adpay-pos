@@ -22,6 +22,7 @@ import {
   searchCatalog,
   quickCashOptions,
   renderReceipt,
+  type CashierUsual,
   type CatalogItem,
   type CatalogSnapshot,
   type Cents,
@@ -35,6 +36,7 @@ import { createDisplayChannel, displayFor } from '../core/display';
 import { PREVIEW_HEALTH, WebPreviewHardware, type Hardware } from '../core/hardware';
 import type { SessionState } from '../core/session';
 import { pendingItem } from '../core/new-items';
+import { repeatBatch, ringBatch, usualBatch, usualLinesFrom, type Batch } from '../core/usuals';
 import type { StaffState } from '../core/staff';
 import type { SyncStatus } from '../core/sync';
 import { API_URL, type Runtime } from '../runtime';
@@ -67,7 +69,10 @@ type Modal =
   | { kind: 'receipt'; lines: readonly ReceiptLine[]; title: string }
   | { kind: 'device' }
   | { kind: 'override'; permission: Permission; saleId: string | null; then: () => Promise<unknown> }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  | { kind: 'batch_age'; batch: Batch; label: string }
+  | { kind: 'save_usual' }
+  | { kind: 'remove_usual'; usual: CashierUsual };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
   const [catalog, setCatalog] = useState<CatalogSnapshot>(rt.catalog);
@@ -164,6 +169,18 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const today = localDate(new Date(), rt.identity.timezone);
   const bagFees = bagFeesOn(catalog.compliance?.charges ?? [], today);
   const catAge = (c: CatalogSnapshot['categories'][number]) => effectiveMinAge(c.min_age, c.restriction ?? null, catalog.compliance?.min_ages ?? null);
+
+  // One-tap baskets (P14): repeat the last sale, or a cashier's "usual".
+  const byId = useMemo(() => new Map(shown.items.map((i) => [i.item_id, i])), [shown]);
+  const myUsuals = (catalog.usuals ?? []).filter((u) => staff.member && u.user_id === staff.member.user_id);
+  const ringAll = (batch: Batch, label: string, ageConfirmed: boolean) =>
+    void run(async () => {
+      if (batch.lines.length === 0) throw new Error(`Nothing to ring: ${batch.skipped.join(', ') || 'no items'} not sold any more`);
+      await ringBatch(rt.session, batch, ageConfirmed);
+      rt.log.info('batch rung', { label, lines: batch.lines.length, skipped: batch.skipped.length });
+      if (batch.skipped.length) setModal({ kind: 'error', message: `Rung ${label}. Not rung (not sold any more, or needs a price): ${batch.skipped.join(', ')}.` });
+    });
+  const startBatch = (batch: Batch, label: string) => (batch.min_age ? setModal({ kind: 'batch_age', batch, label }) : ringAll(batch, label, false));
 
   /** A scanned (or typed) barcode: ring it, or offer to add it to the catalog if we don't know it. */
   const onCode = (code: string) => {
@@ -548,6 +565,32 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               </Pressable>
               ) : null}
             </View>
+            {session.lastCompleted || myUsuals.length || (sale?.lines.length && staff.member) ? (
+              <View style={s.actions}>
+                {session.lastCompleted && !sale?.lines.length ? (
+                  <Pressable style={s.ghost} onPress={() => startBatch(repeatBatch(session.lastCompleted!, byId), 'the last sale')} accessibilityLabel="Repeat the last sale">
+                    <Text>↻ Repeat last</Text>
+                  </Pressable>
+                ) : null}
+                {myUsuals.map((u) => (
+                  <Pressable
+                    key={u.usual_id}
+                    style={s.ghost}
+                    onPress={() => startBatch(usualBatch(u, byId), u.label)}
+                    onLongPress={() => setModal({ kind: 'remove_usual', usual: u })}
+                    delayLongPress={600}
+                    accessibilityHint="Long-press to remove"
+                  >
+                    <Text>★ {u.label}</Text>
+                  </Pressable>
+                ))}
+                {sale?.lines.some((l) => !l.is_fee) && staff.member ? (
+                  <Pressable style={[s.ghost, !cardOk && s.disabled]} disabled={!cardOk} onPress={() => setModal({ kind: 'save_usual' })}>
+                    <Text>+ Save as usual</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
             {bagFees.length ? (
               // Bag fees in force today (P10): one tap adds a bag; tap again for another.
               <View style={s.actions}>
@@ -596,6 +639,68 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           </View>
         </View>
       </View>
+
+      {modal.kind === 'batch_age' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <Text style={s.modalTitle}>Check ID — {modal.batch.min_age}+</Text>
+          <Text style={s.modalBody}>{modal.label} includes age-restricted items. Confirm the customer is {modal.batch.min_age} or older.</Text>
+          <View style={s.actions}>
+            <Pressable style={s.ghost} onPress={() => setModal({ kind: 'none' })}>
+              <Text>Not verified</Text>
+            </Pressable>
+            <Pressable
+              style={s.primary}
+              onPress={() => {
+                const { batch, label } = modal;
+                setModal({ kind: 'none' });
+                ringAll(batch, label, true);
+              }}
+            >
+              <Text style={s.primaryText}>ID checked — {modal.batch.min_age}+</Text>
+            </Pressable>
+          </View>
+        </Overlay>
+      )}
+
+      {modal.kind === 'save_usual' && sale && staff.member && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <SaveUsual
+            suggestion={sale.lines.filter((l) => !l.is_fee).map((l) => l.name.split(' ')[0]).slice(0, 3).join(' + ')}
+            onCancel={() => setModal({ kind: 'none' })}
+            onSave={(label) => {
+              const member = staff.member!;
+              void run(async () => {
+                await rt.usuals.save({ user_id: member.user_id, label, lines: usualLinesFrom(sale) });
+                setModal({ kind: 'none' });
+              });
+            }}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'remove_usual' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <Text style={s.modalTitle}>Remove “{modal.usual.label}”?</Text>
+          <Text style={s.modalBody}>It disappears from every register within a few seconds. Sales already rung are not affected.</Text>
+          <View style={s.actions}>
+            <Pressable style={s.ghost} onPress={() => setModal({ kind: 'none' })}>
+              <Text>Keep</Text>
+            </Pressable>
+            <Pressable
+              style={s.primary}
+              onPress={() => {
+                const id = modal.usual.usual_id;
+                void run(async () => {
+                  await rt.usuals.remove(id);
+                  setModal({ kind: 'none' });
+                });
+              }}
+            >
+              <Text style={s.primaryText}>Remove</Text>
+            </Pressable>
+          </View>
+        </Overlay>
+      )}
 
       {modal.kind === 'age' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
@@ -1190,3 +1295,23 @@ const s = StyleSheet.create({
   paperQr: { alignItems: 'center', borderWidth: 1, borderColor: C.line, borderRadius: 6, padding: 6, marginVertical: 4 },
   paperQrText: { fontSize: 20, fontWeight: '800', color: C.ink },
 });
+
+/** Name a usual: "Mike — coffee + Newports". Saved online; every register gets it with the next sync. */
+function SaveUsual({ suggestion, onSave, onCancel }: { suggestion: string; onSave: (label: string) => void; onCancel: () => void }) {
+  const [label, setLabel] = useState(suggestion.slice(0, 40));
+  return (
+    <View style={{ gap: 10 }}>
+      <Text style={s.modalTitle}>Save this ticket as a usual</Text>
+      <Text style={s.modalBody}>One tap rings it again. It’s yours: it shows when you’re signed in.</Text>
+      <TextInput style={s.search} value={label} onChangeText={setLabel} maxLength={40} autoFocus placeholder="Mike — coffee + Newports" />
+      <View style={s.actions}>
+        <Pressable style={s.ghost} onPress={onCancel}>
+          <Text>Cancel</Text>
+        </Pressable>
+        <Pressable style={[s.primary, !label.trim() && s.disabled]} disabled={!label.trim()} onPress={() => onSave(label.trim())}>
+          <Text style={s.primaryText}>Save usual</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}

@@ -20,3 +20,5 @@ export * from './compare';
 export * from './onboarding';
 export * from './flags';
 export * from './analyzer';
+export * from './catalog-templates';
+export * from './catalog-import';
