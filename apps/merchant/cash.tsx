@@ -3,10 +3,10 @@
  * paid-outs and blind count; over/short by cashier and by day. Short is amber, over is black: never
  * red near an amount.
  */
-import { CASH_MOVEMENT_KINDS, type CashReport } from '@adpay/shared';
+import { CASH_MOVEMENT_KINDS, DENOMINATIONS, type CashReport } from '@adpay/shared';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { api } from './api';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { API_URL, api } from './api';
 import { C, usd } from './theme';
 
 const AMBER = '#8a5300';
@@ -47,11 +47,32 @@ export function CashTab({ token }: { token: string }) {
         <ActivityIndicator style={{ marginTop: 24 }} />
       ) : (
         <>
+          {data.open_now?.length ? (
+            // Cash in each drawer right now (P15, Bible 2.1), with "drop needed" over the store's threshold.
+            <View style={s.card}>
+              <Text style={s.label}>In the drawers now</Text>
+              {data.open_now.map((d) => (
+                <View key={d.session_id} style={s.line}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.name}>
+                      {d.register_name} · {d.location_name}
+                    </Text>
+                    <Text style={s.muted}>
+                      open since {new Date(d.opened_at).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+                      {d.drop_needed ? ` · drop needed (about ${usd(d.suggest_cents)})` : ''}
+                    </Text>
+                  </View>
+                  <Text style={[s.money, d.drop_needed && { color: AMBER }]}>{usd(d.expected_cents)}</Text>
+                </View>
+              ))}
+              <Text style={s.muted}>Asks for a drop over {usd(data.drop_over_cents)}; change it under Alerts → Alert settings.</Text>
+            </View>
+          ) : null}
           <View style={s.card}>
             <Text style={s.label}>Over / short</Text>
             <Text style={[s.big, data.totals.over_short_cents < 0 && { color: AMBER }]}>{signed(data.totals.over_short_cents)}</Text>
             <Text style={s.muted}>
-              Drops {usd(data.totals.drops_cents)} · paid out {usd(data.totals.paid_out_cents)} · paid in {usd(data.totals.paid_in_cents)} · {data.totals.no_sale_opens} no-sale opens
+              Drops {usd(data.totals.drops_cents)} · paid out {usd(data.totals.paid_out_cents)} · paid in {usd(data.totals.paid_in_cents)} · {data.totals.no_sale_opens} no-sale opens{data.totals.counterfeits ? ` · ${data.totals.counterfeits} counterfeit bills refused` : ''}
             </Text>
           </View>
 
@@ -110,7 +131,24 @@ export function CashTab({ token }: { token: string }) {
                   <Text style={s.muted}>
                     Should hold {usd(d.expected_cents)}
                     {d.counted_cents !== null ? ` · counted ${usd(d.counted_cents)} by ${d.closed_by_name ?? 'someone'}` : ''}
+                    {d.handover ? ' · handed over' : ''}
                   </Text>
+                  {d.denominations ? (
+                    <Text style={s.muted}>
+                      {DENOMINATIONS.filter((x) => (d.denominations![String(x.cents)] ?? 0) > 0)
+                        .map((x) => `${d.denominations![String(x.cents)]} × ${x.label}`)
+                        .join(' · ')}
+                    </Text>
+                  ) : null}
+                  {d.photo_media_id ? (
+                    <Image source={{ uri: `${API_URL}/media/${d.photo_media_id}` }} style={{ width: 160, height: 120, borderRadius: 6, marginTop: 4 }} accessibilityLabel="Photo of the count sheet" />
+                  ) : null}
+                  {d.counterfeits.map((c, i) => (
+                    <Text key={i} style={s.muted}>
+                      Refused a counterfeit {usd(c.denomination_cents)} at {new Date(c.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      {c.note ? ` — ${c.note}` : ''}
+                    </Text>
+                  ))}
                 </View>
               ) : null}
             </Pressable>

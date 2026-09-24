@@ -11,8 +11,9 @@ import { getSaleTimeline } from '../services/events';
 import { tenancyTree } from '../services/onboarding';
 import { cashReport } from '../services/cash';
 import { recentSales, salesCompare, salesSummary } from '../services/reports';
+import { timesheet } from '../services/timeclock';
 import { merchantConfig, postSupportMessage, supportThread } from '../services/merchant-config';
-import { SupportMessageInput } from '@adpay/shared';
+import { SupportMessageInput, timesheetCsv } from '@adpay/shared';
 import { forbidden } from '../http/errors';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -70,6 +71,19 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
     const me = asMerchantUser(request);
     const q = z.object({ range: z.enum(['today', 'week', 'month']).default('today'), location_id: z.uuid().optional() }).parse(request.query);
     return cashReport(db, me.merchant_id, q.range, q.location_id ?? null);
+  });
+
+  // Time clock (P15): hours by person and day, weekly overtime, and the payroll CSV.
+  const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+  const Range = z.object({ from: Day, to: Day }).refine((r) => r.from <= r.to && Date.parse(r.to) - Date.parse(r.from) <= 62 * 86_400_000, 'Up to 62 days, from ≤ to');
+  app.get('/merchant/timesheet', reports, async (request) => {
+    const r = Range.parse(request.query);
+    return timesheet(db, asMerchantUser(request).merchant_id, r.from, r.to);
+  });
+  app.get('/merchant/timesheet.csv', reports, async (request, reply) => {
+    const r = Range.parse(request.query);
+    const t = await timesheet(db, asMerchantUser(request).merchant_id, r.from, r.to);
+    return reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="hours-${r.from}-to-${r.to}.csv"`).send(timesheetCsv(t));
   });
 
   app.get('/merchant/sales/:saleId', reports, async (request) => {

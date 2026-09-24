@@ -122,7 +122,7 @@ const s = StyleSheet.create({
  */
 function AlertSettingsCard({ token, onSaved }: { token: string; onSaved: () => void }) {
   const [cur, setCur] = useState<AlertSettings | null>(null);
-  const [f, setF] = useState({ refund: '', short: '', nosale: '' });
+  const [f, setF] = useState({ refund: '', short: '', nosale: '', drop: '' });
   const [muted, setMuted] = useState<AlertRule[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -131,14 +131,14 @@ function AlertSettingsCard({ token, onSaved }: { token: string; onSaved: () => v
     api<AlertSettings>('/merchant/alert-settings', token).then((x) => {
       setCur(x);
       setMuted(x.muted);
-      setF({ refund: dollars(x.large_refund_cents), short: dollars(x.drawer_short_cents), nosale: String(x.no_sale_spike) });
+      setF({ refund: dollars(x.large_refund_cents), short: dollars(x.drawer_short_cents), nosale: String(x.no_sale_spike), drop: dollars(x.drop_over_cents) });
     }, (e) => setMsg((e as Error).message));
   }, [token]);
 
   async function save() {
     setMsg(null);
     try {
-      const body = { muted, large_refund_cents: parseUsdToCents(f.refund), drawer_short_cents: parseUsdToCents(f.short), no_sale_spike: Number(f.nosale) };
+      const body = { muted, large_refund_cents: parseUsdToCents(f.refund), drawer_short_cents: parseUsdToCents(f.short), no_sale_spike: Number(f.nosale), drop_over_cents: parseUsdToCents(f.drop) };
       setCur(await api<AlertSettings>('/merchant/alert-settings', token, body, 'PUT'));
       setMsg('Saved.');
       onSaved();
@@ -165,6 +165,8 @@ function AlertSettingsCard({ token, onSaved }: { token: string; onSaved: () => v
           <TextInput style={s.input} value={f.refund} onChangeText={(v) => setF({ ...f, refund: v })} keyboardType="decimal-pad" />
           <Text style={s.mutedSmall}>Drawer counted short by more than ($)</Text>
           <TextInput style={s.input} value={f.short} onChangeText={(v) => setF({ ...f, short: v })} keyboardType="decimal-pad" />
+          <Text style={s.mutedSmall}>Ask for a safe drop when a drawer holds more than ($)</Text>
+          <TextInput style={s.input} value={f.drop} onChangeText={(v) => setF({ ...f, drop: v })} keyboardType="decimal-pad" />
           <Text style={s.mutedSmall}>Drawer opened without a sale, times per register per day</Text>
           <TextInput style={s.input} value={f.nosale} onChangeText={(v) => setF({ ...f, nosale: v.replace(/\D/g, '') })} keyboardType="number-pad" />
           <Pressable onPress={() => void save()} style={s.small}>

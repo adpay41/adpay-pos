@@ -15,6 +15,7 @@ import { CatalogTab } from './catalog';
 import { CashierCard, CompareCard, LiveTicker, tickerFromList, tickerFromMessage, useRealtime, type TickerRow } from './live';
 import { StaffTab, type Me } from './staff';
 import { SupportTab } from './support';
+import { HoursTab } from './hours';
 import { C, usd } from './theme';
 
 
@@ -150,8 +151,8 @@ function Login({ onToken }: { onToken: (t: string) => void }) {
   );
 }
 
-type Tab = 'sales' | 'tickets' | 'cash' | 'items' | 'alerts' | 'staff' | 'help';
-const TAB_LABEL: Record<Tab, string> = { sales: 'Sales', tickets: 'Tickets', cash: 'Cash', items: 'Items', alerts: 'Alerts', staff: 'Staff', help: 'Help' };
+type Tab = 'sales' | 'tickets' | 'cash' | 'hours' | 'items' | 'alerts' | 'staff' | 'help';
+const TAB_LABEL: Record<Tab, string> = { sales: 'Sales', tickets: 'Tickets', cash: 'Cash', hours: 'Hours', items: 'Items', alerts: 'Alerts', staff: 'Staff', help: 'Help' };
 
 interface MeResponse {
   principal: Me & { merchant_id: string };
@@ -173,7 +174,7 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
   // Tabs follow what this person may do at this store (P3 permissions).
   const can = (p: Permission) => !!me?.principal.permissions.includes(p);
   const tabs: Tab[] = me
-    ? [...(can('reports.view') ? (['sales', 'tickets', 'cash'] as const) : []), ...(can('catalog.edit') ? (['items'] as const) : []), ...(can('reports.view') ? (['alerts'] as const) : []), 'staff', ...(flags?.support_chat ? (['help'] as const) : [])]
+    ? [...(can('reports.view') ? (['sales', 'tickets', 'cash', 'hours'] as const) : []), ...(can('catalog.edit') ? (['items'] as const) : []), ...(can('reports.view') ? (['alerts'] as const) : []), 'staff', ...(flags?.support_chat ? (['help'] as const) : [])]
     : [];
   const current = tab && tabs.includes(tab) ? tab : (tabs[0] ?? null);
 
@@ -211,6 +212,7 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
       {current === 'sales' && <SalesTab token={token} />}
       {current === 'tickets' && <TicketsTab token={token} />}
       {current === 'cash' && <CashTab token={token} />}
+      {current === 'hours' && <HoursTab token={token} />}
       {current === 'items' && <CatalogTab token={token} />}
       {current === 'alerts' && <AlertsTab token={token} />}
       {current === 'staff' && me && <StaffTab token={token} me={{ ...me.principal }} />}

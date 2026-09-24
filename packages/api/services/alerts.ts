@@ -202,6 +202,31 @@ async function findings(q: Queryable, now: Date): Promise<Finding[]> {
     }
   }
 
+  // Too much cash sitting in an open drawer (P15): over the merchant's threshold, until a drop.
+  const overDrawers = recent.filter((s) => s.closed_at === null && s.expected_cents > settingsFor(s.merchant_id).drop_over_cents);
+  if (overDrawers.length) {
+    const regs = new Map(
+      (await q.query<{ register_id: string; org_id: string; name: string }>('SELECT register_id, org_id, name FROM registers WHERE register_id = ANY($1::uuid[])', [overDrawers.map((s) => s.register_id)])).rows.map((r) => [
+        r.register_id,
+        r,
+      ]),
+    );
+    for (const s of overDrawers) {
+      const r = regs.get(s.register_id);
+      const amount = s.expected_cents;
+      out.push({
+        rule: 'drawer_over',
+        dedupe_key: `drawer_over:${s.session_id}`,
+        title: `${r?.name ?? 'A register'}: $${Math.trunc(amount / 100)} in the drawer — drop needed`,
+        details: { session_id: s.session_id, expected_cents: amount, threshold_cents: settingsFor(s.merchant_id).drop_over_cents },
+        org_id: r?.org_id ?? null,
+        merchant_id: s.merchant_id,
+        location_id: s.location_id,
+        register_id: s.register_id,
+      });
+    }
+  }
+
   // Refunds and voids of completed sales over $25 in the last day, one alert each.
   const refunds = await q.query<{ org_id: string; merchant_id: string; location_id: string; register_id: string; register_name: string; refund_id: string; amount: number; reason: string; by_name: string | null; sale_id: string }>(
     `SELECT ${reg}, e.payload->>'refund_id' AS refund_id, (e.payload->>'amount_cents')::bigint AS amount, e.payload->>'reason' AS reason,

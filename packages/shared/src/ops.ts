@@ -150,6 +150,7 @@ export const ALERT_RULES = {
   drawer_short: { label: 'Drawer counted short', severity: 'warning', merchant: true },
   no_sale_spike: { label: 'Drawer opened without a sale, many times', severity: 'warning', merchant: true },
   large_refund: { label: 'Large refund or void', severity: 'warning', merchant: true },
+  drawer_over: { label: 'Too much cash in a drawer (drop needed)', severity: 'warning', merchant: true },
 } as const;
 export type AlertRule = keyof typeof ALERT_RULES;
 
@@ -169,6 +170,8 @@ export const AlertSettingsInput = z.strictObject({
   large_refund_cents: z.int().min(100).max(1_000_000).default(2_500),
   /** A drawer counted short by more than this raises "Drawer counted short". */
   drawer_short_cents: z.int().min(0).max(1_000_000).default(500),
+  /** Cash in one drawer above this: the register asks for a drop and the merchant is alerted (P15). */
+  drop_over_cents: z.int().min(5_000).max(10_000_000).default(60_000),
   /** This many "no sale" opens on one register in a day raises "Drawer opened without a sale". */
   no_sale_spike: z.int().min(2).max(100).default(5),
 });

@@ -67,7 +67,7 @@ export interface SessionState {
 }
 
 /** Events that record who is at the register rather than what was sold. */
-export type StaffEventType = 'staff.signed_in' | 'staff.signed_out' | 'staff.pin_failed' | 'override.granted';
+export type StaffEventType = 'staff.signed_in' | 'staff.signed_out' | 'staff.pin_failed' | 'override.granted' | 'staff.clocked_in' | 'staff.clocked_out';
 /** Puts money back on a card through the processor (the API's card-refund endpoint). Never card data. */
 export type CardRefunder = (req: { sale_id: string; refund_id: string; provider_ref: string; amount_cents: number }) => Promise<{
   status: 'approved' | 'declined' | 'error';
@@ -78,7 +78,7 @@ export type CardRefunder = (req: { sale_id: string; refund_id: string; provider_
 }>;
 
 /** Cash drawer events outside a sale (P6). */
-export type DrawerEventType = 'drawer.session_opened' | 'drawer.cash_movement' | 'drawer.session_closed' | 'drawer.opened';
+export type DrawerEventType = 'drawer.session_opened' | 'drawer.cash_movement' | 'drawer.session_closed' | 'drawer.opened' | 'drawer.counterfeit';
 
 export class SaleSession {
   /** Signed-in person; stamped on every event as `actor_user_id` (P3). */

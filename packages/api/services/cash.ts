@@ -3,10 +3,10 @@
  * held, what was counted, over/short by cashier and by day. Folded at read time from the same
  * events and the same shared `foldDrawer` the register uses, so the two can never disagree.
  */
-import { RegisterEventSchema, foldDrawer, overShortByCashier, sum, cents, type CashReport, type CashSessionRow, type DrawerSession, type RegisterEvent } from '@adpay/shared';
+import { AlertSettingsInput, DEFAULT_ALERT_SETTINGS, RegisterEventSchema, dropSuggestion, foldDrawer, overShortByCashier, sum, cents, type CashReport, type CashSessionRow, type DrawerSession, type RegisterEvent } from '@adpay/shared';
 import type { Queryable } from '../db/db';
 
-const CASH_TYPES = ['drawer.session_opened', 'drawer.cash_movement', 'drawer.session_closed', 'drawer.opened', 'sale.tender_added', 'sale.refunded'];
+const CASH_TYPES = ['drawer.session_opened', 'drawer.cash_movement', 'drawer.session_closed', 'drawer.opened', 'drawer.counterfeit', 'sale.tender_added', 'sale.refunded'];
 
 interface Row {
   event_id: string;
@@ -85,8 +85,13 @@ export async function cashReport(q: Queryable, merchantId: string, range: CashRe
   );
   const { d_from, d_to } = win[0]!;
   const sessions = (await drawerSessions(q, merchantId, d_from, locationId)).filter((s) => s.business_date <= d_to);
+  // Cash in each drawer right now, looking back a week so a session opened last night still counts.
+  const weekAgo = new Date(Date.parse(`${d_to}T12:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
+  const openNow = (await drawerSessions(q, merchantId, weekAgo, locationId)).filter((s) => s.closed_at === null);
+  const { rows: settingsRow } = await q.query<{ alert_settings: unknown }>('SELECT alert_settings FROM merchants WHERE merchant_id = $1', [merchantId]);
+  const dropOver = (AlertSettingsInput.safeParse(settingsRow[0]?.alert_settings ?? {}).data ?? DEFAULT_ALERT_SETTINGS).drop_over_cents;
 
-  const regIds = [...new Set(sessions.map((s) => s.register_id))];
+  const regIds = [...new Set([...sessions, ...openNow].map((s) => s.register_id))];
   const userIds = [...new Set(sessions.flatMap((s) => [s.opened_by, s.closed_by]).filter((x): x is string => !!x))];
   const regs = new Map(
     (
@@ -125,6 +130,17 @@ export async function cashReport(q: Queryable, merchantId: string, range: CashRe
       paid_in_cents: sum(rows.map((s) => s.paid_in_cents)),
       over_short_cents: sum(closed.map((s) => cents(s.over_short_cents!))),
       no_sale_opens: rows.reduce((n, s) => n + s.no_sale_opens, 0),
+      counterfeits: rows.reduce((n, s) => n + s.counterfeits.length, 0),
     },
+    open_now: openNow.map((s) => ({
+      session_id: s.session_id,
+      register_id: s.register_id,
+      register_name: regs.get(s.register_id)?.register_name ?? 'Register',
+      location_name: regs.get(s.register_id)?.location_name ?? '',
+      opened_at: s.opened_at,
+      expected_cents: s.expected_cents,
+      ...(({ needed, suggest_cents }) => ({ drop_needed: needed, suggest_cents }))(dropSuggestion(s.expected_cents, s.float_cents, dropOver)),
+    })),
+    drop_over_cents: dropOver,
   };
 }
