@@ -10,7 +10,7 @@ import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
 import { getSaleTimeline } from '../services/events';
 import { tenancyTree } from '../services/onboarding';
 import { cashReport } from '../services/cash';
-import { recentSales, salesSummary } from '../services/reports';
+import { recentSales, salesCompare, salesSummary } from '../services/reports';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
@@ -30,6 +30,13 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
       .object({ range: z.enum(['today', 'week', 'month']).default('today'), location_id: z.uuid().optional() })
       .parse(request.query);
     return salesSummary(db, me.merchant_id, q.range, q.location_id ?? null);
+  });
+
+  // Today vs yesterday vs same day last week, by hour, cut at the same time of day (P11, Bible L31).
+  app.get('/merchant/sales/compare', reports, async (request) => {
+    const me = asMerchantUser(request);
+    const q = z.object({ location_id: z.uuid().optional() }).parse(request.query);
+    return salesCompare(db, me.merchant_id, q.location_id ?? null);
   });
 
   app.get('/merchant/sales', reports, async (request) => {

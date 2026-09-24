@@ -88,6 +88,7 @@ purpose: support is one person for the first 200 stores.
 | [0016](docs/decisions/0016-receipt-v2.md) | Receipt v2: per-location settings in the snapshot, logo/QR image lines, tax itemized by rate, ask / print / no-receipt after a sale |
 | [0017](docs/decisions/0017-card-and-split-tender.md) | Card on the stub via an idempotent terminal-charge endpoint; split tender with dual pricing per portion (coverage in cash-price cents) |
 | [0018](docs/decisions/0018-tax-compliance-tables.md) | Tax & compliance per location: dated tax schedule by class, per-unit charges (deposit/excise/fee/bag), age by state; resolved at ring time, captured in the event |
+| [0019](docs/decisions/0019-merchant-live-view.md) | Merchant live view: /ws ticker with register + cashier, today vs yesterday vs last week cut at the same time, per-cashier totals, per-merchant alert settings (mute, thresholds) |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

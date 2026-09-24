@@ -6,7 +6,7 @@
  * Shape: one scan of the window's events (index on merchant_id, business_date), grouped per sale,
  * then summed here with the shared integer money helpers. No correlated lookups across partitions.
  */
-import { cents, sum, type SaleListRow, type SalesSummary } from '@adpay/shared';
+import { cents, pctChangeTenths, sum, type Cents, type CompareDay, type SaleListRow, type SalesCompare, type SalesSummary } from '@adpay/shared';
 import type { Queryable } from '../db/db';
 
 type Range = SalesSummary['range'];
@@ -24,6 +24,8 @@ interface SaleRow {
   refunds_cents: number;
   voids_in_range: number;
   duration_s: number | null;
+  cashier_id: string | null;
+  cashier_name: string | null;
 }
 
 export async function salesSummary(
@@ -62,10 +64,14 @@ export async function salesSummary(
             count(*) FILTER (WHERE e.type = 'sale.voided' AND e.business_date BETWEEN $2::date AND $3::date) AS voids_in_range,
             -- Speed at the counter (Bible L55): first action to completion, from the events themselves.
             extract(epoch FROM max(e.occurred_at) FILTER (WHERE e.type = 'sale.completed')
-                             - min(e.occurred_at) FILTER (WHERE e.type = 'sale.opened'))::int AS duration_s
+                             - min(e.occurred_at) FILTER (WHERE e.type = 'sale.opened'))::int AS duration_s,
+            -- Who rang it (P11): the person signed in when it completed.
+            (array_agg(e.actor_user_id) FILTER (WHERE e.type = 'sale.completed'))[1] AS cashier_id,
+            (array_agg(u.name) FILTER (WHERE e.type = 'sale.completed'))[1] AS cashier_name
        FROM sale_events e
        JOIN registers r ON r.register_id = e.register_id
        JOIN locations l ON l.location_id = e.location_id
+       LEFT JOIN users u ON u.user_id = e.actor_user_id
       WHERE e.merchant_id = $1
         AND e.business_date BETWEEN $2::date - 1 AND $3::date
         AND e.sale_id IS NOT NULL
@@ -90,7 +96,9 @@ export async function salesSummary(
 
   const hours = new Map<number, SaleRow[]>();
   const registers = new Map<string, SaleRow[]>();
+  const cashiers = new Map<string, SaleRow[]>();
   for (const r of counted) {
+    cashiers.set(r.cashier_id ?? '', [...(cashiers.get(r.cashier_id ?? '') ?? []), r]);
     if (r.hour !== null) hours.set(r.hour, [...(hours.get(r.hour) ?? []), r]);
     registers.set(r.register_id, [...(registers.get(r.register_id) ?? []), r]);
   }
@@ -122,6 +130,14 @@ export async function salesSummary(
         count: rs.length,
       }))
       .sort((a, b) => b.amount_cents - a.amount_cents),
+    by_cashier: [...cashiers.values()]
+      .map((rs) => ({
+        user_id: rs[0]!.cashier_id,
+        name: rs[0]!.cashier_name ?? 'No one signed in',
+        amount_cents: sum(rs.map(money)),
+        count: rs.length,
+      }))
+      .sort((a, b) => b.amount_cents - a.amount_cents),
   };
 }
 
@@ -142,11 +158,13 @@ export async function recentSales(q: Queryable, merchantId: string | null, limit
                  ELSE 'open' END AS status,
             max(e.payload->>'price_mode') FILTER (WHERE e.type = 'sale.completed') AS price_mode,
             coalesce(max((e.payload->>'total_cents')::bigint) FILTER (WHERE e.type = 'sale.completed'), 0)::bigint AS total_cents,
-            count(*) FILTER (WHERE e.type = 'sale.line_added') AS item_count
+            count(*) FILTER (WHERE e.type = 'sale.line_added') AS item_count,
+            (array_agg(u.name ORDER BY e.device_seq DESC) FILTER (WHERE u.name IS NOT NULL))[1] AS cashier_name
        FROM latest
        JOIN sale_events e ON e.sale_id = latest.sale_id
        JOIN registers r ON r.register_id = e.register_id
        JOIN locations l ON l.location_id = e.location_id
+       LEFT JOIN users u ON u.user_id = e.actor_user_id
       GROUP BY e.sale_id, e.register_id, r.name, l.name
       ORDER BY min(e.occurred_at) DESC`,
     [merchantId, limit],
@@ -155,4 +173,78 @@ export async function recentSales(q: Queryable, merchantId: string | null, limit
     ...r,
     occurred_at: r.occurred_at instanceof Date ? r.occurred_at.toISOString() : String(r.occurred_at),
   }));
+}
+
+/**
+ * Today vs yesterday vs the same weekday last week, by hour (P11, Bible L31), in store-local time.
+ * "So far" cuts each day at the current store-local time of day, so the % is a fair comparison.
+ */
+export async function salesCompare(q: Queryable, merchantId: string, locationId: string | null = null): Promise<SalesCompare> {
+  const { rows: clock } = await q.query<{ today: string; yesterday: string; last_week: string; hour: number; minute: number }>(
+    `WITH t AS (
+       SELECT now() AT TIME ZONE coalesce(
+         (SELECT timezone FROM locations WHERE merchant_id = $1 AND ($2::uuid IS NULL OR location_id = $2::uuid) ORDER BY created_at LIMIT 1),
+         'America/New_York') AS local_now)
+     SELECT to_char(local_now::date, 'YYYY-MM-DD') AS today,
+            to_char(local_now::date - 1, 'YYYY-MM-DD') AS yesterday,
+            to_char(local_now::date - 7, 'YYYY-MM-DD') AS last_week,
+            extract(hour FROM local_now)::int AS hour, extract(minute FROM local_now)::int AS minute
+       FROM t`,
+    [merchantId, locationId],
+  );
+  const c = clock[0]!;
+  const nowMinute = c.hour * 60 + c.minute;
+
+  const { rows } = await q.query<{ day: string; minute_of_day: number; voided: boolean; money: number }>(
+    `SELECT to_char(max(e.business_date) FILTER (WHERE e.type = 'sale.completed'), 'YYYY-MM-DD') AS day,
+            max((extract(hour FROM e.occurred_at AT TIME ZONE l.timezone) * 60
+                 + extract(minute FROM e.occurred_at AT TIME ZONE l.timezone))::int) FILTER (WHERE e.type = 'sale.completed') AS minute_of_day,
+            bool_or(e.type = 'sale.voided') AS voided,
+            coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (
+              WHERE e.type = 'sale.tender_added' AND (e.payload->>'tender_type' = 'cash' OR e.payload->'card'->>'status' = 'approved')), 0)::bigint AS money
+       FROM sale_events e
+       JOIN locations l ON l.location_id = e.location_id
+      WHERE e.merchant_id = $1
+        AND e.business_date IN ($2::date, $3::date, $4::date, $2::date - 1, $3::date - 1, $4::date - 1)
+        AND e.sale_id IS NOT NULL
+        AND ($5::uuid IS NULL OR e.location_id = $5::uuid)
+      GROUP BY e.sale_id
+     HAVING bool_or(e.type = 'sale.completed')`,
+    [merchantId, c.today, c.yesterday, c.last_week, locationId],
+  );
+
+  const days = (
+    [
+      ['today', c.today],
+      ['yesterday', c.yesterday],
+      ['last_week', c.last_week],
+    ] as const
+  ).map(([key, date]): CompareDay => {
+    const sales = rows.filter((r) => r.day === date && !r.voided);
+    const hours = new Map<number, { amount: Cents[]; count: number }>();
+    for (const r of sales) {
+      const h = Math.floor(r.minute_of_day / 60);
+      const b = hours.get(h) ?? { amount: [], count: 0 };
+      b.amount.push(cents(Number(r.money)));
+      b.count++;
+      hours.set(h, b);
+    }
+    const soFar = sales.filter((r) => r.minute_of_day < nowMinute || key === 'today');
+    return {
+      key,
+      date,
+      total_cents: sum(sales.map((r) => cents(Number(r.money)))),
+      count: sales.length,
+      so_far_cents: sum(soFar.map((r) => cents(Number(r.money)))),
+      so_far_count: soFar.length,
+      by_hour: [...hours.entries()].sort(([a], [b]) => a - b).map(([hour, b]) => ({ hour, amount_cents: sum(b.amount), count: b.count })),
+    };
+  });
+  const [today, yesterday, lastWeek] = days as [CompareDay, CompareDay, CompareDay];
+  return {
+    as_of: { hour: c.hour, minute: c.minute },
+    days,
+    vs_yesterday_tenths: pctChangeTenths(today.so_far_cents, yesterday.so_far_cents),
+    vs_last_week_tenths: pctChangeTenths(today.so_far_cents, lastWeek.so_far_cents),
+  };
 }

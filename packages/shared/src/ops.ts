@@ -151,6 +151,28 @@ export const ALERT_RULES = {
   large_refund: { label: 'Large refund or void', severity: 'warning', merchant: true },
 } as const;
 export type AlertRule = keyof typeof ALERT_RULES;
+
+/** Rules a merchant sees (and can mute); the rest are AD Pay support's. */
+export const MERCHANT_ALERT_RULES = (Object.keys(ALERT_RULES) as AlertRule[]).filter((r) => ALERT_RULES[r].merchant);
+
+/**
+ * A merchant's alert settings (P11, Bible 2.6 L37): which alerts to show them, and the thresholds
+ * behind the money ones. Muting hides an alert from the merchant; AD Pay support still sees it.
+ */
+export const AlertSettingsInput = z.strictObject({
+  muted: z
+    .array(z.enum(MERCHANT_ALERT_RULES as [AlertRule, ...AlertRule[]]))
+    .max(20)
+    .default([]),
+  /** A refund or void at or above this raises "Large refund or void". */
+  large_refund_cents: z.int().min(100).max(1_000_000).default(2_500),
+  /** A drawer counted short by more than this raises "Drawer counted short". */
+  drawer_short_cents: z.int().min(0).max(1_000_000).default(500),
+  /** This many "no sale" opens on one register in a day raises "Drawer opened without a sale". */
+  no_sale_spike: z.int().min(2).max(100).default(5),
+});
+export type AlertSettings = z.infer<typeof AlertSettingsInput>;
+export const DEFAULT_ALERT_SETTINGS: AlertSettings = AlertSettingsInput.parse({});
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 
 export interface Alert {
@@ -169,6 +191,8 @@ export interface Alert {
   resolved_at: string | null;
   acknowledged_at: string | null;
   acknowledged_by_name: string | null;
+  /** The merchant muted this rule (P11): hidden from them and not notified; AD Pay still sees it. */
+  muted?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────── device page ──
@@ -220,7 +244,20 @@ export type ServerMessage =
   | { type: 'ready'; kind: 'device' | 'merchant_user' | 'admin' }
   | { type: 'catalog'; catalog_version: number }
   | { type: 'action'; action: RemoteAction }
-  | { type: 'sale'; merchant_id: string; register_id: string; sale_id: string; total_cents: number; price_mode: 'cash' | 'card'; at: string; actor_user_id: string | null }
+  | {
+      type: 'sale';
+      merchant_id: string;
+      location_id?: string;
+      register_id: string;
+      register_name?: string;
+      sale_id: string;
+      total_cents: number;
+      price_mode: 'cash' | 'card' | 'split';
+      at: string;
+      actor_user_id: string | null;
+      /** Who rang it (P11 live ticker); null before sign-in existed. */
+      cashier_name?: string | null;
+    }
   | { type: 'register'; register_id: string; merchant_id: string; last_heartbeat_at: string }
   | { type: 'alert'; alert: Alert }
   | { type: 'error'; message: string };

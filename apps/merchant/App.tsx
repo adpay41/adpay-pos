@@ -1,17 +1,18 @@
 /**
  * AD Pay merchant app: phone + OTP login against the real API, then today / week / month sales (by
  * tender, hour and register), the latest tickets, and the catalog — items with photos, favorites,
- * categories and dual pricing, pushed to the registers (build plan P2). Alerts and the live feed
- * arrive in later phases.
+ * categories and dual pricing, pushed to the registers (build plan P2). Today's view is live (P11):
+ * a sales ticker by register and cashier, and today vs yesterday vs last week at the same time.
  */
-import { type MembershipSummary, type Permission, type SaleListRow, type SalesSummary } from '@adpay/shared';
+import { type MembershipSummary, type Permission, type SaleListRow, type SalesCompare, type SalesSummary } from '@adpay/shared';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api, tokenStore } from './api';
 import { AlertsTab } from './alerts';
 import { CashTab } from './cash';
 import { CatalogTab } from './catalog';
+import { CashierCard, CompareCard, LiveTicker, tickerFromList, tickerFromMessage, useRealtime, type TickerRow } from './live';
 import { StaffTab, type Me } from './staff';
 import { C, usd } from './theme';
 
@@ -214,26 +215,40 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
   );
 }
 
-function useApi<T>(path: string, token: string) {
-  const [data, setData] = useState<T | null>(null);
+/** Loads `path`; a new `nonce` reloads it in place (no flash), a new path starts empty. */
+function useApi<T>(path: string, token: string, nonce = 0) {
+  const [got, setGot] = useState<{ path: string; data: T } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    setData(null);
     api<T>(path, token).then(
-      (d) => live && setData(d),
+      (d) => live && setGot({ path, data: d }),
       (e) => live && setError((e as Error).message),
     );
     return () => {
       live = false;
     };
-  }, [path, token]);
-  return { data, error };
+  }, [path, token, nonce]);
+  return { data: got?.path === path ? got.data : null, error };
 }
 
 function SalesTab({ token }: { token: string }) {
   const [range, setRange] = useState<SalesSummary['range']>('today');
-  const { data, error } = useApi<SalesSummary>(`/merchant/sales/summary?range=${range}`, token);
+  // A live sale refreshes the figures (debounced), so the screen follows the store without a pull (P11).
+  const [nonce, setNonce] = useState(0);
+  const [ticker, setTicker] = useState<TickerRow[]>([]);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const live = useRealtime(token, (m) => {
+    if (m.type !== 'sale') return;
+    setTicker((rows) => [tickerFromMessage(m), ...rows.filter((r) => r.sale_id !== m.sale_id)].slice(0, 30));
+    if (debounce.current) clearTimeout(debounce.current);
+    debounce.current = setTimeout(() => setNonce((n) => n + 1), 1_500);
+  });
+  useEffect(() => {
+    api<{ sales: SaleListRow[] }>('/merchant/sales?limit=20', token).then((r) => setTicker(tickerFromList(r.sales)), () => undefined);
+  }, [token]);
+  const { data, error } = useApi<SalesSummary>(`/merchant/sales/summary?range=${range}`, token, nonce);
+  const compare = useApi<SalesCompare>('/merchant/sales/compare', token, nonce);
   const max = Math.max(1, ...(data?.by_hour.map((h) => h.amount_cents) ?? []));
   return (
     <ScrollView contentContainerStyle={s.page}>
@@ -247,6 +262,8 @@ function SalesTab({ token }: { token: string }) {
         ))}
       </View>
       {error ? <Text style={s.error}>{error}</Text> : null}
+      {range === 'today' && compare.data ? <CompareCard data={compare.data} /> : null}
+      {range === 'today' ? <LiveTicker rows={ticker} live={live} /> : null}
       {!data ? (
         <ActivityIndicator style={{ marginTop: 24 }} />
       ) : (
@@ -298,6 +315,7 @@ function SalesTab({ token }: { token: string }) {
               </View>
             ))}
           </View>
+          <CashierCard rows={data.by_cashier ?? []} />
           <View style={s.card}>
             <View style={s.line}>
               <Text style={s.lineName}>Voids</Text>

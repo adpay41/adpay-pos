@@ -4,12 +4,12 @@
  *   Admin:    fleet list, device page, remote actions (audited), alert console.
  *   Merchant: their registers' status and their alert inbox.
  */
-import { ActionResultInput, HeartbeatInput, LogUploadInput, RemoteActionRequest } from '@adpay/shared';
+import { ActionResultInput, AlertSettingsInput, HeartbeatInput, LogUploadInput, RemoteActionRequest } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { asAdmin, asDevice, asMerchantUser, requireAdmin, requireDevice, requireMerchantUser } from '../http/auth-hooks';
+import { asAdmin, asDevice, asMerchantUser, requireAdmin, requireDevice, requireMerchantUser, requirePermission } from '../http/auth-hooks';
 import type { AppDeps } from '../server';
-import { acknowledgeAlert, evaluateAlerts, listAlerts } from '../services/alerts';
+import { acknowledgeAlert, evaluateAlerts, getAlertSettings, listAlerts, setAlertSettings } from '../services/alerts';
 import { completeAction, devicePage, fleet, recordHeartbeat, requestAction, storeLogUpload } from '../services/ops';
 
 const RegisterParams = z.object({ registerId: z.uuid() });
@@ -54,6 +54,12 @@ export async function opsRoutes(app: FastifyInstance, deps: AppDeps): Promise<vo
       return requestAction(db, asAdmin(r), registerId, body.kind, body.params, r.logContext.trace_id);
     });
 
+    s.get('/admin/merchants/:merchantId/alert-settings', async (r) => getAlertSettings(db, z.object({ merchantId: z.uuid() }).parse(r.params).merchantId));
+    s.put('/admin/merchants/:merchantId/alert-settings', async (r) => {
+      const { merchantId } = z.object({ merchantId: z.uuid() }).parse(r.params);
+      return setAlertSettings(db, asAdmin(r), merchantId, AlertSettingsInput.parse(r.body), r.logContext.trace_id);
+    });
+
     s.get('/admin/alerts', async (r) => {
       const q = AlertQuery.parse(r.query);
       return { alerts: await listAlerts(db, { openOnly: q.open === '1', limit: q.limit }) };
@@ -79,6 +85,14 @@ export async function opsRoutes(app: FastifyInstance, deps: AppDeps): Promise<vo
     s.get('/merchant/alerts', async (r) => {
       const q = AlertQuery.parse(r.query);
       return { alerts: await listAlerts(db, { merchantId: asMerchantUser(r).merchant_id, merchantFacing: true, openOnly: q.open === '1', limit: q.limit }) };
+    });
+
+    // Alert settings (P11): mute rules, set the money thresholds. For people who see the figures.
+    const reports = { preHandler: requirePermission('reports.view') };
+    s.get('/merchant/alert-settings', reports, async (r) => getAlertSettings(db, asMerchantUser(r).merchant_id));
+    s.put('/merchant/alert-settings', reports, async (r) => {
+      const me = asMerchantUser(r);
+      return setAlertSettings(db, me, me.merchant_id, AlertSettingsInput.parse(r.body), r.logContext.trace_id);
     });
 
     s.post('/merchant/alerts/:alertId/ack', async (r) => {
