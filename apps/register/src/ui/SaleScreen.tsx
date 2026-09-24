@@ -25,6 +25,8 @@ import {
   searchCatalog,
   quickCashOptions,
   renderReceipt,
+  renderZReport,
+  type ZReport,
   type CashierUsual,
   type CatalogItem,
   type CatalogSnapshot,
@@ -75,11 +77,15 @@ type Modal =
   | { kind: 'error'; message: string }
   | { kind: 'batch_age'; batch: Batch; label: string }
   | { kind: 'save_usual' }
+  | { kind: 'eod'; z: ZReport | null; lines: string[] | null; done: boolean }
   | { kind: 'remove_usual'; usual: CashierUsual };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
   const [catalog, setCatalog] = useState<CatalogSnapshot>(rt.catalog);
-  const [session, setSession] = useState<SessionState>(rt.session.state());
+  // Training mode (P16, Bible 1.8): a separate in-memory session that is never synced or saved.
+  const [training, setTraining] = useState(false);
+  const ses = training ? rt.training : rt.session;
+  const [session, setSession] = useState<SessionState>(ses.state());
   const [sync, setSync] = useState<SyncStatus | null>(null);
   // FAVORITES is the location's own first page; a store without favorites opens on its first category.
   const [category, setCategory] = useState<string | null>(favoriteKeys(rt.catalog).length ? FAVORITES : (rt.catalog.categories[0]?.category_id ?? null));
@@ -126,7 +132,10 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   useEffect(() => rt.drawer.subscribe(setDrawerSession), [rt]);
   const [staff, setStaff] = useState<StaffState>(rt.staff.state());
   useEffect(() => rt.staff.subscribe(setStaff), [rt]);
-  useEffect(() => rt.session.subscribe(setSession), [rt]);
+  useEffect(() => {
+    setSession(ses.state());
+    return ses.subscribe(setSession);
+  }, [ses]);
   useEffect(() => rt.sync.subscribe(setSync), [rt]);
   // A newer catalog (price change, new item, reordered category) replaces the keys in place.
   useEffect(() => rt.sync.onCatalog(setCatalog), [rt]);
@@ -182,9 +191,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const ring = (item: CatalogItem, opts: { qty?: number; entry: Entry; ageConfirmed?: boolean }) => {
     const qty = opts.qty ?? 1;
     if (priceCheck) return setModal({ kind: 'price_check', item, showCost: false });
-    if (item.min_age && !opts.ageConfirmed && !rt.session.wouldMerge(item)) return setModal({ kind: 'age', item, qty, entry: opts.entry });
+    if (item.min_age && !opts.ageConfirmed && !ses.wouldMerge(item)) return setModal({ kind: 'age', item, qty, entry: opts.entry });
     if (item.open_price) return setModal({ kind: 'open_price', item, qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed });
-    void run(() => rt.session.addItem(item, { qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed }));
+    void run(() => ses.addItem(item, { qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed }));
   };
   const addItem = (item: CatalogItem) => ring(item, { entry: query ? 'search' : 'key' });
   // Compliance (P10): bag-fee keys in force today, and each category's effective age check.
@@ -246,7 +255,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       category_id: v.category_id,
       cash_price_cents: v.cash,
       upc: code,
-      created_by_user_id: rt.session.actorId(),
+      created_by_user_id: ses.actorId(),
       created_at: new Date().toISOString(),
     };
     await rt.items.add(cmd);
@@ -271,7 +280,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       occurred_at: new Date().toISOString(),
       timezone: rt.identity.timezone,
       copy,
-      ...(footer ? { footer } : {}),
+      ...(footer ? { footer } : training ? { footer: '*** TRAINING — NOT A SALE ***' } : {}),
       ...(receiptSettings
         ? { settings: receiptSettings, logo_url: receiptSettings.logo_url ? `${API_URL}${receiptSettings.logo_url}` : null }
         : {}),
@@ -284,7 +293,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         const events = await rt.store.eventsForSale(saleId);
         if (events.length === 0) throw new Error('That sale is not on this register');
         await hardware.printReceipt(receiptFor(foldSale(saleId, events), 'reprint'));
-        await rt.session.recordReceipt(saleId, 'reprint');
+        await ses.recordReceipt(saleId, 'reprint');
         return `Reprinted ticket ${saleId.slice(0, 4).toUpperCase()}`;
       },
       printerTest: async () => {
@@ -306,15 +315,16 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
   /** Cash in hand: open the drawer and record it (full or part payment). */
   async function takeCash(saleId: string) {
+    if (training) return; // nothing real happened: no drawer, no event
     await hardware.kickDrawer();
-    await rt.session.recordDrawer('cash_sale', saleId);
+    await ses.recordDrawer('cash_sale', saleId);
     await rt.drawer.refresh();
   }
 
   async function tender(amount: number, partial = false) {
     await run(async () => {
       const saleId = sale!.sale_id;
-      const r = await rt.session.tenderCash(cents(amount), { partial });
+      const r = await ses.tenderCash(cents(amount), { partial });
       await takeCash(saleId);
       if (!r.completed) {
         // Split: the rest goes on a card at the card price of what's left (ADR 0017).
@@ -334,11 +344,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   async function chargeCard(amount?: Cents, retry?: { tender_id: string; amount: Cents }) {
     await run(async () => {
       const current = session.sale!;
-      const t = retry ?? (await rt.session.startCard(amount));
+      const t = retry ?? (await ses.startCard(amount));
       setModal({ kind: 'card', phase: { kind: 'waiting', amount: t.amount } });
       display.publish(displayFor(rt.identity.merchant_name, current, undefined, { phase: 'card', amount: t.amount }));
       const r = await rt.payments.charge(current.sale_id, t.tender_id, t.amount);
-      const res = await rt.session.finishCard(t.tender_id, t.amount, { ...r, status: r.status });
+      const res = await ses.finishCard(t.tender_id, t.amount, { ...r, status: r.status });
       rt.log.info('card', { status: r.status, sale: current.sale_id.slice(0, 8), amount_cents: t.amount });
       if (r.status === 'approved') {
         display.publish(displayFor(rt.identity.merchant_name, res.sale, undefined, { phase: 'approved', amount: t.amount }));
@@ -370,9 +380,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       } finally {
         quietPrint.current = false;
       }
-      await rt.session.recordReceipt(done.sale_id, 'original');
+      await ses.recordReceipt(done.sale_id, 'original');
     } else if (after === 'none') {
-      await rt.session.recordReceipt(done.sale_id, 'none');
+      await ses.recordReceipt(done.sale_id, 'none');
     }
     setModal({ kind: 'done', sale: done, change, after, printed });
     rt.sync.kick();
@@ -382,7 +392,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     await run(async () => {
       if (print) await hardware.printReceipt(receiptFor(done, 'original'));
       else setModal({ kind: 'none' });
-      await rt.session.recordReceipt(done.sale_id, print ? 'original' : 'none');
+      await ses.recordReceipt(done.sale_id, print ? 'original' : 'none');
       display.publish(displayFor(rt.identity.merchant_name, null));
       rt.sync.kick();
     });
@@ -390,11 +400,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
   async function reprintLast() {
     await run(async () => {
-      const events = await rt.session.lastSaleEvents();
+      const events = await ses.lastSaleEvents();
       const last = session.lastCompleted;
       if (!last || events.length === 0) throw new Error('No completed sale on this register yet');
       await hardware.printReceipt(receiptFor(foldSale(last.sale_id, events), 'reprint'));
-      await rt.session.recordReceipt(last.sale_id, 'reprint');
+      await ses.recordReceipt(last.sale_id, 'reprint');
       rt.sync.kick();
     });
   }
@@ -552,7 +562,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                     </Text>
                   </View>
                   <Text style={s.lineAmt}>{usd(lineTotal(l, 'cash'))}</Text>
-                  <Pressable onPress={() => void run(() => rt.session.removeLine(l.line_id))} style={s.remove} accessibilityLabel={`Remove ${l.name}`}>
+                  <Pressable onPress={() => void run(() => ses.removeLine(l.line_id))} style={s.remove} accessibilityLabel={`Remove ${l.name}`}>
                     <Text style={s.removeText}>×</Text>
                   </Pressable>
                 </Pressable>
@@ -580,7 +590,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 </Text>
               </View>
             ) : null}
-            {dropNeed.needed ? (
+            {training ? (
+              <View style={s.trainingBanner}>
+                <Text style={s.trainingText}>TRAINING — practice only. Nothing is saved, synced or charged; receipts say TRAINING.</Text>
+              </View>
+            ) : null}
+            {dropNeed.needed && !training ? (
               // Bible 1.2: "drawer over $600, drop now", on the cashier's screen only, never the customer's.
               <Pressable style={s.dropBanner} onPress={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false })}>
                 <Text style={s.dropText}>Drawer is over {usd(catalog.cash_settings?.drop_over_cents ?? 0)}. Drop about {usd(dropNeed.suggest_cents)} to the safe now.</Text>
@@ -597,11 +612,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 style={[s.payBtn, !sale?.lines.length && s.disabled]}
                 disabled={!sale?.lines.length}
                 // Cash needs a started drawer (a counted float), so the day reconciles to the cent.
-                onPress={() => setModal(rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true })}
+                onPress={() => setModal(training || rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true })}
               >
                 <Text style={s.payText}>Cash</Text>
               </Pressable>
-              {flags.card_payments ? (
+              {flags.card_payments && !training ? (
               <Pressable
                 style={[s.payBtn, (!sale?.lines.length || !cardOk) && s.disabled]}
                 disabled={!sale?.lines.length || !cardOk}
@@ -631,7 +646,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                     <Text>★ {u.label}</Text>
                   </Pressable>
                 ))}
-                {sale?.lines.some((l) => !l.is_fee) && staff.member ? (
+                {sale?.lines.some((l) => !l.is_fee) && staff.member && !training ? (
                   <Pressable style={[s.ghost, !cardOk && s.disabled]} disabled={!cardOk} onPress={() => setModal({ kind: 'save_usual' })}>
                     <Text>+ Save as usual</Text>
                   </Pressable>
@@ -645,7 +660,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   <Pressable
                     key={r.rule_id}
                     style={s.ghost}
-                    onPress={() => void run(() => rt.session.addItem(feeItem(r, catalog.tax_rate_ppm), { entry: 'key', fee: true }))}
+                    onPress={() => void run(() => ses.addItem(feeItem(r, catalog.tax_rate_ppm), { entry: 'key', fee: true }))}
                     accessibilityLabel={`Add ${r.label}`}
                   >
                     <Text>+ {r.label} {usd(cents(r.amount_cents ?? 0))}</Text>
@@ -657,7 +672,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Pressable
                 style={[s.ghost, !sale && s.disabled]}
                 disabled={!sale}
-                onPress={() => sale && guarded('ticket.void', sale.sale_id, () => rt.session.voidSale('Voided at register'))}
+                onPress={() => sale && guarded('ticket.void', sale.sale_id, () => ses.voidSale('Voided at register'))}
               >
                 <Text>Void ticket</Text>
               </Pressable>
@@ -665,7 +680,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 <Text>Reprint last</Text>
               </Pressable>
               {flags.hold_tickets ? (
-                <Pressable style={[s.ghost, !sale?.lines.length && s.disabled]} disabled={!sale?.lines.length} onPress={() => void run(() => rt.session.hold())}>
+                <Pressable style={[s.ghost, !sale?.lines.length && s.disabled]} disabled={!sale?.lines.length} onPress={() => void run(() => ses.hold())}>
                   <Text>Hold</Text>
                 </Pressable>
               ) : null}
@@ -682,10 +697,77 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   <Text style={priceCheck ? { color: '#fff' } : undefined}>Price check</Text>
                 </Pressable>
               ) : null}
+              <Pressable
+                style={[s.ghost, training && s.ghostOn]}
+                onPress={() =>
+                  void run(async () => {
+                    // Leaving training throws the practice ticket away; nothing was ever saved.
+                    if (training && rt.training.state().sale) await rt.training.voidSale('Training');
+                    setTraining((t) => !t);
+                  })
+                }
+              >
+                <Text style={training ? { color: '#fff' } : undefined}>{training ? 'Exit training' : 'Training'}</Text>
+              </Pressable>
+              {!training ? (
+                <Pressable
+                  style={s.ghost}
+                  onPress={() => void run(async () => setModal({ kind: 'eod', z: await rt.eod.preview(catalog), lines: null, done: false }))}
+                >
+                  <Text>End of day</Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         </View>
       </View>
+
+      {modal.kind === 'eod' && modal.z && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <Text style={s.modalTitle}>{modal.done ? `Z-report #${modal.z.z_number} taken` : 'End of day'}</Text>
+          {!modal.done ? (
+            <Text style={s.modalBody}>
+              Since the last Z: {modal.z.sales_count} sales, {usd(modal.z.gross_cents)} (cash {usd(modal.z.by_tender.cash_cents)}, card {usd(modal.z.by_tender.card_cents)}), tax {usd(modal.z.tax_cents)}.
+              {drawerSession ? ' Close and count the drawer first: the count is part of the Z.' : ''}
+            </Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 360 }}>
+              {(modal.lines ?? []).map((l, i) => (
+                <Text key={i} style={s.zLine}>
+                  {l}
+                </Text>
+              ))}
+            </ScrollView>
+          )}
+          <View style={s.actions}>
+            <Pressable style={s.ghost} onPress={() => setModal({ kind: 'none' })}>
+              <Text>{modal.done ? 'Done' : 'Not now'}</Text>
+            </Pressable>
+            {!modal.done && drawerSession ? (
+              <Pressable style={s.ghost} onPress={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false })}>
+                <Text>Count the drawer</Text>
+              </Pressable>
+            ) : null}
+            {!modal.done ? (
+              <Pressable
+                style={[s.primary, !!drawerSession && s.disabled]}
+                disabled={!!drawerSession}
+                onPress={() =>
+                  void run(async () => {
+                    const z = await rt.eod.close(catalog);
+                    const lines = renderZReport(z, { merchant_name: rt.identity.merchant_name, location_name: rt.identity.location_name, register_name: rt.identity.register_name, timezone: rt.identity.timezone });
+                    await hardware.printReceipt(lines.map((text) => ({ text, style: 'normal' as const })));
+                    rt.sync.kick();
+                    setModal({ kind: 'eod', z, lines, done: true });
+                  })
+                }
+              >
+                <Text style={s.primaryText}>Take Z & print</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </Overlay>
+      )}
 
       {modal.kind === 'batch_age' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
@@ -776,7 +858,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       {modal.kind === 'cash' && sale && (
         <CashModal
           total={sale.remaining_cash_cents}
-          allowPart={cardOk && flags.card_payments}
+          allowPart={cardOk && flags.card_payments && !training}
           onCancel={() => setModal({ kind: 'none' })}
           onTender={(amt) => void tender(amt)}
           onPart={(amt) => void tender(amt, true)}
@@ -794,7 +876,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onPartial={() => setModal({ kind: 'card', phase: { kind: 'partial' } })}
             onCash={() => {
               display.publish(displayFor(rt.identity.merchant_name, sale));
-              setModal(rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true });
+              setModal(training || rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true });
             }}
             onBack={() => {
               display.publish(displayFor(rt.identity.merchant_name, sale));
@@ -848,7 +930,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                     onPress={() =>
                       void run(async () => {
                         await hardware.printReceipt(receiptFor(modal.sale, 'reprint'));
-                        await rt.session.recordReceipt(modal.sale.sale_id, 'reprint');
+                        await ses.recordReceipt(modal.sale.sale_id, 'reprint');
                         display.publish(displayFor(rt.identity.merchant_name, null));
                       })
                     }
@@ -937,7 +1019,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onConfirm={(n) => {
               const lineId = modal.line_id;
               setModal({ kind: 'none' });
-              void run(() => rt.session.setQty(lineId, n));
+              void run(() => ses.setQty(lineId, n));
             }}
           />
         </Overlay>
@@ -957,7 +1039,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               const { item, qty, entry, ageConfirmed } = modal;
               setModal({ kind: 'none' });
               const cash = cents(c);
-              void run(() => rt.session.addItem(item, { qty, entry, ageConfirmed, price: { cash, card: deriveCardPrice(cash, catalog.dual_price_rate_ppm) } }));
+              void run(() => ses.addItem(item, { qty, entry, ageConfirmed, price: { cash, card: deriveCardPrice(cash, catalog.dual_price_rate_ppm) } }));
             }}
           />
         </Overlay>
@@ -1025,7 +1107,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onClose={() => setModal({ kind: 'none' })}
             onRecall={(id) => {
               setModal({ kind: 'none' });
-              void run(() => rt.session.recall(id));
+              void run(() => ses.recall(id));
             }}
           />
         </Overlay>
@@ -1041,7 +1123,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onClose={() => setModal({ kind: 'none' })}
             onReprint={async (sale) => {
               await hardware.printReceipt(receiptFor(sale, 'reprint'));
-              await rt.session.recordReceipt(sale.sale_id, 'reprint');
+              await ses.recordReceipt(sale.sale_id, 'reprint');
               rt.sync.kick();
             }}
             onCashBack={async (sale, amount, what) => {
@@ -1302,6 +1384,9 @@ const s = StyleSheet.create({
   onClock: { borderColor: '#2f7d4f' },
   dropBanner: { backgroundColor: '#fff4e5', borderColor: '#f3d7a8', borderWidth: 1, borderRadius: 8, padding: 10 },
   dropText: { color: C.ink, fontWeight: '700' },
+  trainingBanner: { backgroundColor: C.black, borderRadius: 8, padding: 10 },
+  trainingText: { color: '#fff', fontWeight: '800' },
+  zLine: { fontFamily: Platform.OS === 'web' ? 'monospace' : undefined, fontSize: 12, color: C.ink },
 
   body: { flex: 1, flexDirection: 'row' },
   catCol: { width: 140, backgroundColor: '#fff', borderRightWidth: 1, borderRightColor: C.line, paddingVertical: 8 },

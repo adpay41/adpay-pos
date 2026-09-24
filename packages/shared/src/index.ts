@@ -23,3 +23,4 @@ export * from './analyzer';
 export * from './catalog-templates';
 export * from './catalog-import';
 export * from './timeclock';
+export * from './zreport';

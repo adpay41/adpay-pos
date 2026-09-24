@@ -94,6 +94,7 @@ purpose: support is one person for the first 200 stores.
 | [0022](docs/decisions/0022-money-analyzer-residuals-kpis.md) | Statement analyzer (manual entry + offer, printable one-pager), residuals from the ledger + plan in force (processor cost typed until Finix data), KPIs on read |
 | [0023](docs/decisions/0023-catalog-n-import-templates-usuals.md) | One bulk catalog write (templates + CSV, dry-run preview, price history); starter template shared with the seed; repeat-last and cashier usuals ring through the session; usuals are server config |
 | [0024](docs/decisions/0024-cash-and-time-n.md) | Cash & time N as events: drop-needed threshold (cashier banner, merchant view, alert), counterfeit refusals, denomination counts + photo, handover, time clock with weekly overtime + payroll CSV, hourly ribbon from /device/pulse |
+| [0025](docs/decisions/0025-end-of-day-z-report-training.md) | Z covers everything since the previous Z; one shared buildZReport on register and server (mismatch flagged, never corrected); EOD-not-closed alert; training = separate in-memory session |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { API_URL, api } from './api';
 import { C, usd } from './theme';
+import { ZReports } from './zreports';
 
 const AMBER = '#8a5300';
 
@@ -100,6 +101,8 @@ export function CashTab({ token }: { token: string }) {
               ))}
             </View>
           ) : null}
+
+          <ZReports token={token} from={data.from} to={data.to} />
 
           <Text style={s.label}>Drawer sessions</Text>
           {data.sessions.length === 0 ? <Text style={s.muted}>No drawers counted in this period.</Text> : null}

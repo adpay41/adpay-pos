@@ -194,6 +194,27 @@ const DrawerSessionClosed = z.strictObject({
   handover: z.boolean().default(false),
 });
 
+/**
+ * End of day (P16, spec v1): the register took its Z. It covers this register's events with device_seq in
+ * [from_seq, to_seq] (inclusive); the totals are what the register printed. The server re-folds the same range and flags
+ * any difference, never edits.
+ */
+const EodClosed = z.strictObject({
+  z_number: z.int().min(1),
+  business_date: z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/),
+  from_seq: z.int().nonnegative(),
+  to_seq: z.int().nonnegative(),
+  totals: z.strictObject({
+    sales_count: z.int().nonnegative(),
+    gross_cents: CentsSchema,
+    tax_cents: CentsSchema,
+    voids: z.int().nonnegative(),
+    cash_cents: CentsSchema,
+    card_cents: CentsSchema,
+    refunds_cents: CentsSchema,
+  }),
+});
+
 /** A bill refused as counterfeit (P15, Bible 1.2): logged with who, when, which register. */
 const CounterfeitFlagged = z.strictObject({
   session_id: Uuid.nullable(),
@@ -243,6 +264,7 @@ export const EventPayloads = {
   'drawer.cash_movement': DrawerCashMovement,
   'drawer.session_closed': DrawerSessionClosed,
   'drawer.counterfeit': CounterfeitFlagged,
+  'eod.closed': EodClosed,
   'staff.clocked_in': ClockedIn,
   'staff.clocked_out': ClockedOut,
   'staff.signed_in': StaffSignedIn,
@@ -261,6 +283,7 @@ const SALELESS: ReadonlySet<EventType> = new Set([
   'drawer.cash_movement',
   'drawer.session_closed',
   'drawer.counterfeit',
+  'eod.closed',
   'staff.clocked_in',
   'staff.clocked_out',
   'staff.signed_in',

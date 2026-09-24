@@ -227,6 +227,35 @@ async function findings(q: Queryable, now: Date): Promise<Finding[]> {
     }
   }
 
+  // End of day not closed (P16, Bible 2.6 "EOD not closed by 1 a.m."): a register sold on a day that
+  // has ended without a Z after it. Only for merchants who use end of day (have taken a Z before).
+  const eod = await q.query<{ org_id: string; merchant_id: string; location_id: string; register_id: string; register_name: string; sale_day: string }>(
+    `WITH last AS (
+       SELECT e.register_id,
+              max(e.occurred_at) FILTER (WHERE e.type = 'sale.completed') AS last_sale,
+              max(e.occurred_at) FILTER (WHERE e.type = 'eod.closed') AS last_eod
+         FROM sale_events e
+        WHERE e.business_date >= ($1::timestamptz - interval '3 days')::date AND e.type IN ('sale.completed', 'eod.closed')
+        GROUP BY e.register_id)
+     SELECT ${reg}, to_char((last.last_sale AT TIME ZONE l.timezone)::date, 'YYYY-MM-DD') AS sale_day
+       FROM last JOIN registers r ON r.register_id = last.register_id JOIN locations l ON l.location_id = r.location_id
+      WHERE last.last_sale IS NOT NULL AND (last.last_eod IS NULL OR last.last_eod < last.last_sale)
+        AND (last.last_sale AT TIME ZONE l.timezone)::date < ($1::timestamptz AT TIME ZONE l.timezone)::date
+        AND extract(hour FROM $1::timestamptz AT TIME ZONE l.timezone) >= 1
+        AND EXISTS (SELECT 1 FROM sale_events x WHERE x.merchant_id = r.merchant_id AND x.type = 'eod.closed')`,
+    [now.toISOString()],
+  );
+  for (const r of eod.rows) {
+    const { sale_day, ...t } = r;
+    out.push({
+      rule: 'eod_missing',
+      dedupe_key: `eod_missing:${r.register_id}:${sale_day}`,
+      title: `${r.register_name}: end of day for ${sale_day} not closed (no Z-report)`,
+      details: { sale_day },
+      ...t,
+    });
+  }
+
   // Refunds and voids of completed sales over $25 in the last day, one alert each.
   const refunds = await q.query<{ org_id: string; merchant_id: string; location_id: string; register_id: string; register_name: string; refund_id: string; amount: number; reason: string; by_name: string | null; sale_id: string }>(
     `SELECT ${reg}, e.payload->>'refund_id' AS refund_id, (e.payload->>'amount_cents')::bigint AS amount, e.payload->>'reason' AS reason,
