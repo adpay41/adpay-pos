@@ -84,8 +84,11 @@ const LineDiscounted = z.strictObject({
 
 const AgeVerified = z.strictObject({
   line_id: Uuid,
-  method: z.enum(['manual']),
+  /** 'id_scan' (P16b): the licence barcode was read and passed; manual = the cashier looked. */
+  method: z.enum(['manual', 'id_scan']),
   verified_by_user_id: Uuid.nullable(),
+  /** What the scan established. Never the licence number, name or date of birth (ADR 0026). Additive. */
+  id_check: z.strictObject({ age: z.int().min(0).max(130), jurisdiction: z.string().max(3).nullable() }).nullable().default(null),
 });
 
 const CardResult = z.strictObject({

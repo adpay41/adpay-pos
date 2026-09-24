@@ -95,6 +95,7 @@ purpose: support is one person for the first 200 stores.
 | [0023](docs/decisions/0023-catalog-n-import-templates-usuals.md) | One bulk catalog write (templates + CSV, dry-run preview, price history); starter template shared with the seed; repeat-last and cashier usuals ring through the session; usuals are server config |
 | [0024](docs/decisions/0024-cash-and-time-n.md) | Cash & time N as events: drop-needed threshold (cashier banner, merchant view, alert), counterfeit refusals, denomination counts + photo, handover, time clock with weekly overtime + payroll CSV, hourly ribbon from /device/pulse |
 | [0025](docs/decisions/0025-end-of-day-z-report-training.md) | Z covers everything since the previous Z; one shared buildZReport on register and server (mismatch flagged, never corrected); EOD-not-closed alert; training = separate in-memory session |
+| [0026](docs/decisions/0026-id-scan-tax-report-compliance-log.md) | ID scan returns derived facts only (age, expiry, state, flags); sales-tax report folded from sales (refund tax included) + quarterly CSV; compliance log of age checks; admin tax-tables view |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

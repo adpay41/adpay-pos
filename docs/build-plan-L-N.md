@@ -129,11 +129,11 @@ section 5.
 | Gift cards, physical + digital (1.3) | ⛔ | A gift-card program partner, or an internal stored-value design with legal review (escheat/money-transmission) | P-PAY |
 | Manual card entry for phone orders, PIN-gated (1.3) | ⛔ | Must be keyed **on the terminal or the processor's hosted fields**, never our UI (card-data rule). Needs PAX/Finix. | P-HW |
 | Tips (1.3) | ⛔ | Card tender (PAX/Finix). The UI and pooling logic are buildable against the stub. | P9+, P-HW |
-| ID scan: DL 2D barcode → age, flags, logs (not the ID number) (1.4) | 🟡-able | AAMVA PDF417 parsing is buildable and testable with sample strings. A real 2D scanner is needed to prove it. | P16 |
+| ID scan: DL 2D barcode → age, flags, logs (not the ID number) (1.4) | ✅ | AAMVA parse → age/expiry/state/flags only; under-age/expired blocks the manual confirm; logged as id_scan with age + state (P16b, ADR 0026). **Prove on a real 2D scanner.** | P16 |
 | Tobacco scan-data reporting (Altria, RJR, ITG) (1.4) | ⛔ | **Program enrollment and contracts** with each manufacturer, plus their file specs | P-3P |
 | Manufacturer promo sync (1.4) | ⛔ | Same programs' promo feeds | P-3P |
 | Lottery module: pack activation, per-game tracking, inventory, reconciliation vs state terminal, payouts vs drawer (1.4) | ⬜ | P6. Reconciliation is manual entry of terminal totals (no state lottery API integration). | P17 |
-| State tax tables, full (1.4) | ⬜ | P10 | P16 |
+| State tax tables, full (1.4) | 🟡 | Per-location dated tables (P10) + admin cross-store view with scheduled changes (P16b). A maintained jurisdiction library needs an accountant/tax-data source. | P16 |
 | Compliance log export (1.4) | ⬜ | P3, P10, P17 | P17 |
 | Digital receipt: QR or text-to-phone (1.5) | 🟡-able | QR to a hosted receipt page is buildable (needs a public URL, which means deploying). Text needs SMS (Twilio signup). | P18 |
 | Loyalty by phone number on the customer screen (1.5) | ⬜ | P9 customer-screen state machine; a customers table | P19 |
@@ -165,7 +165,7 @@ section 5.
 | Multi-store roll-up (2.1) | ⬜ | P11 | P19 |
 | Fees, explained (2.2) | ⛔ | Processor fee data | P-PAY |
 | Dispute center (2.2) | ⛔ | Processor dispute API | P-PAY |
-| Sales tax report, exportable, quarterly pack (2.2) | ⬜ | P10 | P16 |
+| Sales tax report, exportable, quarterly pack (2.2) | ✅ | By month and rate, refunds' tax, net; quarterly CSV from the merchant app (P16b). | P16 |
 | Accountant access (read-only) (2.2) | ⬜ | P3 roles | P19 |
 | QuickBooks/Xero sync (2.2) | ⛔ | Intuit/Xero developer app accounts | P-3P |
 | Profit: margin by item/category once costs are in (2.2) | ⬜ | Cost field (P2), reports | P20 |
@@ -207,7 +207,7 @@ section 5.
 | Disputes desk (3.3) | ⛔ | Processor | P-PAY |
 | Risk monitoring (3.3) | ⛔ | Processor transaction data (keyed-card, MCC) | P-PAY |
 | Scan-data program admin (3.3) | ⛔ | Scan-data contracts | P-3P |
-| Tax tables by jurisdiction with effective dates; age rules by state (3.4) | ⬜ | P10 | P16 |
+| Tax tables by jurisdiction with effective dates; age rules by state (3.4) | 🟡 | /admin/tax: every store's rate today, scheduled changes, charges, age overrides, drift by state (P16b). Shared jurisdiction library: data source needed. | P16 |
 | Global UPC library, deduped (3.4) | ⬜ | P2, P5 unknown-barcode items | P25 |
 | Receipt/label template editor (3.4) | ⬜ | P8 template model | P21 |
 | Translations management (3.4) | ⬜ | P18 | P18 |
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P16a End of day & training | #21 | PR open — end of day / Z-report (spec v1): everything since the previous Z, drawer counted first, printed, eod.closed synced; server rebuilds each Z with the same function and flags mismatches; EOD-not-closed alert; merchant app Z list; training mode (in-memory, never synced, cash only, receipts say TRAINING). ADR 0025. |
+| P16b ID scan, tax report, compliance log | #22 | PR open — AAMVA ID scan at the age check (derived facts only; failed scan blocks manual confirm), sales-tax report by month/rate with refunds' tax and quarterly CSV, age-check compliance log CSV, admin tax-tables view; fixes training-mode batch/held/tickets leaks. ADR 0026. |
+| P16a End of day & training | #21 | merged — end of day / Z-report (spec v1): everything since the previous Z, drawer counted first, printed, eod.closed synced; server rebuilds each Z with the same function and flags mismatches; EOD-not-closed alert; merchant app Z list; training mode (in-memory, never synced, cash only, receipts say TRAINING). ADR 0025. |
 | P15 Cash & time N | #20 | merged — drop-needed threshold (cashier banner, merchant "in the drawers now", drawer_over alert), counterfeit refusals, denomination counts + count-sheet photo, shift handover, time clock with weekly overtime and payroll CSV, hourly target ribbon. ADR 0024. |
 | P14 Catalog N | #19 | merged — catalog templates (c-store starter shared with the seed) and generic CSV import through one bulk write (dry-run preview, match by barcode then name, price history); register repeat-last-sale and cashier usuals; merchant-app arrange-keys grid. ADR 0023. |
 | P13 Admin money & portfolio | #18 | merged — statement analyzer (manual entry + offer, savings per plan, printable one-page PDF), residual/margin report per merchant-month (ledger volume, plan revenue, typed processor cost), KPI dashboard (stores live/active/quiet, volume, revenue, margin, effective rate, support load, installs/week). ADR 0022. **Last buildable tier-L phase**: remaining L items are hardware/processor/account-blocked. |
