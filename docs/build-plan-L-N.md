@@ -63,15 +63,15 @@ The **Phase** column refers to section 5.
 
 | # | Item | Status | Notes | Phase |
 | --- | --- | --- | --- | --- |
-| L30 | Live sales ticker, per register, per cashier (2.1) | ⬜ | Tickets tab is a static list; no push channel; no cashier on sales. | P4, P11 |
-| L31 | Today vs yesterday vs same day last week, by hour; "up 12%" (2.1) | ⬜ | Only today/7d/month totals. | P11 |
+| L30 | Live sales ticker, per register, per cashier (2.1) | ✅ | Merchant app Today: live ticker over `/ws` (register + cashier names on the feed), figures refresh on each sale; per-cashier totals; cashier on every ticket row (P11, ADR 0019). | P4, P11 |
+| L31 | Today vs yesterday vs same day last week, by hour; "up 12%" (2.1) | ✅ | `/merchant/sales/compare`: three days by hour, "so far" cut at the same store-local time, % in integer tenths; merchant app chart + "up 12.5% vs yesterday" (P11). | P11 |
 | L32 | Multi-store switcher (2.1, L part) | ✅ | P3: memberships (one person, a role per store) + store switcher in the merchant app. Roll-up is N (P19). | P3 |
 | L33 | Deposits, matched to batches (2.2) | ⛔ | Needs a live processor (Finix under AD Pay LLC). Placeholder text exists. | P-PAY |
 | L34 | Item add/edit with photo, pushed to all registers in seconds (2.3) | ✅ | P1 admin editor + P2 merchant app with camera/library photo; registers pick it up on the next sync tick (≤15s; instant with the P4 WebSocket nudge). | P1, P2 |
 | L35 | Dual-price % per location; preview card prices before pushing (2.3) | ✅ | Admin (P1) and merchant app (P2), both with a preview of every card price that changes. | P1, P2 |
 | L36 | Staff list, PINs, roles, permissions from the phone (2.5) | ✅ | P3: merchant app Staff tab (people, roles, PINs, remove, permission matrix) + admin Staff tab. | P3 |
-| L37 | Alerts: register offline > 5 min; terminal offline; printer out of paper (2.6) | 🟡 | P4: register offline > 5 min and hardware-error alerts fire and show in the merchant app's Alerts tab. Terminal/paper readings ⛔ hardware; push/SMS delivery ⛔ accounts. | P4, P11 |
-| L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | ✅ | P6: no-sale spike (5+/register/day). P7: refund or void ≥ $25 alert naming who did it. Per-merchant thresholds are N. | P6, P7 |
+| L37 | Alerts: register offline > 5 min; terminal offline; printer out of paper (2.6) | 🟡 | P4: register offline > 5 min and hardware-error alerts fire and show in the merchant app's Alerts tab. Alert settings in the merchant app: mute any merchant rule (P11). Terminal/paper readings ⛔ hardware; push/SMS delivery ⛔ accounts. | P4, P11 |
+| L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | ✅ | P6: no-sale spike (5+/register/day). P7: refund or void ≥ $25 alert naming who did it. Per-merchant thresholds (refund/void $, drawer short $, no-sale count) set in the merchant app (P11). | P6, P7, P11 |
 | L39 | Delivery channel for alerts (push/SMS/WhatsApp) (2.6) | ⛔ | In-app inbox is buildable. **Push** needs Expo/FCM/APNs accounts; **SMS** a Twilio account; **WhatsApp** a Meta Business account. Those are signups the founder must do. | P4, P11 |
 | L40 | Support chat with "share my screen from the register" (2.8) | ⛔ | Chat is buildable. Screen share needs the MDM vendor (open decision: Esper vs own). | P12 (chat) |
 
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P10 Tax & compliance tables | #14 | PR open — per-location dated sales-tax schedule by class, per-unit charges (deposit, excise, fee; fixed or %) with dates, bag-fee key on the register, age rules by state and restriction kind, NJ/NY/NYC draft templates; resolved at ring time by store-local date and captured in the line event; charges itemized on the receipt and refunded with the unit. Admin editor + merchant-app restriction toggle. ADR 0018. |
+| P11 Merchant app, L | #15 | PR open — live ticker over `/ws` with register and cashier names, today vs yesterday vs same day last week by hour cut at the same time ("up 12.5%"), per-cashier totals and cashier on tickets, per-merchant alert settings (mute rules, refund/short/no-sale thresholds) honoured by the rules, inbox and push. ADR 0019. |
+| P10 Tax & compliance tables | #14 | merged — per-location dated sales-tax schedule by class, per-unit charges (deposit, excise, fee; fixed or %) with dates, bag-fee key on the register, age rules by state and restriction kind, NJ/NY/NYC draft templates; resolved at ring time by store-local date and captured in the line event; charges itemized on the receipt and refunded with the unit. Admin editor + merchant-app restriction toggle. ADR 0018. |
 | P9 Card & split tender | #13 | merged — card on the stub through an idempotent `terminal-charge` endpoint, split tender (cash + card, two cards) with dual pricing per portion, card refunds and split voids, customer-screen card states, cash-only banner and safe retry, card attempts in the sale timeline. ADR 0017. |
 | P8 Receipt v2 | #12 | merged — per-location receipt settings (logo, header lines, return policy, footer, QR link, after-sale ask/print/none) edited in admin and the merchant app with a live preview; tax itemized by rate; zero-tap cash sale. ADR 0016. |
 | P7 Ticket lifecycle | #11 | merged — hold/recall (several parked tickets), register Tickets list with reprint, refunds by line at the price paid, void of a completed sale (refund rest + void), PIN-gated; large refund/void alert. ADR 0015. |

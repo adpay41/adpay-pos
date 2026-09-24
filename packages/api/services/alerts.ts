@@ -7,7 +7,16 @@
  * condition holds, and resolves itself when it stops. Opening one notifies the realtime channel and
  * the merchant's notifier (push/SMS/WhatsApp adapters are stubs until those accounts exist).
  */
-import { ALERT_RULES, REGISTER_OFFLINE_ALERT_MS, type Alert, type AlertRule, type AlertSeverity } from '@adpay/shared';
+import {
+  ALERT_RULES,
+  AlertSettingsInput,
+  DEFAULT_ALERT_SETTINGS,
+  REGISTER_OFFLINE_ALERT_MS,
+  type Alert,
+  type AlertRule,
+  type AlertSettings,
+  type AlertSeverity,
+} from '@adpay/shared';
 import type { AdminPrincipal, MerchantUserPrincipal } from '../auth/principal';
 import type { Db, Queryable } from '../db/db';
 import { notFound } from '../http/errors';
@@ -32,7 +41,7 @@ export interface Notifier {
 
 export const logNotifier = (log: (obj: object, msg: string) => void): Notifier => ({
   async alertOpened(alert) {
-    if (ALERT_RULES[alert.rule].merchant) log({ alert_id: alert.alert_id, rule: alert.rule, merchant_id: alert.merchant_id }, 'alert notification (log adapter: no push/SMS account yet)');
+    if (ALERT_RULES[alert.rule].merchant && !alert.muted) log({ alert_id: alert.alert_id, rule: alert.rule, merchant_id: alert.merchant_id }, 'alert notification (log adapter: no push/SMS account yet)');
   },
 });
 
@@ -40,15 +49,24 @@ export const logNotifier = (log: (obj: object, msg: string) => void): Notifier =
 const QUEUE_STUCK_MS = 10 * 60_000;
 const VOID_RATE_MIN_TICKETS = 20;
 const VOID_RATE_PERCENT = 10;
-/** A drawer counted short by more than this (cents), closed in the last 24 h. */
-const DRAWER_SHORT_ALERT_CENTS = 500;
-/** "No sale" drawer opens on one register today before it's an alert (Bible 2.6 "no-sale count spike"). */
-const NO_SALE_SPIKE = 5;
-/** A refund (or the refund inside a void) at least this big, in cents (Bible 2.6 "void/refund over $X"). */
-const LARGE_REFUND_CENTS = 2_500;
+/**
+ * Drawer-short, no-sale-spike and large-refund thresholds are per merchant (P11, AlertSettingsInput;
+ * defaults: $5 short, 5 no-sales, $25). Stored settings that fail validation fall back to the defaults.
+ */
+export function alertSettingsOf(raw: unknown): AlertSettings {
+  const parsed = AlertSettingsInput.safeParse(raw ?? {});
+  return parsed.success ? parsed.data : DEFAULT_ALERT_SETTINGS;
+}
+
+async function merchantAlertSettings(q: Queryable): Promise<(merchantId: string | null) => AlertSettings> {
+  const { rows } = await q.query<{ merchant_id: string; alert_settings: unknown }>("SELECT merchant_id, alert_settings FROM merchants WHERE alert_settings <> '{}'::jsonb");
+  const map = new Map(rows.map((r) => [r.merchant_id, alertSettingsOf(r.alert_settings)]));
+  return (id) => (id && map.get(id)) || DEFAULT_ALERT_SETTINGS;
+}
 
 async function findings(q: Queryable, now: Date): Promise<Finding[]> {
   const out: Finding[] = [];
+  const settingsFor = await merchantAlertSettings(q);
   const reg = `r.org_id, r.merchant_id, r.location_id, r.register_id, r.name AS register_name`;
 
   // Register offline > 5 min (only registers that have ever reported in).
@@ -159,7 +177,7 @@ async function findings(q: Queryable, now: Date): Promise<Finding[]> {
   // Drawer counted short by more than $5 in the last day (Bible 2.6 "cash count short by > $Y").
   const since = new Date(now.getTime() - 3 * 86_400_000).toISOString().slice(0, 10);
   const recent = await drawerSessions(q, null, since);
-  const closedRecently = recent.filter((s) => s.closed_at && Date.parse(s.closed_at) > now.getTime() - 86_400_000 && (s.over_short_cents ?? 0) < -DRAWER_SHORT_ALERT_CENTS);
+  const closedRecently = recent.filter((s) => s.closed_at && Date.parse(s.closed_at) > now.getTime() - 86_400_000 && (s.over_short_cents ?? 0) < -settingsFor(s.merchant_id).drawer_short_cents);
   if (closedRecently.length) {
     const regs = new Map(
       (
@@ -191,9 +209,9 @@ async function findings(q: Queryable, now: Date): Promise<Finding[]> {
        FROM sale_events e JOIN registers r ON r.register_id = e.register_id LEFT JOIN users u ON u.user_id = e.actor_user_id
       WHERE e.type = 'sale.refunded' AND (e.payload->>'amount_cents')::bigint >= $2
         AND e.received_at > $1::timestamptz - interval '1 day'`,
-    [now.toISOString(), LARGE_REFUND_CENTS],
+    [now.toISOString(), 100],
   );
-  for (const r of refunds.rows) {
+  for (const r of refunds.rows.filter((x) => Number(x.amount) >= settingsFor(x.merchant_id).large_refund_cents)) {
     const { refund_id, amount, reason, by_name, sale_id, ...t } = r;
     out.push({
       rule: 'large_refund',
@@ -212,9 +230,9 @@ async function findings(q: Queryable, now: Date): Promise<Finding[]> {
         AND e.business_date = ($1::timestamptz AT TIME ZONE l.timezone)::date
       GROUP BY r.org_id, r.merchant_id, r.location_id, r.register_id, r.name, e.business_date
      HAVING count(*) >= $2`,
-    [now.toISOString(), NO_SALE_SPIKE],
+    [now.toISOString(), 2],
   );
-  for (const r of nosale.rows) {
+  for (const r of nosale.rows.filter((x) => x.n >= settingsFor(x.merchant_id).no_sale_spike)) {
     const { n, business_date, ...t } = r;
     out.push({
       rule: 'no_sale_spike',
@@ -280,7 +298,8 @@ export async function listAlerts(
   const { rows } = await q.query<AlertRow>(
     `SELECT a.alert_id, a.rule, a.severity, a.title, a.details, a.merchant_id, m.name AS merchant_name, l.name AS location_name,
             a.register_id, r.name AS register_name, a.opened_at, a.last_seen_at, a.resolved_at, a.acknowledged_at,
-            coalesce(u.name, u.email) AS acknowledged_by_name
+            coalesce(u.name, u.email) AS acknowledged_by_name,
+            coalesce(m.alert_settings->'muted', '[]'::jsonb) ? a.rule AS muted
        FROM alerts a
        LEFT JOIN merchants m ON m.merchant_id = a.merchant_id
        LEFT JOIN locations l ON l.location_id = a.location_id
@@ -288,7 +307,7 @@ export async function listAlerts(
        LEFT JOIN users u ON u.user_id = a.acknowledged_by
       WHERE ($1::uuid IS NULL OR a.merchant_id = $1) AND ($2::uuid IS NULL OR a.register_id = $2)
         AND ($3::uuid[] IS NULL OR a.alert_id = ANY($3)) AND (NOT $4 OR a.resolved_at IS NULL)
-        AND (NOT $5 OR a.rule = ANY($6::text[]))
+        AND (NOT $5 OR (a.rule = ANY($6::text[]) AND NOT coalesce(m.alert_settings->'muted', '[]'::jsonb) ? a.rule))
       ORDER BY a.resolved_at IS NOT NULL, CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, a.opened_at DESC
       LIMIT $7`,
     [f.merchantId ?? null, f.registerId ?? null, f.ids ?? null, f.openOnly, !!f.merchantFacing, merchantRules, f.limit],
@@ -310,4 +329,27 @@ export async function acknowledgeAlert(db: Db, actor: AdminPrincipal | MerchantU
   );
   if (!rows[0]) throw notFound('Alert not found');
   await audit(db, { actor, action: 'alert.acknowledged', tenancy: { org_id: rows[0].org_id, merchant_id: rows[0].merchant_id }, target: alertId, trace_id: traceId });
+}
+
+/** A merchant's alert settings (P11). */
+export async function getAlertSettings(q: Queryable, merchantId: string): Promise<AlertSettings> {
+  const { rows } = await q.query<{ alert_settings: unknown }>('SELECT alert_settings FROM merchants WHERE merchant_id = $1', [merchantId]);
+  return alertSettingsOf(rows[0]?.alert_settings);
+}
+
+export async function setAlertSettings(db: Db, actor: MerchantUserPrincipal | AdminPrincipal, merchantId: string, settings: AlertSettings, traceId: string): Promise<AlertSettings> {
+  return db.tx(async (q) => {
+    const { rows } = await q.query<{ org_id: string; alert_settings: unknown }>('SELECT org_id, alert_settings FROM merchants WHERE merchant_id = $1 FOR UPDATE', [merchantId]);
+    if (!rows[0]) throw notFound('Merchant not found');
+    await q.query('UPDATE merchants SET alert_settings = $2 WHERE merchant_id = $1', [merchantId, JSON.stringify(settings)]);
+    await audit(q, {
+      actor,
+      action: 'merchant.alert_settings_set',
+      tenancy: { org_id: rows[0].org_id, merchant_id: merchantId },
+      target: merchantId,
+      details: { from: rows[0].alert_settings, to: settings },
+      trace_id: traceId,
+    });
+    return settings;
+  });
 }

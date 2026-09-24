@@ -109,11 +109,29 @@ export async function ingestEvents(
       [JSON.stringify(toInsert), receivedAt.toISOString()],
     );
     // Live sales feed (merchant ticker, admin): delivered to listeners on commit (P4 realtime hub).
-    for (const e of toInsert) {
+    const completed = toInsert.filter((e) => e.type === 'sale.completed');
+    // Names for the ticker (P11): which register, who rang it. One lookup per batch.
+    const names = new Map<string, string>();
+    let registerName: string | null = null;
+    if (completed.length) {
+      const { rows } = await q.query<{ name: string }>('SELECT r.name || \' · \' || l.name AS name FROM registers r JOIN locations l ON l.location_id = r.location_id WHERE r.register_id = $1', [
+        device.register_id,
+      ]);
+      registerName = rows[0]?.name ?? null;
+      const actors = [...new Set(completed.map((e) => e.actor_user_id).filter((x): x is string => !!x))];
+      if (actors.length) {
+        const { rows: us } = await q.query<{ user_id: string; name: string }>('SELECT user_id, name FROM users WHERE user_id = ANY($1::uuid[])', [actors]);
+        for (const u of us) names.set(u.user_id, u.name);
+      }
+    }
+    for (const e of completed) {
       if (e.type !== 'sale.completed') continue;
       const note = {
         merchant_id: e.merchant_id,
+        location_id: e.location_id,
         register_id: e.register_id,
+        register_name: registerName,
+        cashier_name: e.actor_user_id ? (names.get(e.actor_user_id) ?? null) : null,
         sale_id: e.sale_id,
         total_cents: e.payload.total_cents,
         price_mode: e.payload.price_mode,

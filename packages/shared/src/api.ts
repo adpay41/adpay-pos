@@ -131,6 +131,8 @@ export interface SalesSummary {
   by_tender: { tender_type: 'cash' | 'card'; amount_cents: number; count: number }[];
   by_hour: { hour: number; amount_cents: number; count: number }[];
   by_register: { register_id: string; register_name: string; amount_cents: number; count: number }[];
+  /** Who rang it (P11): the person signed in when the sale completed; null = before sign-in existed. */
+  by_cashier: { user_id: string | null; name: string; amount_cents: number; count: number }[];
 }
 
 export interface SaleListRow {
@@ -140,7 +142,9 @@ export interface SaleListRow {
   location_name: string;
   occurred_at: string;
   status: 'completed' | 'voided' | 'open' | 'suspended';
-  price_mode: 'cash' | 'card' | null;
+  price_mode: 'cash' | 'card' | 'split' | null;
   total_cents: number;
   item_count: number;
+  /** Who rang it (P11); null before sign-in existed. */
+  cashier_name: string | null;
 }

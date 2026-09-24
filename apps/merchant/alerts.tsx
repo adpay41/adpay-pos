@@ -4,11 +4,11 @@
  * unusually many voids. Push, SMS and WhatsApp delivery arrive once those accounts exist; until
  * then this inbox is where alerts land.
  */
-import { registerHealth, type Alert, type FleetRow } from '@adpay/shared';
+import { ALERT_RULES, MERCHANT_ALERT_RULES, parseUsdToCents, registerHealth, type Alert, type AlertRule, type AlertSettings, type FleetRow } from '@adpay/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { api } from './api';
-import { C } from './theme';
+import { C, dollars } from './theme';
 
 function ago(at: string | null, now: number): string {
   if (!at) return 'never';
@@ -91,6 +91,7 @@ export function AlertsTab({ token }: { token: string }) {
           );
         })}
       </View>
+      <AlertSettingsCard token={token} onSaved={() => void load()} />
       {error ? <Text style={s.error}>{error}</Text> : null}
     </ScrollView>
   );
@@ -109,7 +110,69 @@ const s = StyleSheet.create({
   smallText: { fontWeight: '600', color: C.ink },
   line: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.line },
   dot: { width: 10, height: 10, borderRadius: 5 },
+  input: { borderWidth: 1, borderColor: C.line, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#fff', color: C.ink },
   dotOk: { backgroundColor: C.green },
   dotWarn: { backgroundColor: '#c77700' },
   dotOff: { backgroundColor: '#999' },
 });
+
+/**
+ * Which alerts reach this owner, and the thresholds behind the money ones (P11). Muting hides an
+ * alert here only; AD Pay support still sees it.
+ */
+function AlertSettingsCard({ token, onSaved }: { token: string; onSaved: () => void }) {
+  const [cur, setCur] = useState<AlertSettings | null>(null);
+  const [f, setF] = useState({ refund: '', short: '', nosale: '' });
+  const [muted, setMuted] = useState<AlertRule[]>([]);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    api<AlertSettings>('/merchant/alert-settings', token).then((x) => {
+      setCur(x);
+      setMuted(x.muted);
+      setF({ refund: dollars(x.large_refund_cents), short: dollars(x.drawer_short_cents), nosale: String(x.no_sale_spike) });
+    }, (e) => setMsg((e as Error).message));
+  }, [token]);
+
+  async function save() {
+    setMsg(null);
+    try {
+      const body = { muted, large_refund_cents: parseUsdToCents(f.refund), drawer_short_cents: parseUsdToCents(f.short), no_sale_spike: Number(f.nosale) };
+      setCur(await api<AlertSettings>('/merchant/alert-settings', token, body, 'PUT'));
+      setMsg('Saved.');
+      onSaved();
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  }
+
+  if (!cur) return null;
+  return (
+    <>
+      <Pressable onPress={() => setOpen((o) => !o)}>
+        <Text style={[s.label, { marginTop: 8 }]}>Alert settings {open ? '▾' : '▸'}</Text>
+      </Pressable>
+      {open ? (
+        <View style={s.card}>
+          {MERCHANT_ALERT_RULES.map((r) => (
+            <View key={r} style={s.line}>
+              <Text style={[s.title, { flex: 1, fontWeight: '500' }]}>{ALERT_RULES[r].label}</Text>
+              <Switch value={!muted.includes(r)} onValueChange={(on) => setMuted((m) => (on ? m.filter((x) => x !== r) : [...m, r]))} />
+            </View>
+          ))}
+          <Text style={[s.mutedSmall, { marginTop: 8 }]}>Refund or void at or over ($)</Text>
+          <TextInput style={s.input} value={f.refund} onChangeText={(v) => setF({ ...f, refund: v })} keyboardType="decimal-pad" />
+          <Text style={s.mutedSmall}>Drawer counted short by more than ($)</Text>
+          <TextInput style={s.input} value={f.short} onChangeText={(v) => setF({ ...f, short: v })} keyboardType="decimal-pad" />
+          <Text style={s.mutedSmall}>Drawer opened without a sale, times per register per day</Text>
+          <TextInput style={s.input} value={f.nosale} onChangeText={(v) => setF({ ...f, nosale: v.replace(/\D/g, '') })} keyboardType="number-pad" />
+          <Pressable onPress={() => void save()} style={s.small}>
+            <Text style={s.smallText}>Save alert settings</Text>
+          </Pressable>
+          {msg ? <Text style={s.mutedSmall}>{msg}</Text> : null}
+        </View>
+      ) : null}
+    </>
+  );
+}

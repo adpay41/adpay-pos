@@ -183,7 +183,7 @@ export class RealtimeHub {
     const [alert] = await listAlerts(this.db, { ids: [alert_id], openOnly: false, limit: 1 });
     if (!alert) return;
     for (const c of this.where((p) => p.kind === 'admin')) this.send(c, { type: 'alert', alert });
-    if (alert.merchant_id && ALERT_RULES[alert.rule].merchant) {
+    if (alert.merchant_id && ALERT_RULES[alert.rule].merchant && !alert.muted) {
       for (const c of this.where((p) => p.kind === 'merchant_user' && p.merchant_id === alert.merchant_id)) this.send(c, { type: 'alert', alert });
     }
   }
