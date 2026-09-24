@@ -13,3 +13,4 @@ export * from './drawer';
 export * from './refund';
 export * from './tender';
 export * from './receipt';
+export * from './receipt-settings';

@@ -46,6 +46,14 @@ export function lineNet(line: TaxableLine): Cents {
  * line — which is how NJ and NY compute tax on a receipt and avoids per-line rounding drift.
  */
 export function computeTax(lines: readonly TaxableLine[]): Cents {
+  return sum(taxByRate(lines).map((g) => g.tax_cents));
+}
+
+/**
+ * Tax per rate group, in rate order: what the receipt itemizes (Bible 1.6 "itemized tax"). The
+ * groups add up to `computeTax` exactly, because that is how it is computed.
+ */
+export function taxByRate(lines: readonly TaxableLine[]): { rate_ppm: number; taxable_cents: Cents; tax_cents: Cents }[] {
   const byRate = new Map<number, Cents[]>();
   for (const line of lines) {
     if (!line.taxable || line.tax_rate_ppm === 0) continue;
@@ -53,9 +61,12 @@ export function computeTax(lines: readonly TaxableLine[]): Cents {
     bucket.push(lineNet(line));
     byRate.set(line.tax_rate_ppm, bucket);
   }
-  const taxes: Cents[] = [];
-  for (const [rate, nets] of byRate) taxes.push(applyRateHalfUp(sum(nets), rate));
-  return sum(taxes);
+  return [...byRate.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([rate_ppm, nets]) => {
+      const taxable_cents = sum(nets);
+      return { rate_ppm, taxable_cents, tax_cents: applyRateHalfUp(taxable_cents, rate_ppm) };
+    });
 }
 
 export interface Totals {

@@ -85,6 +85,7 @@ purpose: support is one person for the first 200 stores.
 | [0013](docs/decisions/0013-register-speed.md) | Register speed: wedge-scanner decoder, one barcode key (UPC/EAN), forgiving search, qty merge, items minted on the register (outbox + aliases) |
 | [0014](docs/decisions/0014-cash-drawer.md) | Cash drawer: sessions folded from events (one shared fold), blind count, drops/paid-outs/paid-ins with reasons, over/short by cashier |
 | [0015](docs/decisions/0015-ticket-lifecycle.md) | Ticket lifecycle: hold/recall, refunds by line at the price paid (exact remainder on full return), void = refund rest + void |
+| [0016](docs/decisions/0016-receipt-v2.md) | Receipt v2: per-location settings in the snapshot, logo/QR image lines, tax itemized by rate, ask / print / no-receipt after a sale |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

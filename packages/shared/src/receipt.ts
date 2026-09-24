@@ -10,17 +10,25 @@
  * set of style hints, not ESC/POS bytes. The printer module maps hints to ESC/POS; the web preview
  * maps them to CSS. See docs/decisions/0009-register-core.md.
  */
+import { ppmToPercent } from './catalog';
 import type { FoldedSale } from './fold';
 import { add, cents, formatUsd, mulQty } from './money';
+import { taxByRate } from './pricing';
+import type { ReceiptSettings } from './receipt-settings';
 
 export const RECEIPT_WIDTH = 48;
 
 export type ReceiptStyle = 'normal' | 'bold' | 'double' | 'center';
 
-export interface ReceiptLine {
-  text: string;
-  style: ReceiptStyle;
-}
+/**
+ * One printed line. Text lines carry a style hint. Two special lines (P8) carry what the printer
+ * module renders as an image: the store logo (a bitmap) and a QR code (ESC/POS has a native QR
+ * command). Every line keeps `text` as its plain-text fallback, so text previews and logs still work.
+ */
+export type ReceiptLine =
+  | { text: string; style: ReceiptStyle }
+  | { text: string; style: 'logo'; url: string }
+  | { text: string; style: 'qr'; data: string };
 
 export interface ReceiptHeader {
   merchant_name: string;
@@ -36,7 +44,12 @@ export interface ReceiptInput {
   occurred_at: string;
   timezone: string;
   copy: 'original' | 'reprint';
+  /** Overrides the settings footer for this print (e.g. "REFUND - $2.12 returned"). */
   footer?: string;
+  /** Per-location receipt settings (P8). Absent = the defaults. */
+  settings?: ReceiptSettings;
+  /** Absolute URL of the logo image when the settings name one. */
+  logo_url?: string | null;
 }
 
 const money = (v: number) => formatUsd(cents(v));
@@ -55,6 +68,25 @@ function center(text: string, width = RECEIPT_WIDTH): string {
 
 const rule = (ch = '-') => ch.repeat(RECEIPT_WIDTH);
 
+/** Word-wrap to the paper width (long words are cut, never overflow). */
+export function wrap(text: string, width = RECEIPT_WIDTH): string[] {
+  const out: string[] = [];
+  let cur = '';
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    for (let w = word; w.length; w = w.slice(width)) {
+      const piece = w.slice(0, width);
+      if (!cur) cur = piece;
+      else if (cur.length + 1 + piece.length <= width) cur += ` ${piece}`;
+      else {
+        out.push(cur);
+        cur = piece;
+      }
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
   const { header, sale } = input;
   const mode = sale.price_mode ?? 'cash';
@@ -62,10 +94,13 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
   const out: ReceiptLine[] = [];
   const push = (text: string, style: ReceiptStyle = 'normal') => out.push({ text, style });
 
+  const settings = input.settings;
+  if (settings?.logo_media_id && input.logo_url) out.push({ text: center(header.merchant_name), style: 'logo', url: input.logo_url });
   push(center(header.merchant_name), 'double');
   push(center(header.location_name), 'center');
   if (header.address_line1) push(center(header.address_line1), 'center');
   if (header.city_state_zip) push(center(header.city_state_zip), 'center');
+  for (const h of settings?.header_lines ?? []) push(center(h), 'center');
   push(rule());
 
   const when = new Date(input.occurred_at).toLocaleString('en-US', {
@@ -90,7 +125,18 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
 
   push(rule());
   push(pad('Subtotal', money(totals.subtotal_cents)));
-  push(pad('Tax', money(totals.tax_cents)));
+  // Tax itemized by rate (Bible 1.6), one line per rate; they add up to the total tax exactly.
+  const groups = taxByRate(
+    sale.lines.map((l) => ({
+      qty: l.qty,
+      unit_price_cents: mode === 'card' ? l.unit_card_price_cents : l.unit_cash_price_cents,
+      discount_cents: mode === 'card' ? l.card_discount_cents : l.cash_discount_cents,
+      taxable: l.taxable,
+      tax_rate_ppm: l.tax_rate_ppm,
+    })),
+  );
+  if (groups.length === 0) push(pad('Tax', money(totals.tax_cents)));
+  for (const g of groups) push(pad(`Tax ${ppmToPercent(g.rate_ppm)}% on ${money(g.taxable_cents)}`, money(g.tax_cents)));
   push(pad('TOTAL', money(totals.total_cents)), 'bold');
   push(pad(mode === 'card' ? 'Card price applied' : 'Cash price applied', ''));
   push('');
@@ -112,7 +158,16 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
   push(pad('Card price total', money(sale.card.total_cents)));
   push('N = not taxable');
   push(rule());
-  push(center(input.footer ?? 'Thank you!'), 'center');
+  const policy = settings === undefined ? null : settings.return_policy;
+  if (policy) {
+    for (const l of wrap(policy)) push(l);
+    push(rule());
+  }
+  if (settings?.qr) {
+    out.push({ text: center(settings.qr.caption), style: 'qr', data: settings.qr.url });
+    push(center(settings.qr.caption), 'center');
+  }
+  push(center(input.footer ?? settings?.footer ?? 'Thank you!'), 'center');
   return out;
 }
 

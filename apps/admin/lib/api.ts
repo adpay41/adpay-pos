@@ -68,19 +68,29 @@ export async function upload<T>(path: string, body: Blob): Promise<T> {
 }
 
 /**
- * Square-crop and shrink a chosen photo to a 512px JPEG in the browser before upload, so product
- * photos are tens of KB and the API's 1 MB cap is never the thing that stops an owner.
+ * Shrink a chosen image to at most `edge` px in the browser before upload (square-cropped for
+ * product photos; whole for logos), so uploads are tens of KB and the API's 1 MB cap never bites.
  */
-export async function shrinkPhoto(file: File, edge = 512): Promise<Blob> {
+export async function shrinkPhoto(file: File, edge = 512, square = true): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
-  const side = Math.min(bitmap.width, bitmap.height);
-  const out = Math.min(edge, side);
   const canvas = document.createElement('canvas');
-  canvas.width = out;
-  canvas.height = out;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('This browser cannot resize photos');
-  ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, out, out);
+  if (square) {
+    const side = Math.min(bitmap.width, bitmap.height);
+    const out = Math.min(edge, side);
+    canvas.width = out;
+    canvas.height = out;
+    ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, out, out);
+  } else {
+    const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    // White behind transparent logos: thermal paper is white, and JPEG has no transparency.
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  }
   bitmap.close();
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode the photo'))), 'image/jpeg', 0.72),

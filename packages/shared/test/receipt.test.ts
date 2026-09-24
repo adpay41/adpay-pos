@@ -9,7 +9,9 @@ import {
   RECEIPT_WIDTH,
   receiptText,
   renderReceipt,
+  ReceiptSettingsInput,
   TenderError,
+  wrap,
 } from '../src';
 
 describe('cash tender', () => {
@@ -88,5 +90,57 @@ describe('receipt', () => {
       sale: foldSale(sale, done), occurred_at: '2026-09-23T12:15:00.000Z', timezone: 'America/New_York', copy: 'reprint',
     });
     expect(receiptText(reprint)).toContain('REPRINT');
+  });
+});
+
+describe('receipt v2 (P8)', () => {
+  const t = { org_id: randomUUID(), merchant_id: randomUUID(), location_id: randomUUID(), register_id: randomUUID() };
+  const sale = randomUUID();
+  let seq = 0;
+  const ev = (type: string, payload: unknown) =>
+    parseRegisterEvent({ event_id: randomUUID(), schema_version: 1, sale_id: sale, device_seq: seq++, occurred_at: '2026-09-23T12:15:00.000Z', ...t, trace_id: 'r', type, payload });
+  const add = (name: string, cash: number, rate: number) =>
+    ev('sale.line_added', { line_id: randomUUID(), item_id: randomUUID(), name, category_id: null, qty: 1, unit_cash_price_cents: cash, unit_card_price_cents: cash, taxable: rate > 0, tax_rate_ppm: rate, min_age: null });
+  const events = [ev('sale.opened', { cashier_user_id: null, catalog_version: 1 }), add('Sandwich', 899, 66_250), add('Soda', 199, 66_250), add('Candy bar', 150, 40_000), add('Lottery', 500, 0)];
+  const p = foldSale(sale, events);
+  const done = [...events, ev('sale.tender_added', { tender_id: randomUUID(), tender_type: 'cash', amount_cents: p.cash.total_cents, tendered_cents: 2000, change_cents: 2000 - p.cash.total_cents, card: null }), ev('sale.completed', { price_mode: 'cash', ...p.cash })];
+  const settings = ReceiptSettingsInput.parse({
+    header_lines: ['(201) 555-0100', '@journalsquaredeli'],
+    logo_media_id: randomUUID(),
+    return_policy: 'Returns with receipt within 7 days. No returns on tobacco, lottery or prepared food, sorry — health rules.',
+    footer: 'See you tomorrow!',
+    qr: { kind: 'link', url: 'https://g.page/r/journal-square-deli/review', caption: 'Rate us on Google' },
+  });
+  const lines = renderReceipt({
+    header: { merchant_name: 'Journal Square Deli', location_name: 'Jersey City', address_line1: null, city_state_zip: null, register_name: 'Register 1' },
+    sale: foldSale(sale, done), occurred_at: '2026-09-23T12:15:00.000Z', timezone: 'America/New_York', copy: 'original',
+    settings, logo_url: 'https://api.example/media/logo',
+  });
+  const text = receiptText(lines);
+
+  it('prints the logo and extra header lines, itemizes tax by rate (adding up exactly), wraps the return policy, and adds the QR', () => {
+    expect(lines[0]).toMatchObject({ style: 'logo', url: 'https://api.example/media/logo' });
+    expect(text).toContain('(201) 555-0100');
+    // 6.625% on 10.98 = 72.74 → 73; 4% on 1.50 = 6
+    expect(text).toMatch(/Tax 6\.625% on \$10\.98\s+\$0\.73/);
+    expect(text).toMatch(/Tax 4% on \$1\.50\s+\$0\.06/);
+    expect(p.cash.tax_cents).toBe(79);
+    expect(text).toContain('health rules.');
+    const qr = lines.find((l) => l.style === 'qr');
+    expect(qr).toMatchObject({ data: 'https://g.page/r/journal-square-deli/review' });
+    expect(text).toContain('See you tomorrow!');
+    for (const l of lines) expect(l.text.length).toBeLessThanOrEqual(RECEIPT_WIDTH);
+  });
+
+  it('a one-off footer (refund slip) wins over the settings footer; no settings = the old receipt', () => {
+    const slip = renderReceipt({ header: { merchant_name: 'X', location_name: 'Y', address_line1: null, city_state_zip: null, register_name: 'R' }, sale: foldSale(sale, done), occurred_at: '2026-09-23T12:15:00.000Z', timezone: 'America/New_York', copy: 'reprint', settings, footer: 'REFUND - $2.12 returned' });
+    expect(receiptText(slip)).toContain('REFUND - $2.12 returned');
+    const plain = renderReceipt({ header: { merchant_name: 'X', location_name: 'Y', address_line1: null, city_state_zip: null, register_name: 'R' }, sale: foldSale(sale, done), occurred_at: '2026-09-23T12:15:00.000Z', timezone: 'America/New_York', copy: 'original' });
+    expect(plain.some((l) => l.style === 'logo' || l.style === 'qr')).toBe(false);
+    expect(receiptText(plain)).toContain('Thank you!');
+  });
+
+  it('wrap never exceeds the width, even with a long unbroken word', () => {
+    for (const l of wrap(`${'x'.repeat(100)} and some words`)) expect(l.length).toBeLessThanOrEqual(RECEIPT_WIDTH);
   });
 });

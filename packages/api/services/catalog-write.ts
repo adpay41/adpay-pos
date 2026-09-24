@@ -17,6 +17,7 @@ import type {
   LocationRatesInput,
   MediaType,
   PriceHistoryEntry,
+  ReceiptSettings,
 } from '@adpay/shared';
 import type { z } from 'zod';
 import type { AdminPrincipal, DevicePrincipal, MerchantUserPrincipal } from '../auth/principal';
@@ -527,5 +528,35 @@ export async function createItemFromDevice(
       trace_id: traceId,
     });
     return { item_id: input.item_id, status: 'created', catalog_version: v };
+  });
+}
+
+/** Replace a location's receipt settings (P8). The logo must be this merchant's own upload. */
+export async function setReceiptSettings(
+  db: Db,
+  actor: CatalogActor,
+  merchantId: string,
+  locationId: string,
+  settings: ReceiptSettings,
+  traceId: string,
+): Promise<{ location_id: string; catalog_version: number }> {
+  return db.tx(async (q) => {
+    const { rows } = await q.query<{ org_id: string; receipt_settings: unknown }>(
+      'SELECT org_id, receipt_settings FROM locations WHERE location_id = $1 AND merchant_id = $2 FOR UPDATE',
+      [locationId, merchantId],
+    );
+    if (!rows[0]) throw notFound('Location not found');
+    await assertImage(q, merchantId, settings.logo_media_id);
+    await q.query('UPDATE locations SET receipt_settings = $3 WHERE location_id = $1 AND merchant_id = $2', [locationId, merchantId, JSON.stringify(settings)]);
+    const version = await bumpCatalogVersion(q, merchantId);
+    await audit(q, {
+      actor,
+      action: 'location.receipt_settings_set',
+      tenancy: { org_id: rows[0].org_id, merchant_id: merchantId, location_id: locationId },
+      target: locationId,
+      details: { from: rows[0].receipt_settings, to: settings, catalog_version: version },
+      trace_id: traceId,
+    });
+    return { location_id: locationId, catalog_version: version };
   });
 }

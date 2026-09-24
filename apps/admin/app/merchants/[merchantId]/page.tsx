@@ -66,7 +66,7 @@ export default function MerchantPage() {
       )}
 
       {tab === 'cash' && <CashPanel merchantId={merchantId} />}
-      {tab === 'catalog' && <CatalogEditor merchantId={merchantId} />}
+      {tab === 'catalog' && <CatalogEditor merchantId={merchantId} merchantName={merchant?.name ?? 'Your store'} />}
       {tab === 'staff' && <StaffPanel merchantId={merchantId} />}
     </Shell>
   );

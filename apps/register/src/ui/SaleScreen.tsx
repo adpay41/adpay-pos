@@ -23,14 +23,14 @@ import {
   type ReceiptLine,
 } from '@adpay/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { DevSettings, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { DevSettings, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { createDisplayChannel, displayFor } from '../core/display';
 import { PREVIEW_HEALTH, WebPreviewHardware, type Hardware } from '../core/hardware';
 import type { SessionState } from '../core/session';
 import { pendingItem } from '../core/new-items';
 import type { StaffState } from '../core/staff';
 import type { SyncStatus } from '../core/sync';
-import type { Runtime } from '../runtime';
+import { API_URL, type Runtime } from '../runtime';
 import { QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
 import { HeldTickets, TicketBrowser } from './TicketsUI';
@@ -54,7 +54,7 @@ type Modal =
   | { kind: 'held' }
   | { kind: 'tickets' }
   | { kind: 'cash' }
-  | { kind: 'done'; sale: FoldedSale; change: number }
+  | { kind: 'done'; sale: FoldedSale; change: number; after: 'ask' | 'print' | 'none'; printed: readonly ReceiptLine[] | null }
   | { kind: 'receipt'; lines: readonly ReceiptLine[]; title: string }
   | { kind: 'device' }
   | { kind: 'override'; permission: Permission; saleId: string | null; then: () => Promise<unknown> }
@@ -70,10 +70,15 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const [drawerFlash, setDrawerFlash] = useState(false);
   const display = useRef(createDisplayChannel()).current;
 
+  /** True while printing a receipt automatically (after_sale: print): don't pop the preview over the change. */
+  const quietPrint = useRef(false);
   const hardware: Hardware = useMemo(
     () =>
       new WebPreviewHardware(
-        (lines) => setModal({ kind: 'receipt', lines, title: 'Receipt (printer preview)' }),
+        (lines) => {
+          if (quietPrint.current) return;
+          setModal({ kind: 'receipt', lines, title: 'Receipt (printer preview)' });
+        },
         () => {
           setDrawerFlash(true);
           setTimeout(() => setDrawerFlash(false), 1500);
@@ -196,6 +201,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     rt.sync.kick();
   }
 
+  // The location's receipt settings (P8); older cached snapshots have none → the defaults.
+  const receiptSettings = catalog.receipt;
   const receiptFor = (s: FoldedSale, copy: 'original' | 'reprint', footer?: string) =>
     renderReceipt({
       header: {
@@ -210,6 +217,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       timezone: rt.identity.timezone,
       copy,
       ...(footer ? { footer } : {}),
+      ...(receiptSettings
+        ? { settings: receiptSettings, logo_url: receiptSettings.logo_url ? `${API_URL}${receiptSettings.logo_url}` : null }
+        : {}),
     });
 
   // Remote actions that need this screen or the printer (P4): reprint any sale rung here, test page, restart.
@@ -247,7 +257,22 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       await rt.session.recordDrawer('cash_sale', done.sale_id);
       await rt.drawer.refresh();
       display.publish(displayFor(rt.identity.merchant_name, done, { amount, change }));
-      setModal({ kind: 'done', sale: done, change });
+      // After-sale setting (P8): ask; always print; or never print unless asked — the zero-tap sale.
+      const after = receiptSettings?.after_sale ?? 'ask';
+      let printed: readonly ReceiptLine[] | null = null;
+      if (after === 'print') {
+        printed = receiptFor(done, 'original');
+        quietPrint.current = true;
+        try {
+          await hardware.printReceipt(printed);
+        } finally {
+          quietPrint.current = false;
+        }
+        await rt.session.recordReceipt(done.sale_id, 'original');
+      } else if (after === 'none') {
+        await rt.session.recordReceipt(done.sale_id, 'none');
+      }
+      setModal({ kind: 'done', sale: done, change, after, printed });
       rt.sync.kick();
     });
   }
@@ -503,15 +528,48 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           <Text style={s.modalTitle}>Sale complete</Text>
           <Text style={s.changeLabel}>Change due</Text>
           <Text style={s.changeValue}>{usd(modal.change)}</Text>
-          <Text style={s.modalBody}>Total {usd(modal.sale.cash.total_cents)} cash · drawer opened</Text>
-          <View style={s.actions}>
-            <Pressable style={s.ghost} onPress={() => void finishReceipt(modal.sale, false)}>
-              <Text>No receipt</Text>
-            </Pressable>
-            <Pressable style={s.primary} onPress={() => void finishReceipt(modal.sale, true)}>
-              <Text style={s.primaryText}>Print receipt</Text>
-            </Pressable>
-          </View>
+          <Text style={s.modalBody}>
+            Total {usd(modal.sale.cash.total_cents)} cash · drawer opened
+            {modal.after === 'print' ? ' · receipt printed' : ''}
+          </Text>
+          {modal.after === 'ask' ? (
+            <View style={s.actions}>
+              <Pressable style={s.ghost} onPress={() => void finishReceipt(modal.sale, false)}>
+                <Text>No receipt</Text>
+              </Pressable>
+              <Pressable style={s.primary} onPress={() => void finishReceipt(modal.sale, true)}>
+                <Text style={s.primaryText}>Print receipt</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <AutoNext
+              key={modal.sale.sale_id}
+              onNext={() => {
+                setModal({ kind: 'none' });
+                display.publish(displayFor(rt.identity.merchant_name, null));
+              }}
+              extra={
+                modal.after === 'none' ? (
+                  <Pressable
+                    style={s.ghost}
+                    onPress={() =>
+                      void run(async () => {
+                        await hardware.printReceipt(receiptFor(modal.sale, 'reprint'));
+                        await rt.session.recordReceipt(modal.sale.sale_id, 'reprint');
+                        display.publish(displayFor(rt.identity.merchant_name, null));
+                      })
+                    }
+                  >
+                    <Text>Print receipt</Text>
+                  </Pressable>
+                ) : modal.printed ? (
+                  <Pressable style={s.ghost} onPress={() => setModal({ kind: 'receipt', lines: modal.printed!, title: 'Receipt (printer preview)' })}>
+                    <Text>See receipt</Text>
+                  </Pressable>
+                ) : null
+              }
+            />
+          )}
         </Overlay>
       )}
 
@@ -519,11 +577,23 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         <Overlay onClose={() => setModal({ kind: 'none' })}>
           <Text style={s.modalTitle}>{modal.title}</Text>
           <ScrollView style={s.paper}>
-            {modal.lines.map((l, i) => (
-              <Text key={i} style={[s.paperLine, l.style === 'bold' && { fontWeight: '800' }, l.style === 'double' && s.paperDouble]}>
-                {l.text || ' '}
-              </Text>
-            ))}
+            {modal.lines.map((l, i) =>
+              l.style === 'logo' ? (
+                <Image key={i} source={{ uri: l.url }} style={s.paperLogo} resizeMode="contain" accessibilityLabel="Store logo" />
+              ) : l.style === 'qr' ? (
+                // The printer module prints a real QR (ESC/POS native); the preview shows where and what.
+                <View key={i} style={s.paperQr}>
+                  <Text style={s.paperQrText}>▣ QR</Text>
+                  <Text style={[s.paperLine, { fontSize: 10 }]} numberOfLines={2}>
+                    {l.data}
+                  </Text>
+                </View>
+              ) : (
+                <Text key={i} style={[s.paperLine, l.style === 'bold' && { fontWeight: '800' }, l.style === 'double' && s.paperDouble]}>
+                  {l.text || ' '}
+                </Text>
+              ),
+            )}
           </ScrollView>
           <Pressable style={s.primary} onPress={() => setModal({ kind: 'none' })}>
             <Text style={s.primaryText}>Done</Text>
@@ -707,6 +777,32 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           </Pressable>
         </Overlay>
       )}
+    </View>
+  );
+}
+
+/** "Next customer" with a short countdown, so a zero-tap sale clears itself (P8). Any tap stops the timer. */
+function AutoNext({ onNext, extra }: { onNext: () => void; extra: ReactNode }) {
+  const [left, setLeft] = useState(4);
+  const [held, setHeld] = useState(false);
+  // The parent re-renders often (sync pill); keep the latest callback without restarting the countdown.
+  const next = useRef(onNext);
+  next.current = onNext;
+  useEffect(() => {
+    if (held) return;
+    if (left <= 0) {
+      next.current();
+      return;
+    }
+    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [left, held]);
+  return (
+    <View style={s.actions} onTouchStart={() => setHeld(true)}>
+      {extra}
+      <Pressable style={[s.primary, { backgroundColor: C.black }]} onPress={onNext}>
+        <Text style={s.primaryText}>Next customer{held ? '' : ` (${left})`}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -925,4 +1021,7 @@ const s = StyleSheet.create({
   paper: { backgroundColor: '#fffef8', borderWidth: 1, borderColor: C.line, borderRadius: 6, padding: 12, maxHeight: 420 },
   paperLine: { fontFamily: Platform.select({ web: 'ui-monospace, Consolas, monospace', default: 'monospace' }), fontSize: 12, color: '#222' },
   paperDouble: { fontSize: 14, fontWeight: '800' },
+  paperLogo: { width: '100%', height: 64, marginBottom: 4 },
+  paperQr: { alignItems: 'center', borderWidth: 1, borderColor: C.line, borderRadius: 6, padding: 6, marginVertical: 4 },
+  paperQrText: { fontSize: 20, fontWeight: '800', color: C.ink },
 });
