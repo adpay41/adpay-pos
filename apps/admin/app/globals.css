@@ -150,3 +150,21 @@ textarea { font: inherit; padding: 7px 10px; border: 1px solid #cfcfcf; border-r
 .favorites li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid #eee; }
 .favorites li .spacer { flex: 1; }
 .favorites li.inactive { opacity: 0.5; }
+
+/* P4: fleet, device page, alerts */
+.grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.grid4 .panel { margin: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+.grid2 .panel { margin: 0; }
+.kpi .label { font-size: 12px; color: #6b6b6b; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.kpi .value { font-size: 24px; font-weight: 800; margin: 4px 0; }
+.health { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.health .dot { width: 10px; height: 10px; border-radius: 50%; background: #999; display: inline-block; }
+.health.online .dot { background: #0a7f3f; }
+.health.stale .dot { background: #c77700; }
+.health.offline .dot { background: #c8102e; }
+.health.never .dot { background: #bbb; }
+.hw { display: flex; flex-wrap: wrap; gap: 4px; }
+.kv { display: grid; grid-template-columns: 140px 1fr; gap: 6px 14px; align-items: start; }
+.kv > span:nth-child(odd) { color: #6b6b6b; }
+.logtail { background: #111; color: #e8e8e8; padding: 12px; border-radius: 8px; font-size: 12px; line-height: 1.45; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }

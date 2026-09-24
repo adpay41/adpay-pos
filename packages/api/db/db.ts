@@ -1,7 +1,6 @@
 /**
- * Minimal database seam. Production and dev use node-postgres; tests use PGlite (real Postgres
- * compiled to WASM) behind the same interface, so the whole schema — partitions, triggers,
- * constraints — is exercised in CI without a database service.
+ * Minimal database seam: node-postgres everywhere that matters (dev, CI tests, production). A PGlite
+ * implementation exists only for a quick local test loop and is never authoritative (ADR 0007).
  */
 import pg from 'pg';
 
@@ -14,6 +13,11 @@ export interface Db extends Queryable {
   tx<T>(fn: (q: Queryable) => Promise<T>): Promise<T>;
   /** Run a multi-statement SQL script (migrations). */
   exec(sql: string): Promise<void>;
+  /**
+   * LISTEN on a Postgres channel (NOTIFY is delivered on commit). Used by the realtime hub; absent
+   * where the backend has no notifications. Returns a function that stops listening.
+   */
+  listen?(channel: string, onPayload: (payload: string) => void): Promise<() => Promise<void>>;
   close(): Promise<void>;
 }
 
@@ -31,8 +35,51 @@ export function createPgDb(connectionString: string): Db {
     const r = await c.query(sql, params);
     return { rows: r.rows as T[] };
   };
+  // One dedicated connection carries every LISTEN, re-established if it drops.
+  const handlers = new Map<string, Set<(payload: string) => void>>();
+  let listener: pg.Client | null = null;
+  let connecting: Promise<pg.Client> | null = null;
+  let closed = false;
+  const listenerClient = (): Promise<pg.Client> => {
+    if (listener) return Promise.resolve(listener);
+    connecting ??= (async () => {
+      const c = new pg.Client({ connectionString });
+      c.on('notification', (n) => {
+        for (const fn of handlers.get(n.channel) ?? []) fn(n.payload ?? '');
+      });
+      c.on('error', () => {
+        listener = null;
+        connecting = null;
+        c.end().catch(() => undefined);
+        if (!closed) setTimeout(() => void resubscribe(), 2_000);
+      });
+      await c.connect();
+      for (const ch of handlers.keys()) await c.query(`LISTEN ${pg.escapeIdentifier(ch)}`);
+      listener = c;
+      return c;
+    })().finally(() => {
+      connecting = null;
+    });
+    return connecting;
+  };
+  const resubscribe = async () => {
+    if (closed || handlers.size === 0) return;
+    await listenerClient().catch(() => setTimeout(() => void resubscribe(), 5_000));
+  };
+
   return {
     query: (sql, params) => run(pool, sql, params),
+    async listen(channel, onPayload) {
+      const first = !handlers.has(channel);
+      const set = handlers.get(channel) ?? new Set();
+      set.add(onPayload);
+      handlers.set(channel, set);
+      const c = await listenerClient();
+      if (first) await c.query(`LISTEN ${pg.escapeIdentifier(channel)}`);
+      return async () => {
+        set.delete(onPayload);
+      };
+    },
     async tx(fn) {
       const client = await pool.connect();
       try {
@@ -50,6 +97,10 @@ export function createPgDb(connectionString: string): Db {
     async exec(sql) {
       await pool.query(sql);
     },
-    close: () => pool.end(),
+    async close() {
+      closed = true;
+      await listener?.end().catch(() => undefined);
+      await pool.end();
+    },
   };
 }

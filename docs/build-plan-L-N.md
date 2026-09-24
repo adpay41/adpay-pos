@@ -54,7 +54,7 @@ The **Phase** column refers to section 5.
 | L23 | Store-and-forward status / "cash only" banner + retry (1.7) | 🟡 | Offline sync pill. No terminal status, no cash-only banner. | P9 |
 | L24 | Power-loss safe: tender + completion together before drawer (1.7) | ✅ | Implemented and tested. | — |
 | L25 | Self-healing: crash → auto-restart into same ticket (1.7) | 🟡 | Open ticket restores after reload ✅. OS-level auto-restart ⛔ Android build/kiosk. | P-HW |
-| L26 | Printer/scanner/terminal health on the sync pill; one-tap tests (1.7) | ⛔ | Needs the hardware module. The health model and UI can be built in P4. | P4, P-HW |
+| L26 | Printer/scanner/terminal health on the sync pill; one-tap tests (1.7) | ⛔ | P4 built the health model (per-slot state in every heartbeat, device panel, alerts) and the remote printer test. Real readings need the hardware module. | P-HW |
 | L27 | Cashier PIN sign-in, roles, permissions per action (1.8) | ✅ | P3: tap name → PIN, checked on-device (offline); lockout; 12-action permission matrix; manager override by PIN (ADR 0011). | P3 |
 | L28 | Case-break pricing (1.9, L part) | 🟡 | `sell_unit`/`pack_qty` on items and events; separate carton item in seed. No "scan case barcode → pack". | P5 |
 | L29 | Price check: scan without ringing; cash/card/margin (margin with PIN) (1.9) | 🟡 | Step-1 shell had tap-to-price-check; replaced by the sale screen. No scan, no cost/margin. | P5 |
@@ -70,7 +70,7 @@ The **Phase** column refers to section 5.
 | L34 | Item add/edit with photo, pushed to all registers in seconds (2.3) | ✅ | P1 admin editor + P2 merchant app with camera/library photo; registers pick it up on the next sync tick (≤15s; instant with the P4 WebSocket nudge). | P1, P2 |
 | L35 | Dual-price % per location; preview card prices before pushing (2.3) | ✅ | Admin (P1) and merchant app (P2), both with a preview of every card price that changes. | P1, P2 |
 | L36 | Staff list, PINs, roles, permissions from the phone (2.5) | ✅ | P3: merchant app Staff tab (people, roles, PINs, remove, permission matrix) + admin Staff tab. | P3 |
-| L37 | Alerts: register offline > 5 min; terminal offline; printer out of paper (2.6) | ⬜ | No heartbeat. Terminal/printer parts ⛔ hardware. | P4, P11 |
+| L37 | Alerts: register offline > 5 min; terminal offline; printer out of paper (2.6) | 🟡 | P4: register offline > 5 min and hardware-error alerts fire and show in the merchant app's Alerts tab. Terminal/paper readings ⛔ hardware; push/SMS delivery ⛔ accounts. | P4, P11 |
 | L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | ⬜ | Needs P6/P7 events + alert rules. | P4, P11 |
 | L39 | Delivery channel for alerts (push/SMS/WhatsApp) (2.6) | ⛔ | In-app inbox is buildable. **Push** needs Expo/FCM/APNs accounts; **SMS** a Twilio account; **WhatsApp** a Meta Business account. Those are signups the founder must do. | P4, P11 |
 | L40 | Support chat with "share my screen from the register" (2.8) | ⛔ | Chat is buildable. Screen share needs the MDM vendor (open decision: Esper vs own). | P12 (chat) |
@@ -82,11 +82,11 @@ The **Phase** column refers to section 5.
 | L41 | Statement analyzer: upload Sola/NRS/Clover PDF → effective rate, markup, savings, one-page PDF (3.1) | ⛔ | Not started. Parsing needs **real sample statements** from each processor; our pricing math needs the **signed Finix rate card**. The upload + manual-entry analyzer + PDF can be built first. | P13 |
 | L42 | Merchant onboarding wizard: business info, KYB via processor, pricing plan, dual pricing, catalog template, hardware order, install date (3.1) | 🟡 | Tree-based create forms exist. KYB ⛔ Finix. Hardware order is an external process. The wizard shell + pricing + dual pricing + install date is buildable. | P12 |
 | L43 | Setup QR generation and printed install kit (3.1) | 🟡 | One-time setup codes exist; no QR, no printable kit. | P12 |
-| L44 | Device page: heartbeat, version, network, printer/terminal/scanner, queue, last 200 log lines, config diff (3.2) | ⬜ | Spec step 3. Hardware status fields ⛔ until the module exists. | P4 |
-| L45 | Remote actions: restart, force sync, reprint, printer test, re-pair terminal, push config, roll back build, reboot; audited (3.2) | ⬜ | Force sync / reprint / push config / restart-in-app are buildable in the browser. Reboot, roll back build, printer test ⛔ device/MDM. | P4 |
+| L44 | Device page: heartbeat, version, network, printer/terminal/scanner, queue, last 200 log lines, config diff (3.2) | ✅ | P4: admin `/devices/:id`, live. Real hardware readings ⛔ until the device module (P-HW); browser reports `preview`. | P4 |
+| L45 | Remote actions: restart, force sync, reprint, printer test, re-pair terminal, push config, roll back build, reboot; audited (3.2) | 🟡 | P4: restart app, force sync, push config, reprint any ticket, printer test (preview), fetch logs, sign out — queued, pushed over `/ws` or the heartbeat, audited, results reported. Re-pair terminal / roll back build / reboot ⛔ device module + MDM. | P4, P-HW |
 | L46 | Remote screen view/control via MDM with consent banner (3.2) | ⛔ | Needs the MDM vendor decision and contract. | — |
 | L47 | Ticket replay incl. terminal request/response (3.2) | 🟡 | Replay ✅. Terminal request/response comes with P9 (stub) and for real with P-HW. | P9 |
-| L48 | Alert console: offline registers, stuck queues, unreachable terminals, high void rates (3.2) | ⬜ | | P4 |
+| L48 | Alert console: offline registers, stuck queues, unreachable terminals, high void rates (3.2) | ✅ | P4: `/alerts`, live, with rules for offline registers, stuck queues, rejected events, hardware errors (terminal once it reports), PIN lockouts, void rate. | P4 |
 | L49 | Settlement & fee reconciliation (3.3) | ⛔ | Needs live processor settlement files. | P-PAY |
 | L50 | Residual/margin report per merchant per month (3.3) | ⛔ | Our revenue side is computable from pricing plans. **Processor cost needs the Finix rate card and real interchange data.** Report shell + manual cost inputs are buildable. | P13 |
 | L51 | Pricing plans: dual %, IC+, flat, POS subscription, with history (3.3) | ⬜ | | P12 |
@@ -365,6 +365,7 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P3 Staff, PINs, roles, permissions | #7 | PR open — memberships (store switcher), register sign-in by name + PIN checked on-device, lockout, permission matrix + manager override, `actor_user_id` on every event; Staff tab in the merchant app and admin. ADR 0011. |
+| P4 Ops layer | #8 | PR open — heartbeat every 30 s, device log ring + upload, remote-action queue (WS push + heartbeat fallback, audited), admin Fleet / Device page / Alert console, alert rules every minute, merchant Alerts tab, realtime `/ws` over LISTEN/NOTIFY (instant catalog nudge, live sales feed). ADR 0012. |
+| P3 Staff, PINs, roles, permissions | #7 | merged — memberships (store switcher), register sign-in by name + PIN checked on-device, lockout, permission matrix + manager override, `actor_user_id` on every event; Staff tab in the merchant app and admin. ADR 0011. |
 | P2 Catalog from the phone | #6 | merged — merchant app: add/edit items with photo (camera or library, shrunk on the phone), tile color, favorite toggle; favorites page, category order/add/hide, dual-price % with preview. Admin: photo, color, favorites panel. Register: ★ Favorites page first, colored tiles with photos. ADR 0010. |
 | P1 Catalog management | #5 | merged — admin catalog editor (items, categories, barcodes, open price, cost, PLU), dual-price % with card-price preview, price history, `catalog_version` bump; the register picks up changes on its next sync tick (≤15s). 72 tests on real Postgres. |

@@ -108,6 +108,20 @@ export async function ingestEvents(
          JOIN locations l ON l.location_id = x.location_id`,
       [JSON.stringify(toInsert), receivedAt.toISOString()],
     );
+    // Live sales feed (merchant ticker, admin): delivered to listeners on commit (P4 realtime hub).
+    for (const e of toInsert) {
+      if (e.type !== 'sale.completed') continue;
+      const note = {
+        merchant_id: e.merchant_id,
+        register_id: e.register_id,
+        sale_id: e.sale_id,
+        total_cents: e.payload.total_cents,
+        price_mode: e.payload.price_mode,
+        at: e.occurred_at,
+        actor_user_id: e.actor_user_id,
+      };
+      await q.query('SELECT pg_notify($1, $2)', ['adpay_sale', JSON.stringify(note)]);
+    }
     await q.query(`UPDATE registers SET last_seen_at = greatest(coalesce(last_seen_at, $2), $2) WHERE register_id = $1`, [
       device.register_id,
       receivedAt.toISOString(),
@@ -157,6 +171,7 @@ interface TimelineRow {
   trace_id: string;
   type: string;
   payload: unknown;
+  actor_user_id: string | null;
   register_name: string;
   location_name: string;
   merchant_name: string;
@@ -166,7 +181,7 @@ export async function getSaleTimeline(q: Queryable, saleId: string, merchantId: 
   const { rows } = await q.query<TimelineRow>(
     `SELECT e.event_id, e.schema_version, e.sale_id, e.device_seq, e.occurred_at, e.received_at,
             to_char(e.business_date, 'YYYY-MM-DD') AS business_date, e.org_id, e.merchant_id, e.location_id,
-            e.register_id, e.trace_id, e.type, e.payload,
+            e.register_id, e.trace_id, e.type, e.payload, e.actor_user_id,
             r.name AS register_name, l.name AS location_name, m.name AS merchant_name
        FROM sale_events e
        JOIN registers r ON r.register_id = e.register_id
@@ -192,6 +207,7 @@ export async function getSaleTimeline(q: Queryable, saleId: string, merchantId: 
       location_id: r.location_id,
       register_id: r.register_id,
       trace_id: r.trace_id,
+      actor_user_id: r.actor_user_id,
       type: r.type,
       payload: r.payload,
     }),

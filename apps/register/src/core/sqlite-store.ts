@@ -2,7 +2,7 @@
  * SQLite event store (expo-sqlite). Same schema on the Android register and in the browser.
  * Triggers make the events table append-only at the database level, mirroring the server.
  */
-import { parseRegisterEvent, type RegisterEvent } from '@adpay/shared';
+import { LOG_RING_SIZE, parseRegisterEvent, type DeviceLogLine, type RegisterEvent } from '@adpay/shared';
 import * as SQLite from 'expo-sqlite';
 import type { AckOutcome, EventStore, StoreCounts } from './store';
 
@@ -28,10 +28,34 @@ CREATE TABLE IF NOT EXISTS sync_acks (
   acked_at  TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS logs (
+  seq    INTEGER PRIMARY KEY AUTOINCREMENT,
+  at     TEXT NOT NULL,
+  level  TEXT NOT NULL,
+  msg    TEXT NOT NULL,
+  ctx    TEXT
+);
 `;
 
 export class SqliteEventStore implements EventStore {
+  private logWrites = 0;
   private constructor(private readonly db: SQLite.SQLiteDatabase) {}
+
+  async appendLog(line: Omit<DeviceLogLine, 'seq'>) {
+    await this.db.runAsync('INSERT INTO logs (at, level, msg, ctx) VALUES (?, ?, ?, ?)', [line.at, line.level, line.msg, line.ctx ? JSON.stringify(line.ctx) : null]);
+    // Trim the ring now and then rather than on every write.
+    if (++this.logWrites % 200 === 0) {
+      await this.db.runAsync('DELETE FROM logs WHERE seq <= (SELECT max(seq) FROM logs) - ?', [LOG_RING_SIZE]);
+    }
+  }
+
+  async recentLogs(limit: number): Promise<DeviceLogLine[]> {
+    const rows = await this.db.getAllAsync<{ seq: number; at: string; level: DeviceLogLine['level']; msg: string; ctx: string | null }>(
+      'SELECT seq, at, level, msg, ctx FROM logs ORDER BY seq DESC LIMIT ?',
+      [limit],
+    );
+    return rows.reverse().map((r) => ({ ...r, ctx: r.ctx ? (JSON.parse(r.ctx) as DeviceLogLine['ctx']) : null }));
+  }
 
   static async open(name = 'adpay-register.db'): Promise<SqliteEventStore> {
     const db = await SQLite.openDatabaseAsync(name);

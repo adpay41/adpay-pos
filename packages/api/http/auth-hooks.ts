@@ -26,23 +26,23 @@ declare module 'fastify' {
   }
 }
 
+/** Any bearer credential → the principal it proves, or null. Shared by HTTP and the WebSocket. */
+export async function resolvePrincipal(db: Db, config: Config, token: string): Promise<Principal | null> {
+  const verified = token.startsWith('dev_') ? await resolveDeviceToken(db, token) : await verifyUserToken(token, config.jwtSecret, config.jwtIssuer);
+  if (!verified) return null;
+  if (verified.kind !== 'merchant_user') return verified;
+  // Current role and permissions from the membership, so a change or a removal is immediate.
+  const m = await resolveMembership(db, verified.user_id, verified.merchant_id);
+  return m ? { ...verified, ...m } : null;
+}
+
 export function makeAuthenticate(db: Db, config: Config, baseLogger: pino.Logger) {
   return async function authenticate(request: FastifyRequest): Promise<void> {
     const header = request.headers.authorization;
     request.principal = null;
     if (!header?.startsWith('Bearer ')) return;
-    const token = header.slice('Bearer '.length).trim();
-    const verified = token.startsWith('dev_')
-      ? await resolveDeviceToken(db, token)
-      : await verifyUserToken(token, config.jwtSecret, config.jwtIssuer);
-    if (!verified) return;
-    let principal: Principal = verified as Principal;
-    if (verified.kind === 'merchant_user') {
-      // Current role and permissions from the membership, so a change or a removal is immediate.
-      const m = await resolveMembership(db, verified.user_id, verified.merchant_id);
-      if (!m) return;
-      principal = { ...verified, ...m };
-    }
+    const principal = await resolvePrincipal(db, config, header.slice('Bearer '.length).trim());
+    if (!principal) return;
     request.principal = principal;
     bindRequestLogger(baseLogger, request, tenancyOf(principal));
   };

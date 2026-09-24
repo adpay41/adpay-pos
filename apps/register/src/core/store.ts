@@ -5,7 +5,7 @@
  * "has the server got this?" never requires touching the event itself. Two implementations share
  * this interface: SQLite (expo-sqlite, on Android and in the browser) and in-memory (tests).
  */
-import type { RegisterEvent } from '@adpay/shared';
+import { LOG_RING_SIZE, type DeviceLogLine, type RegisterEvent } from '@adpay/shared';
 
 export type AckOutcome = 'accepted' | 'duplicate' | 'rejected';
 
@@ -28,12 +28,17 @@ export interface EventStore {
   recentSaleIds(limit: number): Promise<string[]>;
   getMeta(key: string): Promise<string | null>;
   setMeta(key: string, value: string | null): Promise<void>;
+  /** Local log ring (P4): keeps the last LOG_RING_SIZE lines; uploaded when the office asks. */
+  appendLog(line: Omit<DeviceLogLine, 'seq'>): Promise<void>;
+  recentLogs(limit: number): Promise<DeviceLogLine[]>;
 }
 
 export class MemoryEventStore implements EventStore {
   private events: RegisterEvent[] = [];
   private acks = new Map<string, AckOutcome>();
   private meta = new Map<string, string>();
+  private logs: DeviceLogLine[] = [];
+  private logSeq = 0;
 
   async nextSeq() {
     return this.events.reduce((m, e) => Math.max(m, e.device_seq), -1) + 1;
@@ -73,6 +78,13 @@ export class MemoryEventStore implements EventStore {
   async setMeta(key: string, value: string | null) {
     if (value === null) this.meta.delete(key);
     else this.meta.set(key, value);
+  }
+  async appendLog(line: Omit<DeviceLogLine, 'seq'>) {
+    this.logs.push({ ...line, seq: this.logSeq++ });
+    if (this.logs.length > LOG_RING_SIZE) this.logs.splice(0, this.logs.length - LOG_RING_SIZE);
+  }
+  async recentLogs(limit: number) {
+    return this.logs.slice(-limit);
   }
   /** Test helper: prove immutability expectations. */
   snapshot(): readonly RegisterEvent[] {

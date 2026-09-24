@@ -13,6 +13,8 @@ import { authRoutes } from './routes/auth';
 import { catalogRoutes } from './routes/catalog';
 import { deviceRoutes } from './routes/device';
 import { merchantRoutes } from './routes/merchant';
+import { opsRoutes } from './routes/ops';
+import { RealtimeHub } from './realtime/hub';
 import { staffRoutes } from './routes/staff';
 
 export interface AppDeps {
@@ -22,6 +24,12 @@ export interface AppDeps {
   logger: pino.Logger;
   /** Reports Redis/job health; absent when running without Redis (tests). */
   jobsHealthy?: (() => Promise<boolean>) | undefined;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    realtime: RealtimeHub;
+  }
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -104,6 +112,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(async (scope) => deviceRoutes(scope, deps));
   await app.register(async (scope) => catalogRoutes(scope, deps));
   await app.register(async (scope) => staffRoutes(scope, deps));
+  await app.register(async (scope) => opsRoutes(scope, deps));
+
+  const hub = new RealtimeHub(db, config, systemLogger(logger));
+  await hub.register(app);
+  app.decorate('realtime', hub);
 
   return app;
 }

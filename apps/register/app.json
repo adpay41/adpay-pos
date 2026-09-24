@@ -2,7 +2,7 @@
   "expo": {
     "name": "AD Pay Register",
     "slug": "adpay-register",
-    "version": "0.0.0",
+    "version": "0.4.0",
     "orientation": "landscape",
     "userInterfaceStyle": "light",
     "android": { "package": "us.americandreampay.register" },
