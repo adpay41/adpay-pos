@@ -2,6 +2,9 @@
  * Stub provider: approves everything, deterministically, with no network. It is the provider in
  * every environment until the Finix adapter lands (sequencing step 6). Replaying an idempotency key
  * returns the original result, which is the behaviour the real adapter must match.
+ *
+ * Test decline, like a processor sandbox's magic amounts: a terminal charge whose amount ends in
+ * **.13** is declined, so the decline path can be clicked through without a real card.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -65,7 +68,19 @@ export class StubPaymentProvider implements PaymentProvider {
   }
 
   async terminalCharge(req: TerminalChargeRequest): Promise<PaymentResult> {
-    return this.once(`terminal:${req.idempotency_key}`, () => this.approved(req.idempotency_key, req.amount_cents, true));
+    return this.once(`terminal:${req.idempotency_key}`, () => {
+      if (req.amount_cents % 100 === 13) {
+        return {
+          status: 'declined',
+          provider_ref: refFor(req.idempotency_key),
+          approval_code: null,
+          amount_cents: req.amount_cents,
+          card: fakeCard(req.idempotency_key),
+          message: 'test card: amounts ending in .13 decline',
+        };
+      }
+      return this.approved(req.idempotency_key, req.amount_cents, true);
+    });
   }
 
   async terminalStatus(terminal_id: string): Promise<TerminalStatus> {

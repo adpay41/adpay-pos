@@ -11,7 +11,7 @@ import { PREVIEW_HEALTH } from './core/hardware';
 import { DrawerManager } from './core/drawer';
 import { NewItemOutbox } from './core/new-items';
 import { DeviceLog, OpsAgent } from './core/ops';
-import { SaleSession } from './core/session';
+import { SaleSession, type CardRefunder } from './core/session';
 import { SqliteEventStore } from './core/sqlite-store';
 import { StaffGate } from './core/staff';
 import type { EventStore } from './core/store';
@@ -68,7 +68,25 @@ export interface Runtime {
   items: NewItemOutbox;
   /** Cash drawer session: float, drops, paid-outs/-ins, blind count (P6). */
   drawer: DrawerManager;
+  /** Card payments through the API's PaymentProvider (P9). Amounts and ids only — never card data. */
+  payments: CardPayments;
   uuid: () => string;
+}
+
+export interface CardOutcome {
+  status: 'approved' | 'declined' | 'error';
+  provider: string;
+  provider_ref: string | null;
+  approval_code: string | null;
+  brand: string | null;
+  last4: string | null;
+  message: string | null;
+}
+
+export interface CardPayments {
+  /** Send an amount to the card terminal. Network trouble comes back as `error`, never a throw. */
+  charge(saleId: string, tenderId: string, amount: number): Promise<CardOutcome>;
+  refund: CardRefunder;
 }
 
 export const APP_VERSION = Constants.expoConfig?.version ?? '0.0.0';
@@ -166,5 +184,23 @@ export async function boot(token: string): Promise<Runtime> {
   session.subscribe(() => sync.kick());
   await sync.start();
   ops.start();
-  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, uuid: () => Crypto.randomUUID() };
+  const payments: CardPayments = {
+    async charge(sale_id, tender_id, amount_cents) {
+      try {
+        return await call<CardOutcome>('/device/payments/terminal-charge', token, { sale_id, tender_id, amount_cents });
+      } catch (e) {
+        // Offline or the API is down: the ticket stays open and the same tender id retries safely.
+        return { status: 'error', provider: 'terminal', provider_ref: null, approval_code: null, brand: null, last4: null, message: `Can’t reach the card machine (${(e as Error).message.slice(0, 80)})` };
+      }
+    },
+    async refund(req) {
+      try {
+        return await call<CardOutcome>('/device/payments/card-refund', token, req);
+      } catch (e) {
+        return { status: 'error', provider: 'terminal', provider_ref: null, approval_code: null, message: `Can’t reach the card processor (${(e as Error).message.slice(0, 80)})` };
+      }
+    },
+  };
+
+  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, uuid: () => Crypto.randomUUID() };
 }

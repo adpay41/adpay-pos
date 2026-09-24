@@ -31,6 +31,9 @@ export function refundableQty(sale: FoldedSale): Record<string, number> {
 /** What handing back `selection` is worth, at the price mode the sale was paid in. */
 export function refundQuote(sale: FoldedSale, selection: readonly RefundLine[]): RefundQuote {
   if (sale.status !== 'completed' || !sale.price_mode) throw new Error('Only a completed sale can be refunded');
+  // A split sale's items were paid partly at each price; a partial return would need a rule for
+  // which portion gets the money back. Until there is one, a split sale is voided as a whole.
+  if (sale.price_mode === 'split') throw new Error('A split-payment sale is refunded by voiding it: each part goes back to how it was paid');
   const mode = sale.price_mode;
   const left = refundableQty(sale);
   const lines: RefundLine[] = [];

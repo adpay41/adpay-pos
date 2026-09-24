@@ -89,10 +89,16 @@ const TenderAdded = z.strictObject({
   tendered_cents: NonNegCents.nullable(),
   change_cents: NonNegCents.nullable(),
   card: CardResult.nullable(),
+  /**
+   * How much of the sale this tender pays for, in cash-price cents (split tender, P9 / ADR 0017).
+   * Null on older events: derived by the fold (cash covers what it pays; card covers amount × C/K).
+   */
+  covers_cash_cents: NonNegCents.nullable().default(null),
 });
 
 const SaleCompleted = z.strictObject({
-  price_mode: PriceModeSchema,
+  /** `split`: part cash at the cash price, part card at the card price (P9). */
+  price_mode: z.enum(['cash', 'card', 'split']),
   /** Device-computed from the fold at completion; the server re-folds and flags any mismatch. */
   subtotal_cents: CentsSchema,
   tax_cents: CentsSchema,
@@ -113,6 +119,21 @@ const SaleRefunded = z.strictObject({
   card: CardResult.nullable(),
   /** What came back (P7): units per line, so a sale can't be refunded twice for the same thing. Additive. */
   lines: z.array(z.strictObject({ line_id: Uuid, qty: Qty })).max(500).default([]),
+});
+
+/**
+ * One exchange with the card terminal (P9, Bible 3.2 "ticket replay incl. terminal request/response").
+ * `requested` when the amount goes to the terminal; then the outcome. No card data: brand and last
+ * four arrive only on the tender itself.
+ */
+const CardAttempt = z.strictObject({
+  tender_id: Uuid,
+  amount_cents: NonNegCents,
+  status: z.enum(['requested', 'approved', 'declined', 'error', 'timeout']),
+  provider: z.string().min(1).max(40),
+  provider_ref: z.string().max(200).nullable(),
+  /** Safe to show a cashier ("Insufficient funds"). Never shown to the customer verbatim. */
+  message: z.string().max(200).nullable(),
 });
 
 const Empty = z.strictObject({});
@@ -175,6 +196,7 @@ export const EventPayloads = {
   'sale.line_discounted': LineDiscounted,
   'sale.age_verified': AgeVerified,
   'sale.tender_added': TenderAdded,
+  'sale.card_attempt': CardAttempt,
   'sale.completed': SaleCompleted,
   'sale.voided': SaleVoided,
   'sale.refunded': SaleRefunded,

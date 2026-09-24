@@ -6,6 +6,7 @@
 import {
   WedgeDecoder,
   barcodeIndex,
+  cardAmountFor,
   categoryKeys,
   cents,
   deriveCardPrice,
@@ -18,6 +19,7 @@ import {
   renderReceipt,
   type CatalogItem,
   type CatalogSnapshot,
+  type Cents,
   type FoldedSale,
   type Permission,
   type ReceiptLine,
@@ -33,6 +35,7 @@ import type { SyncStatus } from '../core/sync';
 import { API_URL, type Runtime } from '../runtime';
 import { QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
+import { CardPanel, type CardPhase } from './TenderUI';
 import { HeldTickets, TicketBrowser } from './TicketsUI';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
@@ -53,6 +56,7 @@ type Modal =
   | { kind: 'drawer'; startWithFloat: boolean; thenCash: boolean }
   | { kind: 'held' }
   | { kind: 'tickets' }
+  | { kind: 'card'; phase: CardPhase }
   | { kind: 'cash' }
   | { kind: 'done'; sale: FoldedSale; change: number; after: 'ask' | 'print' | 'none'; printed: readonly ReceiptLine[] | null }
   | { kind: 'receipt'; lines: readonly ReceiptLine[]; title: string }
@@ -102,6 +106,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   }, [session.sale, modal.kind, display, rt.identity.merchant_name]);
 
   const sale = session.sale;
+  const cardOk = sync?.online ?? false;
   // Items created here but not yet in a server snapshot are overlaid, so they ring up offline (P5).
   const [pendingCount, setPendingCount] = useState(0);
   useEffect(() => rt.items.subscribe((p) => setPendingCount(p.length)), [rt]);
@@ -249,32 +254,78 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     // receiptFor only reads rt, so the handlers stay valid for the life of this screen.
   }, [rt, hardware]);
 
-  async function tender(amount: number) {
+  /** Cash in hand: open the drawer and record it (full or part payment). */
+  async function takeCash(saleId: string) {
+    await hardware.kickDrawer();
+    await rt.session.recordDrawer('cash_sale', saleId);
+    await rt.drawer.refresh();
+  }
+
+  async function tender(amount: number, partial = false) {
     await run(async () => {
-      const { sale: done, change } = await rt.session.tenderCash(cents(amount));
-      rt.log.info('cash sale completed', { sale: done.sale_id.slice(0, 8), total_cents: done.cash.total_cents, lines: done.lines.length });
-      await hardware.kickDrawer();
-      await rt.session.recordDrawer('cash_sale', done.sale_id);
-      await rt.drawer.refresh();
-      display.publish(displayFor(rt.identity.merchant_name, done, { amount, change }));
-      // After-sale setting (P8): ask; always print; or never print unless asked — the zero-tap sale.
-      const after = receiptSettings?.after_sale ?? 'ask';
-      let printed: readonly ReceiptLine[] | null = null;
-      if (after === 'print') {
-        printed = receiptFor(done, 'original');
-        quietPrint.current = true;
-        try {
-          await hardware.printReceipt(printed);
-        } finally {
-          quietPrint.current = false;
-        }
-        await rt.session.recordReceipt(done.sale_id, 'original');
-      } else if (after === 'none') {
-        await rt.session.recordReceipt(done.sale_id, 'none');
+      const saleId = sale!.sale_id;
+      const r = await rt.session.tenderCash(cents(amount), { partial });
+      await takeCash(saleId);
+      if (!r.completed) {
+        // Split: the rest goes on a card at the card price of what's left (ADR 0017).
+        rt.log.info('part paid in cash', { sale: saleId.slice(0, 8), cash_cents: amount });
+        setModal({ kind: 'card', phase: { kind: 'ready' } });
+        return;
       }
-      setModal({ kind: 'done', sale: done, change, after, printed });
+      rt.log.info('cash sale completed', { sale: r.sale.sale_id.slice(0, 8), total_cents: r.sale.paid_cents, lines: r.sale.lines.length });
+      await completed(r.sale, amount, r.change);
+    });
+  }
+
+  /**
+   * Card: amount to the terminal (the whole card price of what's left by default), then approved /
+   * declined / couldn't reach it. A retry reuses the same tender id, so it can never charge twice.
+   */
+  async function chargeCard(amount?: Cents, retry?: { tender_id: string; amount: Cents }) {
+    await run(async () => {
+      const current = session.sale!;
+      const t = retry ?? (await rt.session.startCard(amount));
+      setModal({ kind: 'card', phase: { kind: 'waiting', amount: t.amount } });
+      display.publish(displayFor(rt.identity.merchant_name, current, undefined, { phase: 'card', amount: t.amount }));
+      const r = await rt.payments.charge(current.sale_id, t.tender_id, t.amount);
+      const res = await rt.session.finishCard(t.tender_id, t.amount, { ...r, status: r.status });
+      rt.log.info('card', { status: r.status, sale: current.sale_id.slice(0, 8), amount_cents: t.amount });
+      if (r.status === 'approved') {
+        display.publish(displayFor(rt.identity.merchant_name, res.sale, undefined, { phase: 'approved', amount: t.amount }));
+        if (res.completed) await completed(res.sale, res.sale.paid_cents, 0);
+        else setModal({ kind: 'card', phase: { kind: 'ready' } }); // two cards: the rest
+      } else if (r.status === 'declined') {
+        display.publish(displayFor(rt.identity.merchant_name, res.sale, undefined, { phase: 'declined', amount: t.amount }));
+        setModal({ kind: 'card', phase: { kind: 'declined', message: r.message } });
+      } else {
+        // The customer sees their cart again, never "system down"; the cashier sees what happened.
+        display.publish(displayFor(rt.identity.merchant_name, res.sale));
+        setModal({ kind: 'card', phase: { kind: 'error', message: r.message, retry: t } });
+      }
       rt.sync.kick();
     });
+  }
+
+  /** Every paid sale ends here: customer screen, after-sale receipt choice, the done screen. */
+  async function completed(done: FoldedSale, amount: number, change: number) {
+    display.publish(displayFor(rt.identity.merchant_name, done, { amount, change }));
+    // After-sale setting (P8): ask; always print; or never print unless asked — the zero-tap sale.
+    const after = receiptSettings?.after_sale ?? 'ask';
+    let printed: readonly ReceiptLine[] | null = null;
+    if (after === 'print') {
+      printed = receiptFor(done, 'original');
+      quietPrint.current = true;
+      try {
+        await hardware.printReceipt(printed);
+      } finally {
+        quietPrint.current = false;
+      }
+      await rt.session.recordReceipt(done.sale_id, 'original');
+    } else if (after === 'none') {
+      await rt.session.recordReceipt(done.sale_id, 'none');
+    }
+    setModal({ kind: 'done', sale: done, change, after, printed });
+    rt.sync.kick();
   }
 
   async function finishReceipt(done: FoldedSale, print: boolean) {
@@ -451,6 +502,20 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 <Text style={s.dualValue}>{usd(sale?.card.total_cents ?? 0)}</Text>
               </View>
             </View>
+            {sale && sale.tenders.some((t) => t.approved) ? (
+              <View style={s.partPaid}>
+                <Text style={s.partPaidText}>
+                  Paid so far {usd(sale.paid_cents)} · left {usd(sale.remaining_cash_cents)} cash or{' '}
+                  {usd(cardAmountFor(sale.remaining_cash_cents, sale.cash.total_cents, sale.card.total_cents))} card
+                </Text>
+              </View>
+            ) : null}
+            {!cardOk && sale?.lines.length ? (
+              // Bible 1.7: when the card path is down, say so plainly and keep selling for cash.
+              <Pressable style={s.cashOnly} onPress={() => rt.sync.kick()}>
+                <Text style={s.cashOnlyText}>Cash only right now — no connection to the card machine. Tap to retry.</Text>
+              </Pressable>
+            ) : null}
             <View style={s.actions}>
               <Pressable
                 style={[s.payBtn, !sale?.lines.length && s.disabled]}
@@ -460,9 +525,13 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               >
                 <Text style={s.payText}>Cash</Text>
               </Pressable>
-              <Pressable style={[s.payBtn, s.disabled]} disabled>
+              <Pressable
+                style={[s.payBtn, (!sale?.lines.length || !cardOk) && s.disabled]}
+                disabled={!sale?.lines.length || !cardOk}
+                onPress={() => setModal({ kind: 'card', phase: { kind: 'ready' } })}
+              >
                 <Text style={s.payText}>Card</Text>
-                <Text style={s.paySub}>terminal: step 6</Text>
+                {!cardOk ? <Text style={s.paySub}>offline</Text> : null}
               </Pressable>
             </View>
             <View style={s.actions}>
@@ -520,16 +589,54 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       )}
 
       {modal.kind === 'cash' && sale && (
-        <CashModal total={sale.cash.total_cents} onCancel={() => setModal({ kind: 'none' })} onTender={(amt) => void tender(amt)} />
+        <CashModal
+          total={sale.remaining_cash_cents}
+          allowPart={cardOk}
+          onCancel={() => setModal({ kind: 'none' })}
+          onTender={(amt) => void tender(amt)}
+          onPart={(amt) => void tender(amt, true)}
+        />
+      )}
+
+      {modal.kind === 'card' && sale && (
+        <Overlay onClose={modal.phase.kind === 'waiting' ? undefined : () => setModal({ kind: 'none' })}>
+          <CardPanel
+            sale={sale}
+            phase={modal.phase}
+            onCharge={(amt) => void chargeCard(amt)}
+            onRetry={(pending) => void chargeCard(undefined, pending)}
+            onPartial={() => setModal({ kind: 'card', phase: { kind: 'partial' } })}
+            onCash={() => {
+              display.publish(displayFor(rt.identity.merchant_name, sale));
+              setModal(rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true });
+            }}
+            onBack={() => {
+              display.publish(displayFor(rt.identity.merchant_name, sale));
+              setModal({ kind: 'none' });
+            }}
+          />
+        </Overlay>
       )}
 
       {modal.kind === 'done' && (
         <Overlay>
           <Text style={s.modalTitle}>Sale complete</Text>
-          <Text style={s.changeLabel}>Change due</Text>
-          <Text style={s.changeValue}>{usd(modal.change)}</Text>
+          {/* Change only when cash was handed over; an all-card sale has none to give. */}
+          {modal.sale.price_mode !== 'card' ? (
+            <>
+              <Text style={s.changeLabel}>Change due</Text>
+              <Text style={s.changeValue}>{usd(modal.change)}</Text>
+            </>
+          ) : null}
           <Text style={s.modalBody}>
-            Total {usd(modal.sale.cash.total_cents)} cash · drawer opened
+            {modal.sale.price_mode === 'card'
+              ? `Paid ${usd(modal.sale.paid_cents)} by card${modal.sale.tenders.find((t) => t.card)?.card?.last4 ? ` ···· ${modal.sale.tenders.find((t) => t.card)!.card!.last4}` : ''}`
+              : modal.sale.price_mode === 'split'
+                ? `Paid ${usd(modal.sale.paid_cents)}: ${modal.sale.tenders
+                    .filter((t) => t.approved)
+                    .map((t) => `${usd(t.amount_cents)} ${t.tender_type}`)
+                    .join(' + ')}`
+                : `Total ${usd(modal.sale.cash.total_cents)} cash · drawer opened`}
             {modal.after === 'print' ? ' · receipt printed' : ''}
           </Text>
           {modal.after === 'ask' ? (
@@ -735,6 +842,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             store={rt.store}
             session={rt.session}
             staff={rt.staff}
+            cardRefund={rt.payments.refund}
             onClose={() => setModal({ kind: 'none' })}
             onReprint={async (sale) => {
               await hardware.printReceipt(receiptFor(sale, 'reprint'));
@@ -743,7 +851,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             }}
             onCashBack={async (sale, amount, what) => {
               rt.log.info(what === 'void' ? 'completed sale voided' : 'refund', { sale: sale.sale_id.slice(0, 8), amount_cents: amount });
-              if (amount > 0) await hardware.kickDrawer();
+              // Only cash coming back opens the drawer; a card refund goes to the card.
+              if (amount > 0 && sale.tenders.some((t) => t.tender_type === 'cash')) await hardware.kickDrawer();
               await hardware.printReceipt(receiptFor(sale, 'reprint', what === 'void' ? `VOID - ${usd(amount)} returned` : `REFUND - ${usd(amount)} returned`));
               await rt.drawer.refresh();
               rt.sync.kick();
@@ -832,7 +941,20 @@ function SyncPill({ status, onPress }: { status: SyncStatus | null; onPress: () 
   );
 }
 
-function CashModal({ total, onCancel, onTender }: { total: number; onCancel: () => void; onTender: (amount: number) => void }) {
+function CashModal({
+  total,
+  allowPart,
+  onCancel,
+  onTender,
+  onPart,
+}: {
+  total: number;
+  allowPart: boolean;
+  onCancel: () => void;
+  onTender: (amount: number) => void;
+  /** Split: take this much cash now, the rest on a card. */
+  onPart: (amount: number) => void;
+}) {
   const [digits, setDigits] = useState('');
   const typed = digits ? Number(digits) : 0; // keypad fills from the cents column: 2-0-0-0 → $20.00
   const options = quickCashOptions(cents(total));
@@ -860,10 +982,16 @@ function CashModal({ total, onCancel, onTender }: { total: number; onCancel: () 
         <Pressable style={s.ghost} onPress={onCancel}>
           <Text>Back</Text>
         </Pressable>
-        {/* Black, not red: this button carries a dollar amount. */}
-        <Pressable style={[s.primary, { backgroundColor: C.black }, typed < total && s.disabled]} disabled={typed < total} onPress={() => onTender(typed)}>
-          <Text style={s.primaryText}>Take {usd(typed)}</Text>
-        </Pressable>
+        {/* Black, not red: these buttons carry dollar amounts. */}
+        {typed > 0 && typed < total && allowPart ? (
+          <Pressable style={[s.primary, { backgroundColor: C.black }]} onPress={() => onPart(typed)}>
+            <Text style={s.primaryText}>Take {usd(typed)} now, rest by card</Text>
+          </Pressable>
+        ) : (
+          <Pressable style={[s.primary, { backgroundColor: C.black }, typed < total && s.disabled]} disabled={typed < total} onPress={() => onTender(typed)}>
+            <Text style={s.primaryText}>Take {usd(typed)}</Text>
+          </Pressable>
+        )}
       </View>
     </Overlay>
   );
@@ -961,6 +1089,10 @@ const s = StyleSheet.create({
   pillOk: { backgroundColor: C.greenBg },
   pillWarn: { backgroundColor: C.amberBg },
   pillDark: { backgroundColor: '#333' },
+  partPaid: { backgroundColor: C.ground, borderRadius: 8, padding: 8 },
+  partPaidText: { color: C.ink, fontWeight: '600', fontSize: 13 },
+  cashOnly: { backgroundColor: C.amberBg, borderRadius: 8, padding: 8 },
+  cashOnlyText: { color: C.amber, fontWeight: '700', fontSize: 13 },
   pillText: { fontWeight: '700', fontSize: 12 },
   drawerFlash: { position: 'absolute', top: 60, alignSelf: 'center', backgroundColor: C.black, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 16, zIndex: 5 },
   drawerText: { color: '#fff', fontWeight: '700' },

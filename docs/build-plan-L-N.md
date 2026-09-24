@@ -36,22 +36,22 @@ The **Phase** column refers to section 5.
 | L5 | Unknown barcode flow, manual (1.1) | ✅ | P5: unknown barcode → one screen (name, price, category) → rung at once, offline; synced via idempotent `POST /device/items`, duplicates aliased (ADR 0013). | P5 |
 | L6 | Open-price items with keypad (1.1) | ✅ | P5: open-price items ask for the price on a cents keypad; card price follows the dual %; `price_source: open` on the line. | P5 |
 | L7 | Hold / recall tickets (1.1) | ✅ | P7: Hold parks the ticket (`sale.suspended`), several at once, survive restart; Recall brings one back and holds whatever was open instead of losing it. | P7 |
-| L8 | Split tender, correct dual pricing per portion (1.1) | 🟡 | Fold sums multiple tenders, but a sale has one `price_mode`. Needs a per-portion pricing rule (design in P9) and a card leg. | P9 |
+| L8 | Split tender, correct dual pricing per portion (1.1) | ✅ | Cash + card, two cards, any order. Each tender covers cash-price cents (card `a` covers `a × C/K`); finishing on either tender closes the sale exactly; the customer never pays the card price on the cash part. `splitTotals` declares what was taken, tax blended the same way. ADR 0017. | P9 |
 | L9 | Cash tender keypad with quick-cash buttons (1.2) | ✅ | Exact / next $ / bills, and a cents keypad. | — |
 | L10 | Change on the customer screen in big green (1.2) | ✅ | "Paid" state shows change in green (browser window). | — |
 | L11 | Drawer discipline: opens only on tender or PIN; every open an event with cashier id (1.2) | ✅ | P3 + P6: the drawer opens only on a cash tender, a recorded movement, a count, or "no sale" behind `drawer.no_sale` (or a manager PIN); every open is an event with the cashier and a reason. | P3, P6 |
 | L12 | Cash drops / safe drops / paid-outs / paid-ins (1.2) | ✅ | P6: safe drops, paid-outs (with payee) and paid-ins, each with a reason, as events; permission-gated; in the merchant app and admin Cash views. | P6 |
 | L13 | Blind cash count at shift end; over/short by cashier; trend (1.2) | ✅ | P6: blind count at close (expected hidden until after); over/short by cashier and by day; drawer-short alert over $5. | P6 |
-| L14 | Terminal tender, amount pushed to PAX (1.3) | ⛔ | PaymentProvider + stub exist; no API endpoint, no terminal pairing. **Needs PAX A35 + Finix (AD Pay LLC account).** The flow can be built end to end against the stub. | P9 (stub), later P-HW |
-| L15 | Dual pricing correct on every path: cash, card, split, refund, void; both totals on receipt (1.3) | 🟡 | Cash, refund and void paths ✅ (P7: refunds at the price mode paid, by line, exact remainder on full return; void = refund rest + void); both totals on every receipt ✅. Card and split paths come with P9. | P7, P9 |
+| L14 | Terminal tender, amount pushed to PAX (1.3) | ⛔ | Built end to end against the stub (P9): `POST /device/payments/terminal-charge` → `PaymentProvider.terminalCharge`, idempotent on the tender id, retry-safe. **Real terminal still needs PAX A35 + Finix (AD Pay LLC account).** | P9 (stub ✅), later P-HW |
+| L15 | Dual pricing correct on every path: cash, card, split, refund, void; both totals on receipt (1.3) | ✅ | Cash, card and split sales; refunds by line at the price paid (card refunds back to the card, capped at what's left on the charge); void of a split sale refunds each tender its own way; both totals on every receipt. Split sales refund by void, not by line (ADR 0017). | P7, P9 |
 | L16 | Age verification by category, logged with cashier id, time, item (1.4) | 🟡 | Manual prompt + `sale.age_verified` with time, line and cashier (P3). Per-state age rules by category: P10. | P10 |
 | L17 | State tax tables, basic: cigarette, vape, sugar, bottle deposit, bag fee, per location, effective dates (1.4) | 🟡 | One sales-tax rate per location + taxable flag per category. No excise, deposits, fees or effective dates. | P10 |
 | L18 | Customer screen: live cart with both prices, tax, totals, large type (1.5) | ✅ | Browser second window. (Android Presentation display ⛔ hardware.) | — |
-| L19 | Customer screen states idle → cart → "tap card" → approved/declined → thanks + change (1.5) | 🟡 | idle/cart/paid exist. No formal state machine; no tap/approved/declined states. | P9 |
+| L19 | Customer screen states idle → cart → "tap card" → approved/declined → thanks + change (1.5) | ✅ | `DisplayPhase` idle/cart/card/approved/declined/paid, driven by the register; paid-so-far shown on split. | P9 |
 | L20 | 80mm receipt with logo, both prices, disclosure, itemized tax, return policy, QR (1.6) | 🟡 | P8: logo, both prices + disclosure, tax itemized by rate, return policy, QR (store link), per-location settings with live preview. Physical 80mm printing ⛔ hardware module; digital-receipt QR ⛔ hosting (N). | P8, P-HW |
 | L21 | Reprint any ticket from the register (1.6, L part) | ✅ | P7: register Tickets list (last 40) → reprint any ticket; refunds print the ticket with a refund footer. | P7 |
 | L22 | 72h offline on cash, full catalog, receipts, drawer (1.7) | 🟡 | Design + tests prove offline sale and exactly-once sync (browser). Not soak-tested; not on device; new features must keep it true. | every phase |
-| L23 | Store-and-forward status / "cash only" banner + retry (1.7) | 🟡 | Offline sync pill. No terminal status, no cash-only banner. | P9 |
+| L23 | Store-and-forward status / "cash only" banner + retry (1.7) | ✅ | Cash-only banner whenever the register can't reach the server (card button off, cash untouched); a card request that got no answer offers "Try again" with the same idempotency key, so a retry can't double-charge. | P9 |
 | L24 | Power-loss safe: tender + completion together before drawer (1.7) | ✅ | Implemented and tested. | — |
 | L25 | Self-healing: crash → auto-restart into same ticket (1.7) | 🟡 | Open ticket restores after reload ✅. OS-level auto-restart ⛔ Android build/kiosk. | P-HW |
 | L26 | Printer/scanner/terminal health on the sync pill; one-tap tests (1.7) | ⛔ | P4 built the health model (per-slot state in every heartbeat, device panel, alerts) and the remote printer test. Real readings need the hardware module. | P-HW |
@@ -85,7 +85,7 @@ The **Phase** column refers to section 5.
 | L44 | Device page: heartbeat, version, network, printer/terminal/scanner, queue, last 200 log lines, config diff (3.2) | ✅ | P4: admin `/devices/:id`, live. Real hardware readings ⛔ until the device module (P-HW); browser reports `preview`. | P4 |
 | L45 | Remote actions: restart, force sync, reprint, printer test, re-pair terminal, push config, roll back build, reboot; audited (3.2) | 🟡 | P4: restart app, force sync, push config, reprint any ticket, printer test (preview), fetch logs, sign out — queued, pushed over `/ws` or the heartbeat, audited, results reported. Re-pair terminal / roll back build / reboot ⛔ device module + MDM. | P4, P-HW |
 | L46 | Remote screen view/control via MDM with consent banner (3.2) | ⛔ | Needs the MDM vendor decision and contract. | — |
-| L47 | Ticket replay incl. terminal request/response (3.2) | 🟡 | Replay ✅. Terminal request/response comes with P9 (stub) and for real with P-HW. | P9 |
+| L47 | Ticket replay incl. terminal request/response (3.2) | 🟡 | Replay ✅; every terminal request and answer is a `sale.card_attempt` event in the sale's timeline (stub) ✅. Real terminal responses with P-HW. | P9, P-HW |
 | L48 | Alert console: offline registers, stuck queues, unreachable terminals, high void rates (3.2) | ✅ | P4: `/alerts`, live, with rules for offline registers, stuck queues, rejected events, hardware errors (terminal once it reports), PIN lockouts, void rate. | P4 |
 | L49 | Settlement & fee reconciliation (3.3) | ⛔ | Needs live processor settlement files. | P-PAY |
 | L50 | Residual/margin report per merchant per month (3.3) | ⛔ | Our revenue side is computable from pricing plans. **Processor cost needs the Finix rate card and real interchange data.** Report shell + manual cost inputs are buildable. | P13 |
@@ -100,11 +100,11 @@ The **Phase** column refers to section 5.
 | L54 | Both prices before paying, every time | ✅ | Customer screen cart state. Must stay true on every new path (split, card). | every phase |
 | L55 | Under 20 seconds in and out | 🟡 | P5: measured — median seconds per sale and % under 20 s in admin and merchant summaries. Hitting the target needs real stores and hardware. | P5 |
 | L56 | Change in big green numbers | ✅ | Same as L10. | — |
-| L57 | Never sees a processor's name, a spinner, or "system down" | 🟡 | Offline sale works silently. Card states and error copy come in P9. | P9 |
-| L58 | Customer screen "tap on the card machine" (same as L19) | 🟡 | | P9 |
+| L57 | Never sees a processor's name, a spinner, or "system down" | ✅ | All customer copy in `ui/copy.ts`; card states are still text, no spinner, no processor name; decline copy is ink, not red. Wording review still listed under Legal/compliance. | P9 |
+| L58 | Customer screen "tap on the card machine" (same as L19) | ✅ | | P9 |
 | L59 | Receipt by text (L / N — N part) | — | Counted under N. | — |
 
-**L tally:** 6 ✅ · 21 🟡 · 22 ⬜ · 9 ⛔, plus L59 counted under N (59 rows). About 6 of the 🟡/⬜ items also have a hardware- or processor-blocked part (L18, L20, L25, L37, L45, L47).
+**L tally:** 33 ✅ · 12 🟡 · 4 ⬜ · 9 ⛔, plus L59 counted under N (59 rows). About 6 of the 🟡/⬜ items also have a hardware- or processor-blocked part (L18, L20, L25, L37, L45, L47).
 
 ---
 
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P8 Receipt v2 | #12 | PR open — per-location receipt settings (logo, header lines, return policy, footer, QR link, after-sale ask/print/none) edited in admin and the merchant app with a live preview; tax itemized by rate; zero-tap cash sale. ADR 0016. |
+| P9 Card & split tender | #13 | PR open — card on the stub through an idempotent `terminal-charge` endpoint, split tender (cash + card, two cards) with dual pricing per portion, card refunds and split voids, customer-screen card states, cash-only banner and safe retry, card attempts in the sale timeline. ADR 0017. |
+| P8 Receipt v2 | #12 | merged — per-location receipt settings (logo, header lines, return policy, footer, QR link, after-sale ask/print/none) edited in admin and the merchant app with a live preview; tax itemized by rate; zero-tap cash sale. ADR 0016. |
 | P7 Ticket lifecycle | #11 | merged — hold/recall (several parked tickets), register Tickets list with reprint, refunds by line at the price paid, void of a completed sale (refund rest + void), PIN-gated; large refund/void alert. ADR 0015. |
 | P6 Cash management | #10 | merged — drawer sessions (counted float), safe drops / paid-outs / paid-ins with reasons, no-sale behind a PIN, blind count, over/short by cashier and day (merchant app Cash tab, admin Cash tab), drawer-short and no-sale-spike alerts. ADR 0014. |
 | P5 Register speed | #9 | merged — keyboard-wedge scanning, forgiving search, qty merge + long-press qty, case barcodes, open price, unknown barcode → item minted on the register (offline outbox, idempotent, aliases), price check with cost behind a PIN, sale-speed metric. ADR 0013. |

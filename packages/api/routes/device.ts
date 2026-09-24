@@ -1,15 +1,16 @@
 /**
  * Register routes. Identity and tenancy come from the device token alone.
  */
-import { EventBatchSchema } from '@adpay/shared';
-import { DeviceItemCreateInput } from '@adpay/shared';
+import { DeviceItemCreateInput, EventBatchSchema } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { asDevice, requireDevice } from '../http/auth-hooks';
 import type { AppDeps } from '../server';
 import { getCatalogSnapshot } from '../services/catalog';
 import { catalogVersion, createItemFromDevice } from '../services/catalog-write';
 import { ingestEvents } from '../services/events';
 import { deviceIdentity } from '../services/onboarding';
+import { cardRefund, terminalCharge } from '../services/payments';
 import { registerStaff } from '../services/staff';
 
 export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -36,6 +37,23 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
   app.post('/device/items', async (request) => {
     const d = asDevice(request);
     return createItemFromDevice(db, d, DeviceItemCreateInput.parse(request.body), request.logContext.trace_id);
+  });
+
+  // Card payments (P9): amounts and ids only; the provider drives the terminal. Idempotent by the
+  // register-minted tender_id / refund_id, so a retry never charges or refunds twice.
+  app.post('/device/payments/terminal-charge', async (request) => {
+    const body = z.strictObject({ sale_id: z.uuid(), tender_id: z.uuid(), amount_cents: z.int().positive().max(10_000_00) }).parse(request.body);
+    return terminalCharge(db, deps.payments, asDevice(request), body, request.logContext.trace_id);
+  });
+
+  app.post('/device/payments/card-refund', async (request) => {
+    const body = z.strictObject({ sale_id: z.uuid(), refund_id: z.uuid(), provider_ref: z.string().min(1).max(200), amount_cents: z.int().positive().max(10_000_00) }).parse(request.body);
+    return cardRefund(db, deps.payments, asDevice(request), body, request.logContext.trace_id);
+  });
+
+  app.get('/device/payments/terminal', async (request) => {
+    const d = asDevice(request);
+    return { provider: deps.payments.name, ...(await deps.payments.terminalStatus(d.register_id)) };
   });
 
   /** Append-only, idempotent event push (device wins on sales). Safe to retry any number of times. */

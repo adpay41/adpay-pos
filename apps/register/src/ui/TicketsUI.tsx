@@ -6,7 +6,7 @@
 import { mulQty, refundQuote, refundableQty, type FoldedSale, type Permission } from '@adpay/shared';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { ParkedTicket, SaleSession } from '../core/session';
+import type { CardRefunder, ParkedTicket, SaleSession } from '../core/session';
 import type { StaffGate } from '../core/staff';
 import type { EventStore } from '../core/store';
 import { OverridePrompt } from './StaffUI';
@@ -48,6 +48,7 @@ export function TicketBrowser({
   store,
   session,
   staff,
+  cardRefund,
   onReprint,
   onCashBack,
   onClose,
@@ -55,6 +56,8 @@ export function TicketBrowser({
   store: EventStore;
   session: SaleSession;
   staff: StaffGate;
+  /** Puts money back on a card through the processor (P9). */
+  cardRefund: CardRefunder;
   onReprint: (sale: FoldedSale) => Promise<void>;
   /** Cash went back to a customer: kick the drawer, print the slip, refresh the drawer. */
   onCashBack: (sale: FoldedSale, amount: number, what: 'refund' | 'void') => Promise<void>;
@@ -120,13 +123,13 @@ export function TicketBrowser({
         onReprint={() => void run(() => onReprint(t.sale))}
         onRefund={(lines, reason) =>
           guarded('sale.refund', t.sale.sale_id, async () => {
-            const r = await session.refund(t.sale.sale_id, lines, reason);
+            const r = await session.refund(t.sale.sale_id, lines, reason, cardRefund);
             await onCashBack(r.sale, r.amount, 'refund');
           })
         }
         onVoid={() =>
           guarded('sale.void', t.sale.sale_id, async () => {
-            const r = await session.voidCompleted(t.sale.sale_id, 'Voided at register');
+            const r = await session.voidCompleted(t.sale.sale_id, 'Voided at register', cardRefund);
             await onCashBack(r.sale, r.amount, 'void');
           })
         }
@@ -150,7 +153,7 @@ export function TicketBrowser({
                 {sale.refunded_cents > 0 && sale.status === 'completed' ? ` · refunded ${usd(sale.refunded_cents)}` : ''}
               </Text>
             </View>
-            <Text style={s.money}>{usd(sale.price_mode === 'card' ? sale.card.total_cents : sale.cash.total_cents)}</Text>
+            <Text style={s.money}>{usd(sale.price_mode === 'split' && sale.declared ? sale.declared.total_cents : sale.price_mode === 'card' ? sale.card.total_cents : sale.cash.total_cents)}</Text>
           </Pressable>
         ))}
       </ScrollView>
@@ -192,7 +195,7 @@ function TicketDetail({
       return 0;
     }
   })();
-  const refundable = sale.status === 'completed' && Object.values(left).some((q) => q > 0);
+  const refundable = sale.status === 'completed' && sale.price_mode !== 'split' && Object.values(left).some((q) => q > 0);
 
   return (
     <View style={{ gap: 8 }}>
