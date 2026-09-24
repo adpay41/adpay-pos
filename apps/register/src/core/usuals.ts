@@ -61,7 +61,7 @@ export function usualLinesFrom(sale: FoldedSale): { item_id: string; qty: number
 }
 
 /** Ring the batch, one line at a time through the session. */
-export async function ringBatch(session: SaleSession, batch: Batch, ageConfirmed: boolean): Promise<void> {
+export async function ringBatch(session: SaleSession, batch: Batch, ageConfirmed: boolean, idCheck?: { age: number; jurisdiction: string | null }): Promise<void> {
   if (batch.min_age && !ageConfirmed) throw new Error(`This needs an ID check (${batch.min_age}+)`);
-  for (const l of batch.lines) await session.addItem(l.item, { qty: l.qty, entry: 'key', ageConfirmed, ...(l.price ? { price: l.price } : {}) });
+  for (const l of batch.lines) await session.addItem(l.item, { qty: l.qty, entry: 'key', ageConfirmed, ...(l.price ? { price: l.price } : {}), ...(idCheck && l.item.min_age ? { idCheck } : {}) });
 }

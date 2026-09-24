@@ -1,7 +1,7 @@
 /**
  * Admin (AD Pay staff) routes. Cross-tenant by role; every write is audited.
  */
-import { ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
+import { ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asAdmin, requireAdmin } from '../http/auth-hooks';
@@ -21,6 +21,7 @@ import {
 import { cashReport } from '../services/cash';
 import { timesheet } from '../services/timeclock';
 import { zReports } from '../services/eod';
+import { complianceLog, salesTaxReport } from '../services/compliance-reports';
 import { kpis, listAnalyses, residualReport, saveAnalysis, setProcessorCost } from '../services/money';
 import { merchantConfig, postSupportMessage, setFeatureFlags, setPacks, supportInbox, supportThread } from '../services/merchant-config';
 import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPlans, updateOnboarding } from '../services/merchant-setup';
@@ -103,6 +104,44 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     return { ok: true };
   });
   app.get('/admin/kpis', async () => kpis(db));
+
+  // Tax tables across every location (P16b): the rate in force today, dated changes ahead, charges.
+  app.get('/admin/tax-tables', async () => {
+    const { rows } = await db.query<{ merchant_id: string; merchant_name: string; location_id: string; location_name: string; state: string | null; timezone: string; tax_rate_ppm: number; compliance: unknown }>(
+      `SELECT m.merchant_id, m.name AS merchant_name, l.location_id, l.name AS location_name, l.state, l.timezone, l.tax_rate_ppm, l.compliance
+         FROM locations l JOIN merchants m ON m.merchant_id = l.merchant_id ORDER BY l.state NULLS LAST, m.name, l.name`,
+    );
+    return {
+      locations: rows.map((r) => {
+        const c = ComplianceSettingsInput.safeParse(r.compliance ?? {}).data ?? { tax_rates: [], charges: [], age_rules: {} };
+        const today = localDate(new Date(), r.timezone);
+        return {
+          merchant_id: r.merchant_id,
+          merchant_name: r.merchant_name,
+          location_id: r.location_id,
+          location_name: r.location_name,
+          state: r.state,
+          standard_rate_ppm: taxRateOn(c.tax_rates, 'standard', today, r.tax_rate_ppm),
+          upcoming: c.tax_rates.filter((t) => t.effective_from > today).map((t) => ({ tax_class: t.tax_class, rate_ppm: t.rate_ppm, effective_from: t.effective_from })),
+          classes: [...new Set(c.tax_rates.map((t) => t.tax_class))],
+          charges: c.charges.map((x) => ({ kind: x.kind, label: x.label, amount_cents: x.amount_cents, rate_ppm: x.rate_ppm, categories: x.category_ids.length })),
+          age_overrides: c.age_rules,
+        };
+      }),
+    };
+  });
+  app.get('/admin/merchants/:merchantId/reports/sales-tax', async (request) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    const Day = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
+    const r = z.object({ from: Day, to: Day, location_id: z.uuid().optional() }).parse(request.query);
+    return salesTaxReport(db, merchantId, r.from, r.to, r.location_id ?? null);
+  });
+  app.get('/admin/merchants/:merchantId/reports/compliance', async (request) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    const Day = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
+    const r = z.object({ from: Day, to: Day }).parse(request.query);
+    return { entries: await complianceLog(db, merchantId, r.from, r.to) };
+  });
   app.get('/admin/merchants/:merchantId/zreports', async (request) => {
     const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
     const Day = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);

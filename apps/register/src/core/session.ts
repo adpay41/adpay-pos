@@ -208,6 +208,8 @@ export class SaleSession {
     opts: {
       qty?: number;
       ageConfirmed?: boolean;
+      /** The ID barcode was scanned and passed (P16b): age and jurisdiction only, never the ID itself. */
+      idCheck?: { age: number; jurisdiction: string | null };
       entry?: 'key' | 'scan' | 'search' | 'new_item';
       /** Typed at the register for an open-price item: both prices, card derived by the caller. */
       price?: { cash: Cents; card: Cents };
@@ -259,7 +261,12 @@ export class SaleSession {
         },
         saleId,
       );
-      if (item.min_age) await this.emit('sale.age_verified', { line_id, method: 'manual', verified_by_user_id: this.actor }, saleId);
+      if (item.min_age)
+        await this.emit(
+          'sale.age_verified',
+          { line_id, method: opts.idCheck ? 'id_scan' : 'manual', verified_by_user_id: this.actor, id_check: opts.idCheck ?? null },
+          saleId,
+        );
       this.notify();
       return this.state();
     });

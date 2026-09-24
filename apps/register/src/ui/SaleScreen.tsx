@@ -15,7 +15,10 @@ import {
   bagFeesOn,
   effectiveMinAge,
   feeItem,
+  ID_FLAG_TEXT,
+  checkId,
   dropSuggestion,
+  type IdCheck,
   hhmm,
   lineTotal,
   pctChangeText,
@@ -188,12 +191,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
    * item again raises its line. Age checks are skipped only when it merges into an already-checked
    * line; open-price items ask for the price.
    */
-  const ring = (item: CatalogItem, opts: { qty?: number; entry: Entry; ageConfirmed?: boolean }) => {
+  const ring = (item: CatalogItem, opts: { qty?: number; entry: Entry; ageConfirmed?: boolean; idCheck?: { age: number; jurisdiction: string | null } }) => {
     const qty = opts.qty ?? 1;
     if (priceCheck) return setModal({ kind: 'price_check', item, showCost: false });
     if (item.min_age && !opts.ageConfirmed && !ses.wouldMerge(item)) return setModal({ kind: 'age', item, qty, entry: opts.entry });
     if (item.open_price) return setModal({ kind: 'open_price', item, qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed });
-    void run(() => ses.addItem(item, { qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed }));
+    void run(() => ses.addItem(item, { qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed, ...(opts.idCheck ? { idCheck: opts.idCheck } : {}) }));
   };
   const addItem = (item: CatalogItem) => ring(item, { entry: query ? 'search' : 'key' });
   // Compliance (P10): bag-fee keys in force today, and each category's effective age check.
@@ -204,10 +207,10 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   // One-tap baskets (P14): repeat the last sale, or a cashier's "usual".
   const byId = useMemo(() => new Map(shown.items.map((i) => [i.item_id, i])), [shown]);
   const myUsuals = (catalog.usuals ?? []).filter((u) => staff.member && u.user_id === staff.member.user_id);
-  const ringAll = (batch: Batch, label: string, ageConfirmed: boolean) =>
+  const ringAll = (batch: Batch, label: string, ageConfirmed: boolean, idCheck?: { age: number; jurisdiction: string | null }) =>
     void run(async () => {
       if (batch.lines.length === 0) throw new Error(`Nothing to ring: ${batch.skipped.join(', ') || 'no items'} not sold any more`);
-      await ringBatch(rt.session, batch, ageConfirmed);
+      await ringBatch(ses, batch, ageConfirmed, idCheck);
       rt.log.info('batch rung', { label, lines: batch.lines.length, skipped: batch.skipped.length });
       if (batch.skipped.length) setModal({ kind: 'error', message: `Rung ${label}. Not rung (not sold any more, or needs a price): ${batch.skipped.join(', ')}.` });
     });
@@ -233,6 +236,27 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   onCodeRef.current = onCode;
   const modalRef = useRef(modal.kind);
   modalRef.current = modal.kind;
+  // ID scan (P16b): a licence barcode arrives as several fast lines. While an age check is open they
+  // are collected and parsed after a short pause; only the derived age ever leaves checkId.
+  const [idResult, setIdResult] = useState<IdCheck | null>(null);
+  const idBuf = useRef('');
+  const idTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onIdScan = (raw: string) => {
+    const m = modal;
+    const minAge = m.kind === 'age' ? (m.item.min_age ?? 0) : m.kind === 'batch_age' ? (m.batch.min_age ?? 0) : 0;
+    if (!minAge) return;
+    const r = checkId(raw, minAge, localDate(new Date(), rt.identity.timezone));
+    rt.log.info('id scanned', { ok: r.ok, flags: r.flags.join(','), age_ok: r.age !== null && r.age >= minAge });
+    if (!r.ok) return setIdResult(r);
+    const idCheck = { age: r.age!, jurisdiction: r.jurisdiction };
+    setIdResult(null);
+    setModal({ kind: 'none' });
+    if (m.kind === 'age') ring(m.item, { qty: m.qty, entry: m.entry, ageConfirmed: true, idCheck });
+    else if (m.kind === 'batch_age') ringAll(m.batch, m.label, true, idCheck);
+  };
+  const onIdScanRef = useRef(onIdScan);
+  onIdScanRef.current = onIdScan;
+  useEffect(() => setIdResult(null), [modal.kind]);
   useEffect(() => {
     if (Platform.OS !== 'web') return; // The Kotlin module delivers scans on the device (P-HW).
     const decoder = new WedgeDecoder();
@@ -242,6 +266,16 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       e.preventDefault();
       e.stopPropagation();
       setQuery('');
+      if (modalRef.current === 'age' || modalRef.current === 'batch_age') {
+        idBuf.current += code + '\n';
+        if (idTimer.current) clearTimeout(idTimer.current);
+        idTimer.current = setTimeout(() => {
+          const raw = idBuf.current;
+          idBuf.current = '';
+          onIdScanRef.current(raw);
+        }, 250);
+        return;
+      }
       if (modalRef.current === 'none' || modalRef.current === 'price_check') onCodeRef.current(code);
     };
     window.addEventListener('keydown', onKey, true);
@@ -689,9 +723,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   <Text style={{ color: '#fff' }}>Held ({session.parked.length})</Text>
                 </Pressable>
               ) : null}
-              <Pressable style={s.ghost} onPress={() => setModal({ kind: 'tickets' })}>
-                <Text>Tickets</Text>
-              </Pressable>
+              {!training ? (
+                // Refunds and voids move real money: not from training mode.
+                <Pressable style={s.ghost} onPress={() => setModal({ kind: 'tickets' })}>
+                  <Text>Tickets</Text>
+                </Pressable>
+              ) : null}
               {flags.price_check ? (
                 <Pressable style={[s.ghost, priceCheck && s.ghostOn]} onPress={() => setPriceCheck((v) => !v)}>
                   <Text style={priceCheck ? { color: '#fff' } : undefined}>Price check</Text>
@@ -772,13 +809,15 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       {modal.kind === 'batch_age' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
           <Text style={s.modalTitle}>Check ID — {modal.batch.min_age}+</Text>
-          <Text style={s.modalBody}>{modal.label} includes age-restricted items. Confirm the customer is {modal.batch.min_age} or older.</Text>
+          <Text style={s.modalBody}>{modal.label} includes age-restricted items. Scan their ID, or confirm they are {modal.batch.min_age} or older.</Text>
+          {idResult ? <Text style={s.idWarn}>{idResult.flags.map((f) => ID_FLAG_TEXT[f]).join(' ')}</Text> : null}
           <View style={s.actions}>
             <Pressable style={s.ghost} onPress={() => setModal({ kind: 'none' })}>
               <Text>Not verified</Text>
             </Pressable>
             <Pressable
-              style={s.primary}
+              style={[s.primary, !!idResult && (idResult.flags.includes('under_age') || idResult.flags.includes('expired')) && s.disabled]}
+              disabled={!!idResult && (idResult.flags.includes('under_age') || idResult.flags.includes('expired'))}
               onPress={() => {
                 const { batch, label } = modal;
                 setModal({ kind: 'none' });
@@ -835,14 +874,16 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         <Overlay onClose={() => setModal({ kind: 'none' })}>
           <Text style={s.modalTitle}>Check ID — {modal.item.min_age}+</Text>
           <Text style={s.modalBody}>
-            {modal.item.name} is age-restricted. Confirm the customer is {modal.item.min_age} or older.
+            {modal.item.name} is age-restricted. Scan the back of their ID, or check it by eye and confirm they are {modal.item.min_age} or older.
           </Text>
+          {idResult ? <Text style={s.idWarn}>{idResult.flags.map((f) => ID_FLAG_TEXT[f]).join(' ')}</Text> : null}
           <View style={s.actions}>
             <Pressable style={s.ghost} onPress={() => setModal({ kind: 'none' })}>
               <Text>Not verified</Text>
             </Pressable>
             <Pressable
-              style={s.primary}
+              style={[s.primary, !!idResult && (idResult.flags.includes('under_age') || idResult.flags.includes('expired')) && s.disabled]}
+              disabled={!!idResult && (idResult.flags.includes('under_age') || idResult.flags.includes('expired'))}
               onPress={() => {
                 const { item, qty, entry } = modal;
                 setModal({ kind: 'none' });
@@ -1103,7 +1144,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       {modal.kind === 'held' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
           <HeldTickets
-            session={rt.session}
+            session={ses}
             onClose={() => setModal({ kind: 'none' })}
             onRecall={(id) => {
               setModal({ kind: 'none' });
@@ -1384,6 +1425,7 @@ const s = StyleSheet.create({
   onClock: { borderColor: '#2f7d4f' },
   dropBanner: { backgroundColor: '#fff4e5', borderColor: '#f3d7a8', borderWidth: 1, borderRadius: 8, padding: 10 },
   dropText: { color: C.ink, fontWeight: '700' },
+  idWarn: { color: C.amber, fontWeight: '800', fontSize: 16 },
   trainingBanner: { backgroundColor: C.black, borderRadius: 8, padding: 10 },
   trainingText: { color: '#fff', fontWeight: '800' },
   zLine: { fontFamily: Platform.OS === 'web' ? 'monospace' : undefined, fontSize: 12, color: C.ink },

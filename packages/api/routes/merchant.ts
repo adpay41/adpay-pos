@@ -13,8 +13,9 @@ import { cashReport } from '../services/cash';
 import { recentSales, salesCompare, salesSummary } from '../services/reports';
 import { timesheet } from '../services/timeclock';
 import { zReports } from '../services/eod';
+import { complianceLog, salesTaxReport } from '../services/compliance-reports';
 import { merchantConfig, postSupportMessage, supportThread } from '../services/merchant-config';
-import { SupportMessageInput, timesheetCsv } from '@adpay/shared';
+import { SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
 import { forbidden } from '../http/errors';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -77,6 +78,26 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
   // Time clock (P15): hours by person and day, weekly overtime, and the payroll CSV.
   const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
   const Range = z.object({ from: Day, to: Day }).refine((r) => r.from <= r.to && Date.parse(r.to) - Date.parse(r.from) <= 62 * 86_400_000, 'Up to 62 days, from ≤ to');
+  // Sales-tax report (quarterly filing pack) and compliance log for an inspector (P16b).
+  const Quarter = z.object({ from: Day, to: Day, location_id: z.uuid().optional() }).refine((r) => r.from <= r.to && Date.parse(r.to) - Date.parse(r.from) <= 93 * 86_400_000, 'Up to a quarter (93 days), from ≤ to');
+  app.get('/merchant/reports/sales-tax', reports, async (request) => {
+    const r = Quarter.parse(request.query);
+    return salesTaxReport(db, asMerchantUser(request).merchant_id, r.from, r.to, r.location_id ?? null);
+  });
+  app.get('/merchant/reports/sales-tax.csv', reports, async (request, reply) => {
+    const r = Quarter.parse(request.query);
+    const t = await salesTaxReport(db, asMerchantUser(request).merchant_id, r.from, r.to, r.location_id ?? null);
+    return reply.header('content-type', 'text/csv; charset=utf-8').send(salesTaxCsv(t));
+  });
+  app.get('/merchant/reports/compliance', reports, async (request) => {
+    const r = Quarter.parse(request.query);
+    return { entries: await complianceLog(db, asMerchantUser(request).merchant_id, r.from, r.to) };
+  });
+  app.get('/merchant/reports/compliance.csv', reports, async (request, reply) => {
+    const r = Quarter.parse(request.query);
+    return reply.header('content-type', 'text/csv; charset=utf-8').send(complianceCsv(await complianceLog(db, asMerchantUser(request).merchant_id, r.from, r.to)));
+  });
+
   // End of day (P16): Z-reports rebuilt from the events and checked against what the register printed.
   app.get('/merchant/zreports', reports, async (request) => {
     const r = Range.parse(request.query);

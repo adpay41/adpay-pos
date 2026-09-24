@@ -16,6 +16,7 @@ import { CashierCard, CompareCard, LiveTicker, tickerFromList, tickerFromMessage
 import { StaffTab, type Me } from './staff';
 import { SupportTab } from './support';
 import { HoursTab } from './hours';
+import { TaxCompliance } from './reports';
 import { C, usd } from './theme';
 
 
@@ -322,6 +323,7 @@ function SalesTab({ token }: { token: string }) {
             ))}
           </View>
           <CashierCard rows={data.by_cashier ?? []} />
+          <TaxCompliance token={token} />
           <View style={s.card}>
             <View style={s.line}>
               <Text style={s.lineName}>Voids</Text>

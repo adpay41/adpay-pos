@@ -65,3 +65,16 @@ describe('training mode', () => {
     expect((await store.eventsSince(0)).length).toBe(before);
   });
 });
+
+describe('ID scan at the age check (P16b)', () => {
+  it('records the check as id_scan with only the age and state', async () => {
+    const { store, session } = await setup();
+    await session.addItem({ ...COFFEE, name: 'Newport', min_age: 21 }, { ageConfirmed: true, idCheck: { age: 34, jurisdiction: 'NJ' } });
+    await session.addItem({ ...COFFEE, item_id: randomUUID(), name: 'Lottery', min_age: 18 }, { ageConfirmed: true });
+    const checks = (await store.eventsSince(0)).filter((e) => e.type === 'sale.age_verified').map((e) => e.payload);
+    expect(checks).toEqual([
+      expect.objectContaining({ method: 'id_scan', id_check: { age: 34, jurisdiction: 'NJ' } }),
+      expect.objectContaining({ method: 'manual', id_check: null }),
+    ]);
+  });
+});
