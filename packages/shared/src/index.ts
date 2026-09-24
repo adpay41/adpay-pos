@@ -19,3 +19,4 @@ export * from './compliance';
 export * from './compare';
 export * from './onboarding';
 export * from './flags';
+export * from './analyzer';

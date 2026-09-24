@@ -91,6 +91,7 @@ purpose: support is one person for the first 200 stores.
 | [0019](docs/decisions/0019-merchant-live-view.md) | Merchant live view: /ws ticker with register + cashier, today vs yesterday vs last week cut at the same time, per-cashier totals, per-merchant alert settings (mute, thresholds) |
 | [0020](docs/decisions/0020-onboarding-install-kit-pricing.md) | Onboarding wizard in one transaction; install kit = fresh 14-day setup codes as QR (first pairing → live); append-only pricing plans with effective dates |
 | [0021](docs/decisions/0021-feature-flags-support-chat.md) | Feature flags = code defaults + per-merchant overrides in the snapshot; pack editor seeds categories; support chat one append-only conversation per merchant over /ws |
+| [0022](docs/decisions/0022-money-analyzer-residuals-kpis.md) | Statement analyzer (manual entry + offer, printable one-pager), residuals from the ledger + plan in force (processor cost typed until Finix data), KPIs on read |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

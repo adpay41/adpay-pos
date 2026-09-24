@@ -46,6 +46,7 @@ const NAV = [
   { href: '/alerts', label: 'Alerts' },
   { href: '/support', label: 'Support' },
   { href: '/sales', label: 'Sales' },
+  { href: '/money', label: 'Money' },
   { href: '/audit', label: 'Audit log' },
 ];
 

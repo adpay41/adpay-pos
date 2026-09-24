@@ -1,10 +1,11 @@
 /**
  * Admin (AD Pay staff) routes. Cross-tenant by role; every write is audited.
  */
-import { FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
+import { ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asAdmin, requireAdmin } from '../http/auth-hooks';
+import { notFound } from '../http/errors';
 import type { AppDeps } from '../server';
 import { audit } from '../services/audit';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
@@ -18,6 +19,7 @@ import {
   tenancyTree,
 } from '../services/onboarding';
 import { cashReport } from '../services/cash';
+import { kpis, listAnalyses, residualReport, saveAnalysis, setProcessorCost } from '../services/money';
 import { merchantConfig, postSupportMessage, setFeatureFlags, setPacks, supportInbox, supportThread } from '../services/merchant-config';
 import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPlans, updateOnboarding } from '../services/merchant-setup';
 import { recentSales, salesSummary } from '../services/reports';
@@ -76,6 +78,29 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     reply.status(201);
     return postSupportMessage(db, asAdmin(request), merchantId, SupportMessageInput.parse(request.body).body, request.logContext.trace_id);
   });
+
+  // AD Pay's own numbers (P13, ADR 0022): statement analyzer, residuals, KPIs.
+  app.get('/admin/analyzer', async () => ({ analyses: await listAnalyses(db) }));
+  app.get('/admin/analyzer/:analysisId', async (request) => {
+    const { analysisId } = z.object({ analysisId: z.uuid() }).parse(request.params);
+    const [a] = await listAnalyses(db, analysisId);
+    if (!a) throw notFound('No such analysis');
+    return a;
+  });
+  app.post('/admin/analyzer', async (request, reply) => {
+    reply.status(201);
+    return saveAnalysis(db, asAdmin(request), StatementInput.parse(request.body), request.logContext.trace_id);
+  });
+  app.get('/admin/residuals', async (request) => {
+    const { month } = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(request.query);
+    return { month, rows: await residualReport(db, month) };
+  });
+  app.put('/admin/merchants/:merchantId/processor-cost', async (request) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    await setProcessorCost(db, asAdmin(request), merchantId, ProcessorCostInput.parse(request.body), request.logContext.trace_id);
+    return { ok: true };
+  });
+  app.get('/admin/kpis', async () => kpis(db));
 
   // Pricing plans with history (L51).
   app.get('/admin/merchants/:merchantId/pricing', async (request) => {
