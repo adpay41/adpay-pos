@@ -14,6 +14,24 @@ jobs:
   build:
     name: install · lint · test
     runs-on: ubuntu-latest
+    # Database tests run against real Postgres 16, the same image docker-compose.yml uses — never PGlite.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: adpay
+          POSTGRES_DB: adpay
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adpay -d adpay"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://adpay@localhost:5432/postgres
+      REQUIRE_REAL_POSTGRES: '1'
     steps:
       - uses: actions/checkout@v4
 

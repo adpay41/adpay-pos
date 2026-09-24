@@ -10,6 +10,7 @@ import {
   createTestDb,
   merchantLogin,
   pairDevice,
+  testBackend,
   type Tenant,
 } from './helpers';
 
@@ -37,6 +38,15 @@ beforeAll(async () => {
 afterAll(async () => {
   await app?.close();
   await db?.close();
+});
+
+describe('test database', () => {
+  it('runs on the backend the environment asked for (real Postgres 16 in CI)', async () => {
+    const { rows } = await db.query<{ v: string }>('SELECT version() AS v');
+    const version = rows[0]!.v;
+    console.log(`[test-db] backend=${testBackend()} ${version}`);
+    if (testBackend() === 'postgres') expect(version).toMatch(/^PostgreSQL 16\./);
+  });
 });
 
 describe('auth', () => {
@@ -123,6 +133,21 @@ describe('event ingest', () => {
     expect(again.json().accepted).toHaveLength(0);
     expect(again.json().duplicates).toHaveLength(events.length);
 
+    const { rows } = await db.query<{ n: number }>('SELECT count(*) AS n FROM sale_events WHERE sale_id = $1', [sale_id]);
+    expect(rows[0]!.n).toBe(events.length);
+  });
+
+  it('stays exactly-once when the same batch arrives concurrently (retry racing the original)', async () => {
+    // Meaningful only on real Postgres: PGlite has one connection, so these would run one by one.
+    const { sale_id, events } = cashSaleEvents(a);
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        app.inject({ method: 'POST', url: '/device/events', headers: auth(deviceA), payload: { events } }),
+      ),
+    );
+    for (const r of results) expect(r.statusCode).toBe(200);
+    const accepted = results.reduce((n, r) => n + (r.json().accepted as string[]).length, 0);
+    expect(accepted).toBe(events.length);
     const { rows } = await db.query<{ n: number }>('SELECT count(*) AS n FROM sale_events WHERE sale_id = $1', [sale_id]);
     expect(rows[0]!.n).toBe(events.length);
   });

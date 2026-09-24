@@ -38,7 +38,9 @@ processor. Demo logins are local-only and exist only in your throwaway database.
 | `pnpm dev:reset` | wipe the local database and reseed |
 | `pnpm dev --no-docker` | use your own Postgres/Redis from `.env` |
 | `pnpm db:down` | stop the Postgres/Redis containers |
-| `pnpm lint && pnpm typecheck && pnpm test` | what CI runs (tests need no database: PGlite) |
+| `npm run test:pg` | the full suite with database tests on the real Docker Postgres — **what CI runs** |
+| `pnpm test` | quick loop: database tests on PGlite (in-process), no Docker needed; not authoritative |
+| `pnpm lint && pnpm typecheck` | the other CI checks |
 
 If `pnpm` is not found, run `corepack enable` once from an Administrator terminal, or prefix the
 command with `corepack` (`corepack pnpm dev:reset`). `npm run dev` works without either.

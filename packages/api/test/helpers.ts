@@ -1,13 +1,21 @@
 /**
- * Test harness: a real Postgres (PGlite, in-process WASM) with the real migrations, and the real
- * Fastify app driven via inject(). No database service needed — this runs the same in CI.
+ * Test harness: the real migrations and the real Fastify app driven via inject(), on one of two
+ * databases:
+ *
+ *  - TEST_DATABASE_URL set → **real Postgres**. Each test file gets its own freshly created,
+ *    migrated database, dropped afterwards. This is the authoritative run and what CI uses.
+ *  - unset → PGlite (Postgres compiled to WASM, in process), for a quick local loop with no Docker.
+ *
+ * REQUIRE_REAL_POSTGRES=1 (set in CI) makes a missing TEST_DATABASE_URL an error, so CI can never
+ * silently fall back to PGlite.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import type { FastifyInstance } from 'fastify';
+import pg from 'pg';
 import { hashPassword } from '../auth/crypto';
 import type { Config } from '../config';
-import type { Db, Queryable } from '../db/db';
+import { createPgDb, type Db, type Queryable } from '../db/db';
 import { migrate } from '../db/migrate';
 import { createBaseLogger } from '../http/context';
 import { createPaymentProvider } from '../payments';
@@ -16,7 +24,47 @@ import { createLocation, createMerchant, createOrg, createRegister, issueSetupCo
 
 const int8 = (v: string) => Number(v);
 
+export type TestBackend = 'postgres' | 'pglite';
+
+export function testBackend(): TestBackend {
+  if (process.env.TEST_DATABASE_URL) return 'postgres';
+  if (process.env.REQUIRE_REAL_POSTGRES === '1') {
+    throw new Error('REQUIRE_REAL_POSTGRES=1 but TEST_DATABASE_URL is not set — refusing to fall back to PGlite');
+  }
+  return 'pglite';
+}
+
 export async function createTestDb(): Promise<Db> {
+  return testBackend() === 'postgres' ? createPostgresTestDb(process.env.TEST_DATABASE_URL!) : createPgliteTestDb();
+}
+
+/** A throwaway database on a real Postgres server, created per test file and dropped on close. */
+async function createPostgresTestDb(serverUrl: string): Promise<Db> {
+  const name = `adpay_test_${randomBytes(6).toString('hex')}`;
+  const admin = async (sql: string) => {
+    const c = new pg.Client({ connectionString: serverUrl });
+    await c.connect();
+    try {
+      await c.query(sql);
+    } finally {
+      await c.end();
+    }
+  };
+  await admin(`CREATE DATABASE ${name}`);
+  const url = new URL(serverUrl);
+  url.pathname = `/${name}`;
+  const db = createPgDb(url.toString());
+  await migrate(db);
+  return {
+    ...db,
+    close: async () => {
+      await db.close();
+      await admin(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+    },
+  };
+}
+
+async function createPgliteTestDb(): Promise<Db> {
   const pg = await PGlite.create({ parsers: { 20: int8 } });
   const wrap = (q: Pick<PGlite, 'query'>): Queryable => ({
     query: async <T>(sql: string, params?: unknown[]) => {
