@@ -76,6 +76,10 @@ purpose: support is one person for the first 200 stores.
 | [0004](docs/decisions/0004-money-integer-cents.md) | Money as integer cents |
 | [0005](docs/decisions/0005-iac-aws-cdk.md) | AWS CDK (TypeScript) for infrastructure |
 | [0006](docs/decisions/0006-finix-sandbox-entity-migration.md) | **Finix sandbox is AD11's — migration debt before production** |
+| [0007](docs/decisions/0007-local-first-development.md) | Whole stack runs locally — Docker Postgres/Redis, `pnpm dev`, no AWS, no cost |
+| [0008](docs/decisions/0008-expo-for-react-native-apps.md) | Expo (SDK 57) for the RN apps; web target for development |
+
+Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 
 ## Repo layout
 
@@ -97,5 +101,7 @@ value you do not have, stop and ask — do not invent one and do not paste one i
 
 ## Environment
 
-Node 20 LTS (`.nvmrc`), pnpm workspaces. `pnpm install` at the root. CI runs install → lint → test
-on every PR to `main`; `main` is protected and takes changes by PR only.
+Node 20 LTS (`.nvmrc`), pnpm workspaces. `pnpm dev` brings up the whole stack locally (ADR 0007).
+CI runs install → lint → test on every PR to `main`; `main` is protected and takes changes by PR only.
+`lint` is ESLint (including the Finix import boundary and the no-`parseFloat` rule for domain code);
+run `pnpm typecheck` too before pushing.

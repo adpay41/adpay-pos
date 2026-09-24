@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "AD Pay Register",
+    "slug": "adpay-register",
+    "version": "0.0.0",
+    "orientation": "landscape",
+    "userInterfaceStyle": "light",
+    "android": { "package": "us.americandreampay.register" },
+    "web": { "bundler": "metro", "name": "AD Pay Register" }
+  }
+}

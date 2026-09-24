@@ -31,6 +31,12 @@ apps/*/ios/build/
 
 # Next
 apps/admin/.next/
+apps/admin/next-env.d.ts
+
+# Expo
+.expo/
+web-build/
+expo-env.d.ts
 
 # OS / editor
 .DS_Store
