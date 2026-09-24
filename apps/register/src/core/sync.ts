@@ -20,6 +20,8 @@ const LAST_SYNC_KEY = 'last_sync_at';
 export interface Transport {
   pushEvents(events: unknown[]): Promise<{ accepted: string[]; duplicates: string[]; rejected: { event_id: string | null; reason: string }[] }>;
   pullCatalog(): Promise<CatalogSnapshot>;
+  /** Cheap staleness check; the full snapshot is pulled only when this moves. */
+  catalogVersion(): Promise<number>;
 }
 
 export interface SyncStatus {
@@ -37,6 +39,7 @@ export class SyncEngine {
   private running = false;
   private status: SyncStatus = { online: false, queued: 0, rejected: 0, lastSyncAt: null, lastError: null, catalogVersion: null };
   private listeners = new Set<(s: SyncStatus) => void>();
+  private catalogListeners = new Set<(c: CatalogSnapshot) => void>();
 
   constructor(
     private readonly store: EventStore,
@@ -62,11 +65,30 @@ export class SyncEngine {
     return raw ? (JSON.parse(raw) as CatalogSnapshot) : null;
   }
 
+  /** Called with every newly pulled snapshot (server wins on catalog). */
+  onCatalog(fn: (c: CatalogSnapshot) => void): () => void {
+    this.catalogListeners.add(fn);
+    return () => this.catalogListeners.delete(fn);
+  }
+
+  /**
+   * Pull the catalog only if the server's version is ahead of ours. Runs on every sync tick, so a
+   * price change in admin or the merchant app reaches the register within one cycle. Tickets already
+   * open keep the prices captured in their events.
+   */
+  async refreshCatalogIfStale(): Promise<boolean> {
+    const current = this.status.catalogVersion ?? (await this.cachedCatalog())?.catalog_version ?? -1;
+    const latest = await this.transport.catalogVersion();
+    if (latest === current) return false;
+    return (await this.pullCatalog()) !== null;
+  }
+
   async pullCatalog(): Promise<CatalogSnapshot | null> {
     try {
       const snap = await this.transport.pullCatalog();
       await this.store.setMeta(CATALOG_KEY, JSON.stringify(snap));
       await this.publish({ online: true, catalogVersion: snap.catalog_version });
+      for (const fn of this.catalogListeners) fn(snap);
       return snap;
     } catch (e) {
       await this.publish({ online: false, lastError: (e as Error).message });
@@ -118,7 +140,9 @@ export class SyncEngine {
     this.running = true;
     try {
       await this.pushOnce();
-      this.delay = this.status.queued > 0 ? 5_000 : 30_000;
+      await this.refreshCatalogIfStale();
+      // Idle poll is 15s until the WebSocket nudge (build plan P4) makes catalog pushes instant.
+      this.delay = this.status.queued > 0 ? 5_000 : 15_000;
     } catch (e) {
       this.delay = Math.min(60_000, this.delay * 2);
       await this.publish({ online: false, lastError: (e as Error).message });

@@ -21,13 +21,17 @@ interface ItemRow {
   name: string;
   sku: string | null;
   upc: string | null;
+  plu: string | null;
   cash_price_cents: number;
   card_price_cents: number | null;
+  cost_cents: number | null;
+  open_price: boolean;
   sell_unit: 'each' | 'pack';
   pack_qty: number;
   active: boolean;
   taxable: boolean | null;
   min_age: number | null;
+  barcodes: { barcode: string; pack_qty: number }[] | null;
 }
 
 /** `merchantId` always comes from the caller's credential or an admin-scoped route, never the body. */
@@ -46,13 +50,15 @@ export async function getCatalogSnapshot(
   if (!loc) throw notFound('Location not found');
 
   const { rows: categories } = await q.query<CatalogCategory>(
-    `SELECT category_id, name, sort, taxable, min_age, color
+    `SELECT category_id, name, sort, taxable, min_age, color, active
        FROM categories WHERE merchant_id = $1 ORDER BY sort, name`,
     [merchantId],
   );
   const { rows: items } = await q.query<ItemRow>(
-    `SELECT i.item_id, i.category_id, i.name, i.sku, i.upc, i.cash_price_cents, i.card_price_cents,
-            i.sell_unit, i.pack_qty, i.active, c.taxable, c.min_age
+    `SELECT i.item_id, i.category_id, i.name, i.sku, i.upc, i.plu, i.cash_price_cents, i.card_price_cents,
+            i.cost_cents, i.open_price, i.sell_unit, i.pack_qty, i.active, c.taxable, c.min_age,
+            (SELECT jsonb_agg(jsonb_build_object('barcode', b.barcode, 'pack_qty', b.pack_qty) ORDER BY b.barcode)
+               FROM item_barcodes b WHERE b.item_id = i.item_id) AS barcodes
        FROM items i LEFT JOIN categories c ON c.category_id = i.category_id
       WHERE i.merchant_id = $1
       ORDER BY c.sort NULLS LAST, i.name`,
@@ -76,9 +82,13 @@ export async function getCatalogSnapshot(
         name: i.name,
         sku: i.sku,
         upc: i.upc,
+        plu: i.plu,
+        barcodes: i.barcodes ?? [],
         cash_price_cents: price.cash,
         card_price_cents: price.card,
         card_price_override: i.card_price_cents !== null,
+        open_price: i.open_price,
+        cost_cents: i.cost_cents,
         taxable,
         tax_rate_ppm: taxable ? loc.tax_rate_ppm : 0,
         min_age: i.min_age,

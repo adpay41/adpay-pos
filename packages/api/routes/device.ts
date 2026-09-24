@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { asDevice, requireDevice } from '../http/auth-hooks';
 import type { AppDeps } from '../server';
 import { getCatalogSnapshot } from '../services/catalog';
+import { catalogVersion } from '../services/catalog-write';
 import { ingestEvents } from '../services/events';
 import { deviceIdentity } from '../services/onboarding';
 
@@ -20,6 +21,12 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
     const d = asDevice(request);
     await db.query(`UPDATE registers SET last_seen_at = now() WHERE register_id = $1`, [d.register_id]);
     return getCatalogSnapshot(db, d.merchant_id, d.location_id);
+  });
+
+  /** Cheap staleness check: the register pulls the full snapshot only when this number moves. */
+  app.get('/device/catalog/version', async (request) => {
+    const d = asDevice(request);
+    return { catalog_version: await catalogVersion(db, d.merchant_id) };
   });
 
   /** Append-only, idempotent event push (device wins on sales). Safe to retry any number of times. */

@@ -76,6 +76,7 @@ export async function boot(token: string): Promise<Runtime> {
   const transport: Transport = {
     pushEvents: (events) => call('/device/events', token, { events }),
     pullCatalog: () => call<CatalogSnapshot>('/device/catalog', token),
+    catalogVersion: async () => (await call<{ catalog_version: number }>('/device/catalog/version', token)).catalog_version,
   };
   const sync = new SyncEngine(store, transport);
   const catalog = await sync.pullCatalog();

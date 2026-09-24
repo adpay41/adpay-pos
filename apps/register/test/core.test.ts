@@ -19,8 +19,9 @@ const tenancy = { org_id: randomUUID(), merchant_id: randomUUID(), location_id: 
 
 function item(name: string, cash: number, card: number, extra: Partial<CatalogItem> = {}): CatalogItem {
   return {
-    item_id: randomUUID(), category_id: null, name, sku: null, upc: null, cash_price_cents: cash, card_price_cents: card,
-    card_price_override: false, taxable: true, tax_rate_ppm: 66_250, min_age: null, sell_unit: 'each', pack_qty: 1, active: true,
+    item_id: randomUUID(), category_id: null, name, sku: null, upc: null, plu: null, barcodes: [], cash_price_cents: cash,
+    card_price_cents: card, card_price_override: false, open_price: false, cost_cents: null, taxable: true, tax_rate_ppm: 66_250,
+    min_age: null, sell_unit: 'each', pack_qty: 1, active: true,
     ...extra,
   };
 }
@@ -62,12 +63,22 @@ class FakeServer implements Transport {
     return { accepted, duplicates, rejected: [] };
   }
 
+  version = 7;
+  pulls = 0;
+  items: CatalogItem[] = [BEC, COFFEE, CIGS];
+
   async pullCatalog(): Promise<CatalogSnapshot> {
     if (!this.online) throw new Error('network unreachable');
+    this.pulls++;
     return {
-      merchant_id: tenancy.merchant_id, location_id: tenancy.location_id, catalog_version: 7, dual_price_rate_ppm: 40_000,
-      tax_rate_ppm: 66_250, generated_at: new Date().toISOString(), categories: [], items: [BEC, COFFEE, CIGS],
+      merchant_id: tenancy.merchant_id, location_id: tenancy.location_id, catalog_version: this.version, dual_price_rate_ppm: 40_000,
+      tax_rate_ppm: 66_250, generated_at: new Date().toISOString(), categories: [], items: this.items,
     };
+  }
+
+  async catalogVersion(): Promise<number> {
+    if (!this.online) throw new Error('network unreachable');
+    return this.version;
   }
 }
 
@@ -201,6 +212,33 @@ describe('offline sales and sync (spec acceptance, in miniature)', () => {
     expect(offline?.items).toHaveLength(3);
   });
 
+  it('pulls a new catalog only when the server version moves, and tells the screen', async () => {
+    const store = new MemoryEventStore();
+    const server = new FakeServer();
+    const sync = new SyncEngine(store, server);
+    const seen: number[] = [];
+    sync.onCatalog((c) => seen.push(c.items[0]!.cash_price_cents));
+    await sync.pullCatalog();
+    expect(await sync.refreshCatalogIfStale()).toBe(false);
+    expect(server.pulls).toBe(1);
+
+    // A price change in admin bumps the version; the register picks it up on its next tick.
+    server.version = 8;
+    server.items = [{ ...BEC, cash_price_cents: 649, card_price_cents: 675 }, COFFEE, CIGS];
+    expect(await sync.refreshCatalogIfStale()).toBe(true);
+    expect(server.pulls).toBe(2);
+    expect(seen).toEqual([599, 649]);
+    expect((await sync.cachedCatalog())?.catalog_version).toBe(8);
+  });
+
+  it('an open ticket keeps the price it was rung at when the catalog changes underneath it', async () => {
+    const { session } = newSession();
+    await session.addItem(BEC); // rung at 599
+    const repriced = { ...BEC, cash_price_cents: 649, card_price_cents: 675 };
+    const s = await session.addItem(repriced);
+    expect(s.sale!.lines.map((l) => l.unit_cash_price_cents)).toEqual([599, 649]);
+  });
+
   it('a rejected event is acked as rejected and does not block the queue', async () => {
     const { store, session } = newSession();
     await session.addItem(BEC);
@@ -212,6 +250,7 @@ describe('offline sales and sync (spec acceptance, in miniature)', () => {
         rejected: [{ event_id: bad, reason: 'test' }],
       }),
       pullCatalog: async () => { throw new Error('unused'); },
+      catalogVersion: async () => { throw new Error('unused'); },
     };
     await new SyncEngine(store, transport).pushOnce();
     expect(await store.counts()).toMatchObject({ queued: 0, rejected: 1 });

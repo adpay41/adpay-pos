@@ -55,6 +55,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
   useEffect(() => rt.session.subscribe(setSession), [rt]);
   useEffect(() => rt.sync.subscribe(setSync), [rt]);
+  // A newer catalog (price change, new item, reordered category) replaces the keys in place.
+  useEffect(() => rt.sync.onCatalog(setCatalog), [rt]);
 
   // Customer screen follows the ticket (unless it's showing "thank you").
   useEffect(() => {
@@ -152,7 +154,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       <View style={s.body}>
         <View style={s.catCol}>
-          {catalog.categories.map((c) => (
+          {catalog.categories.filter((c) => c.active !== false).map((c) => (
             <Pressable key={c.category_id} onPress={() => setCategory(c.category_id)} style={[s.cat, category === c.category_id && s.catActive]}>
               <Text style={[s.catText, category === c.category_id && { color: '#fff' }]}>{c.name}</Text>
               {c.min_age ? <Text style={[s.catAge, category === c.category_id && { color: '#ddd' }]}>{c.min_age}+</Text> : null}

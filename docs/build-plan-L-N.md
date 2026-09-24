@@ -364,5 +364,5 @@ part of v1.
 
 | Phase | PR | Status |
 | --- | --- | --- |
-| Plan + Feature Bible | this PR | — |
-| P1 Catalog management | — | in progress |
+| Plan + Feature Bible | #4 | merged |
+| P1 Catalog management | #5 | PR open — admin catalog editor (items, categories, barcodes, open price, cost, PLU), dual-price % with card-price preview, price history, `catalog_version` bump; the register picks up changes on its next sync tick (≤15s). 72 tests on real Postgres. |

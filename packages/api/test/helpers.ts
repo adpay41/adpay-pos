@@ -100,10 +100,10 @@ export const TEST_CONFIG: Config = {
   paymentProvider: 'stub',
 };
 
-export async function createTestApp(db: Db): Promise<FastifyInstance> {
+export async function createTestApp(db: Db, overrides: Partial<Config> = {}): Promise<FastifyInstance> {
   return buildApp({
     db,
-    config: TEST_CONFIG,
+    config: { ...TEST_CONFIG, ...overrides },
     payments: createPaymentProvider('stub'),
     logger: createBaseLogger('silent'),
   });

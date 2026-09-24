@@ -13,6 +13,13 @@ export interface CatalogCategory {
   taxable: boolean;
   min_age: number | null;
   color: string | null;
+  active: boolean;
+}
+
+export interface ItemBarcode {
+  barcode: string;
+  /** Units sold when this barcode is scanned (a case UPC → pack). */
+  pack_qty: number;
 }
 
 export interface CatalogItem {
@@ -21,16 +28,34 @@ export interface CatalogItem {
   name: string;
   sku: string | null;
   upc: string | null;
+  plu: string | null;
+  /** Additional barcodes beyond `upc` (case/carton codes, alternates). */
+  barcodes: ItemBarcode[];
   cash_price_cents: number;
   /** Resolved posted card price (explicit override or derived from the location's rate). */
   card_price_cents: number;
   card_price_override: boolean;
+  /** Price entered at the register each time (deli by weight, "misc grocery"). */
+  open_price: boolean;
+  /** Merchant's cost; null until entered. Shown on the register only behind a PIN (step P5). */
+  cost_cents: number | null;
   taxable: boolean;
   tax_rate_ppm: number;
   min_age: number | null;
   sell_unit: 'each' | 'pack';
   pack_qty: number;
   active: boolean;
+}
+
+export interface PriceHistoryEntry {
+  history_id: string;
+  cash_price_cents: number;
+  card_price_cents: number | null;
+  cost_cents: number | null;
+  catalog_version: number;
+  changed_at: string;
+  changed_by_kind: string;
+  changed_by_name: string | null;
 }
 
 /** What a register pulls: a versioned, location-resolved catalog (server wins on catalog). */
