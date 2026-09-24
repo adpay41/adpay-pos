@@ -12,6 +12,7 @@ import type { AdminPrincipal, MerchantUserPrincipal } from '../auth/principal';
 import type { Db, Queryable } from '../db/db';
 import { notFound } from '../http/errors';
 import { audit } from './audit';
+import { drawerSessions } from './cash';
 
 interface Finding {
   rule: AlertRule;
@@ -39,6 +40,10 @@ export const logNotifier = (log: (obj: object, msg: string) => void): Notifier =
 const QUEUE_STUCK_MS = 10 * 60_000;
 const VOID_RATE_MIN_TICKETS = 20;
 const VOID_RATE_PERCENT = 10;
+/** A drawer counted short by more than this (cents), closed in the last 24 h. */
+const DRAWER_SHORT_ALERT_CENTS = 500;
+/** "No sale" drawer opens on one register today before it's an alert (Bible 2.6 "no-sale count spike"). */
+const NO_SALE_SPIKE = 5;
 
 async function findings(q: Queryable, now: Date): Promise<Finding[]> {
   const out: Finding[] = [];
@@ -147,6 +152,54 @@ async function findings(q: Queryable, now: Date): Promise<Finding[]> {
       merchant_id: r.merchant_id,
       location_id: r.location_id,
       register_id: null,
+    });
+  }
+  // Drawer counted short by more than $5 in the last day (Bible 2.6 "cash count short by > $Y").
+  const since = new Date(now.getTime() - 3 * 86_400_000).toISOString().slice(0, 10);
+  const recent = await drawerSessions(q, null, since);
+  const closedRecently = recent.filter((s) => s.closed_at && Date.parse(s.closed_at) > now.getTime() - 86_400_000 && (s.over_short_cents ?? 0) < -DRAWER_SHORT_ALERT_CENTS);
+  if (closedRecently.length) {
+    const regs = new Map(
+      (
+        await q.query<{ register_id: string; org_id: string; name: string }>('SELECT register_id, org_id, name FROM registers WHERE register_id = ANY($1::uuid[])', [
+          closedRecently.map((s) => s.register_id),
+        ])
+      ).rows.map((r) => [r.register_id, r]),
+    );
+    for (const s of closedRecently) {
+      const r = regs.get(s.register_id);
+      const short = -(s.over_short_cents ?? 0);
+      out.push({
+        rule: 'drawer_short',
+        dedupe_key: `drawer_short:${s.session_id}`,
+        title: `${r?.name ?? 'A register'}: drawer counted $${Math.trunc(short / 100)}.${String(short % 100).padStart(2, '0')} short`,
+        details: { session_id: s.session_id, over_short_cents: s.over_short_cents, counted_cents: s.counted_cents, expected_cents: s.expected_cents, closed_by: s.closed_by },
+        org_id: r?.org_id ?? null,
+        merchant_id: s.merchant_id,
+        location_id: s.location_id,
+        register_id: s.register_id,
+      });
+    }
+  }
+
+  // Many "no sale" drawer opens on one register today.
+  const nosale = await q.query<{ org_id: string; merchant_id: string; location_id: string; register_id: string; register_name: string; n: number; business_date: string }>(
+    `SELECT ${reg}, count(*)::int AS n, to_char(e.business_date, 'YYYY-MM-DD') AS business_date
+       FROM sale_events e JOIN registers r ON r.register_id = e.register_id JOIN locations l ON l.location_id = e.location_id
+      WHERE e.type = 'drawer.opened' AND e.payload->>'reason' = 'manual'
+        AND e.business_date = ($1::timestamptz AT TIME ZONE l.timezone)::date
+      GROUP BY r.org_id, r.merchant_id, r.location_id, r.register_id, r.name, e.business_date
+     HAVING count(*) >= $2`,
+    [now.toISOString(), NO_SALE_SPIKE],
+  );
+  for (const r of nosale.rows) {
+    const { n, business_date, ...t } = r;
+    out.push({
+      rule: 'no_sale_spike',
+      dedupe_key: `no_sale_spike:${r.register_id}:${business_date}`,
+      title: `${r.register_name}: drawer opened ${n} times without a sale today`,
+      details: { count: n, business_date },
+      ...t,
     });
   }
   return out;

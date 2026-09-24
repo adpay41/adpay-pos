@@ -9,6 +9,7 @@ import type { AppDeps } from '../server';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
 import { getSaleTimeline } from '../services/events';
 import { tenancyTree } from '../services/onboarding';
+import { cashReport } from '../services/cash';
 import { recentSales, salesSummary } from '../services/reports';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -35,6 +36,13 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
     const me = asMerchantUser(request);
     const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }).parse(request.query);
     return { sales: await recentSales(db, me.merchant_id, limit) };
+  });
+
+  // Cash drawer sessions: float, drops, paid-outs, blind counts, over/short by cashier (P6).
+  app.get('/merchant/cash', reports, async (request) => {
+    const me = asMerchantUser(request);
+    const q = z.object({ range: z.enum(['today', 'week', 'month']).default('today'), location_id: z.uuid().optional() }).parse(request.query);
+    return cashReport(db, me.merchant_id, q.range, q.location_id ?? null);
   });
 
   app.get('/merchant/sales/:saleId', reports, async (request) => {

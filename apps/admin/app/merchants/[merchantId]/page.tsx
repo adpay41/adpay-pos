@@ -2,6 +2,7 @@
 import type { SaleListRow, SalesSummary } from '@adpay/shared';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
+import { CashPanel } from '../../../components/cash-panel';
 import { CatalogEditor } from '../../../components/catalog-editor';
 import { SalesTable, SummaryView } from '../../../components/sales';
 import { StaffPanel } from '../../../components/staff-panel';
@@ -17,7 +18,7 @@ interface Tree {
 export default function MerchantPage() {
   const { merchantId } = useParams<{ merchantId: string }>();
   const [range, setRange] = useState<Range>('today');
-  const [tab, setTab] = useState<'sales' | 'catalog' | 'staff'>('sales');
+  const [tab, setTab] = useState<'sales' | 'cash' | 'catalog' | 'staff'>('sales');
   const tree = useLoad(() => api<Tree>('/admin/tenancy'), []);
   const org = tree.data?.orgs.find((o) => o.merchants.some((m) => m.merchant_id === merchantId));
   const merchant = org?.merchants.find((m) => m.merchant_id === merchantId);
@@ -33,6 +34,9 @@ export default function MerchantPage() {
       <div className="tabs">
         <button className={tab === 'sales' ? 'active' : ''} onClick={() => setTab('sales')}>
           Sales
+        </button>
+        <button className={tab === 'cash' ? 'active' : ''} onClick={() => setTab('cash')}>
+          Cash
         </button>
         <button className={tab === 'catalog' ? 'active' : ''} onClick={() => setTab('catalog')}>
           Catalog
@@ -61,6 +65,7 @@ export default function MerchantPage() {
         </>
       )}
 
+      {tab === 'cash' && <CashPanel merchantId={merchantId} />}
       {tab === 'catalog' && <CatalogEditor merchantId={merchantId} />}
       {tab === 'staff' && <StaffPanel merchantId={merchantId} />}
     </Shell>

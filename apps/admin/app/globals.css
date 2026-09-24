@@ -168,3 +168,6 @@ textarea { font: inherit; padding: 7px 10px; border: 1px solid #cfcfcf; border-r
 .kv { display: grid; grid-template-columns: 140px 1fr; gap: 6px 14px; align-items: start; }
 .kv > span:nth-child(odd) { color: #6b6b6b; }
 .logtail { background: #111; color: #e8e8e8; padding: 12px; border-radius: 8px; font-size: 12px; line-height: 1.45; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
+
+/* P6: cash (short is amber, never red near an amount) */
+.short, .short .money { color: #8a5300; }

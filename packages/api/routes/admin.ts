@@ -17,6 +17,7 @@ import {
   issueSetupCode,
   tenancyTree,
 } from '../services/onboarding';
+import { cashReport } from '../services/cash';
 import { recentSales, salesSummary } from '../services/reports';
 
 const Ppm = z.int().min(0).max(1_000_000);
@@ -104,6 +105,12 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
     const { range } = RangeQuery.parse(request.query);
     return salesSummary(db, merchantId, range);
+  });
+
+  app.get('/admin/merchants/:merchantId/cash', async (request) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    const { range } = RangeQuery.parse(request.query);
+    return cashReport(db, merchantId, range);
   });
 
   app.get('/admin/sales', async (request) => {

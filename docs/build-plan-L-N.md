@@ -39,9 +39,9 @@ The **Phase** column refers to section 5.
 | L8 | Split tender, correct dual pricing per portion (1.1) | 🟡 | Fold sums multiple tenders, but a sale has one `price_mode`. Needs a per-portion pricing rule (design in P9) and a card leg. | P9 |
 | L9 | Cash tender keypad with quick-cash buttons (1.2) | ✅ | Exact / next $ / bills, and a cents keypad. | — |
 | L10 | Change on the customer screen in big green (1.2) | ✅ | "Paid" state shows change in green (browser window). | — |
-| L11 | Drawer discipline: opens only on tender or PIN; every open an event with cashier id (1.2) | 🟡 | Cashier id on every drawer event (P3). No-sale open behind `drawer.no_sale` + override comes with P6. | P6 |
-| L12 | Cash drops / safe drops / paid-outs / paid-ins (1.2) | ⬜ | None. | P6 |
-| L13 | Blind cash count at shift end; over/short by cashier; trend (1.2) | ⬜ | No shifts or drawer sessions. | P6 |
+| L11 | Drawer discipline: opens only on tender or PIN; every open an event with cashier id (1.2) | ✅ | P3 + P6: the drawer opens only on a cash tender, a recorded movement, a count, or "no sale" behind `drawer.no_sale` (or a manager PIN); every open is an event with the cashier and a reason. | P3, P6 |
+| L12 | Cash drops / safe drops / paid-outs / paid-ins (1.2) | ✅ | P6: safe drops, paid-outs (with payee) and paid-ins, each with a reason, as events; permission-gated; in the merchant app and admin Cash views. | P6 |
+| L13 | Blind cash count at shift end; over/short by cashier; trend (1.2) | ✅ | P6: blind count at close (expected hidden until after); over/short by cashier and by day; drawer-short alert over $5. | P6 |
 | L14 | Terminal tender, amount pushed to PAX (1.3) | ⛔ | PaymentProvider + stub exist; no API endpoint, no terminal pairing. **Needs PAX A35 + Finix (AD Pay LLC account).** The flow can be built end to end against the stub. | P9 (stub), later P-HW |
 | L15 | Dual pricing correct on every path: cash, card, split, refund, void; both totals on receipt (1.3) | 🟡 | Cash path + receipt both totals ✅. Card (stub), split, refund, void paths missing. | P7, P9 |
 | L16 | Age verification by category, logged with cashier id, time, item (1.4) | 🟡 | Manual prompt + `sale.age_verified` with time, line and cashier (P3). Per-state age rules by category: P10. | P10 |
@@ -71,7 +71,7 @@ The **Phase** column refers to section 5.
 | L35 | Dual-price % per location; preview card prices before pushing (2.3) | ✅ | Admin (P1) and merchant app (P2), both with a preview of every card price that changes. | P1, P2 |
 | L36 | Staff list, PINs, roles, permissions from the phone (2.5) | ✅ | P3: merchant app Staff tab (people, roles, PINs, remove, permission matrix) + admin Staff tab. | P3 |
 | L37 | Alerts: register offline > 5 min; terminal offline; printer out of paper (2.6) | 🟡 | P4: register offline > 5 min and hardware-error alerts fire and show in the merchant app's Alerts tab. Terminal/paper readings ⛔ hardware; push/SMS delivery ⛔ accounts. | P4, P11 |
-| L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | ⬜ | Needs P6/P7 events + alert rules. | P4, P11 |
+| L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | 🟡 | P6: no-sale spike alert (5+ per register per day). Void/refund over $X comes with P7. | P6, P7 |
 | L39 | Delivery channel for alerts (push/SMS/WhatsApp) (2.6) | ⛔ | In-app inbox is buildable. **Push** needs Expo/FCM/APNs accounts; **SMS** a Twilio account; **WhatsApp** a Meta Business account. Those are signups the founder must do. | P4, P11 |
 | L40 | Support chat with "share my screen from the register" (2.8) | ⛔ | Chat is buildable. Screen share needs the MDM vendor (open decision: Esper vs own). | P12 (chat) |
 
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P5 Register speed | #9 | PR open — keyboard-wedge scanning, forgiving search, qty merge + long-press qty, case barcodes, open price, unknown barcode → item minted on the register (offline outbox, idempotent, aliases), price check with cost behind a PIN, sale-speed metric. ADR 0013. |
+| P6 Cash management | #10 | PR open — drawer sessions (counted float), safe drops / paid-outs / paid-ins with reasons, no-sale behind a PIN, blind count, over/short by cashier and day (merchant app Cash tab, admin Cash tab), drawer-short and no-sale-spike alerts. ADR 0014. |
+| P5 Register speed | #9 | merged — keyboard-wedge scanning, forgiving search, qty merge + long-press qty, case barcodes, open price, unknown barcode → item minted on the register (offline outbox, idempotent, aliases), price check with cost behind a PIN, sale-speed metric. ADR 0013. |
 | P4 Ops layer | #8 | merged — heartbeat every 30 s, device log ring + upload, remote-action queue (WS push + heartbeat fallback, audited), admin Fleet / Device page / Alert console, alert rules every minute, merchant Alerts tab, realtime `/ws` over LISTEN/NOTIFY (instant catalog nudge, live sales feed). ADR 0012. |
 | P3 Staff, PINs, roles, permissions | #7 | merged — memberships (store switcher), register sign-in by name + PIN checked on-device, lockout, permission matrix + manager override, `actor_user_id` on every event; Staff tab in the merchant app and admin. ADR 0011. |
 | P2 Catalog from the phone | #6 | merged — merchant app: add/edit items with photo (camera or library, shrunk on the phone), tile color, favorite toggle; favorites page, category order/add/hide, dual-price % with preview. Admin: photo, color, favorites panel. Register: ★ Favorites page first, colored tiles with photos. ADR 0010. |

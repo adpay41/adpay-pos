@@ -55,7 +55,8 @@ export function NumberPad({
         <Pressable style={s.ghost} onPress={onCancel}>
           <Text>Back</Text>
         </Pressable>
-        <Pressable style={[s.primary, !ok && s.disabled]} disabled={!ok} onPress={() => onConfirm(value)}>
+        {/* A money button is black: the brand never puts red next to a dollar amount. */}
+        <Pressable style={[s.primary, money && s.moneyBtn, !ok && s.disabled]} disabled={!ok} onPress={() => onConfirm(value)}>
           <Text style={s.primaryText}>{confirmLabel(value)}</Text>
         </Pressable>
       </View>
@@ -182,6 +183,7 @@ const s = StyleSheet.create({
   primary: { flexGrow: 1, backgroundColor: C.red, borderRadius: 8, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
   primaryText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   disabled: { opacity: 0.4 },
+  moneyBtn: { backgroundColor: C.black },
   input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#cfcfcf', borderRadius: 8, padding: 12, fontSize: 18 },
   chip: { borderWidth: 1, borderColor: C.line, backgroundColor: '#fff', borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14 },
   chipOn: { backgroundColor: C.black, borderColor: C.black },

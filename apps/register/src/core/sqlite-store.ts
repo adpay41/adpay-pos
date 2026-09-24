@@ -83,6 +83,10 @@ export class SqliteEventStore implements EventStore {
     return this.parse(await this.db.getAllAsync<{ body: string }>('SELECT body FROM events WHERE sale_id = ? ORDER BY device_seq', [saleId]));
   }
 
+  async eventsSince(seq: number) {
+    return this.parse(await this.db.getAllAsync<{ body: string }>('SELECT body FROM events WHERE device_seq >= ? ORDER BY device_seq', [seq]));
+  }
+
   async unacked(limit: number) {
     return this.parse(
       await this.db.getAllAsync<{ body: string }>(

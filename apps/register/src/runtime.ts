@@ -8,6 +8,7 @@ import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import { PREVIEW_HEALTH } from './core/hardware';
+import { DrawerManager } from './core/drawer';
 import { NewItemOutbox } from './core/new-items';
 import { DeviceLog, OpsAgent } from './core/ops';
 import { SaleSession } from './core/session';
@@ -65,6 +66,8 @@ export interface Runtime {
   log: DeviceLog;
   /** Items created here from unknown barcodes, waiting for the server (P5). */
   items: NewItemOutbox;
+  /** Cash drawer session: float, drops, paid-outs/-ins, blind count (P6). */
+  drawer: DrawerManager;
   uuid: () => string;
 }
 
@@ -121,6 +124,8 @@ export async function boot(token: string): Promise<Runtime> {
     uuid: () => Crypto.randomUUID(),
   });
   await session.restore();
+  const drawer = new DrawerManager(store, session, () => Crypto.randomUUID());
+  await drawer.restore();
   // Who may sign in comes with the config snapshot; a newer snapshot refreshes it (P3).
   const staff = new StaffGate(store, session);
   await staff.restore(catalog.staff);
@@ -161,5 +166,5 @@ export async function boot(token: string): Promise<Runtime> {
   session.subscribe(() => sync.kick());
   await sync.start();
   ops.start();
-  return { store, identity, catalog, session, sync, staff, ops, log, items, uuid: () => Crypto.randomUUID() };
+  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, uuid: () => Crypto.randomUUID() };
 }
