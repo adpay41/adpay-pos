@@ -32,6 +32,7 @@ import type { StaffState } from '../core/staff';
 import type { SyncStatus } from '../core/sync';
 import type { Runtime } from '../runtime';
 import { QuickKey } from './QuickKey';
+import { DrawerPanel } from './DrawerUI';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
 import { C, usd } from './theme';
@@ -48,6 +49,7 @@ type Modal =
   | { kind: 'open_price'; item: CatalogItem; qty: number; entry: Entry; ageConfirmed: boolean }
   | { kind: 'unknown'; code: string }
   | { kind: 'price_check'; item: CatalogItem; showCost: boolean }
+  | { kind: 'drawer'; startWithFloat: boolean; thenCash: boolean }
   | { kind: 'cash' }
   | { kind: 'done'; sale: FoldedSale; change: number }
   | { kind: 'receipt'; lines: readonly ReceiptLine[]; title: string }
@@ -77,6 +79,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     [],
   );
 
+  const [drawerSession, setDrawerSession] = useState(rt.drawer.current());
+  useEffect(() => rt.drawer.subscribe(setDrawerSession), [rt]);
   const [staff, setStaff] = useState<StaffState>(rt.staff.state());
   useEffect(() => rt.staff.subscribe(setStaff), [rt]);
   useEffect(() => rt.session.subscribe(setSession), [rt]);
@@ -237,6 +241,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       rt.log.info('cash sale completed', { sale: done.sale_id.slice(0, 8), total_cents: done.cash.total_cents, lines: done.lines.length });
       await hardware.kickDrawer();
       await rt.session.recordDrawer('cash_sale', done.sale_id);
+      await rt.drawer.refresh();
       display.publish(displayFor(rt.identity.merchant_name, done, { amount, change }));
       setModal({ kind: 'done', sale: done, change });
       rt.sync.kick();
@@ -290,6 +295,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             <Text style={[s.pillText, { color: C.amber }]}>No staff PINs set up</Text>
           </View>
         )}
+        <Pressable onPress={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false })} style={[s.pill, drawerSession ? s.pillDark : s.pillWarn]}>
+          <Text style={[s.pillText, { color: drawerSession ? '#fff' : C.amber }]}>{drawerSession ? 'Drawer' : 'Drawer not started'}</Text>
+        </Pressable>
         <SyncPill status={sync} onPress={() => setModal({ kind: 'device' })} />
         {Platform.OS === 'web' ? (
           <Pressable onPress={openCustomerScreen}>
@@ -418,7 +426,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Pressable
                 style={[s.payBtn, !sale?.lines.length && s.disabled]}
                 disabled={!sale?.lines.length}
-                onPress={() => setModal({ kind: 'cash' })}
+                // Cash needs a started drawer (a counted float), so the day reconciles to the cent.
+                onPress={() => setModal(rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true })}
               >
                 <Text style={s.payText}>Cash</Text>
               </Pressable>
@@ -605,6 +614,23 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         </Overlay>
       )}
 
+      {modal.kind === 'drawer' && (
+        <Overlay>
+          <DrawerPanel
+            drawer={rt.drawer}
+            staff={rt.staff}
+            session={drawerSession}
+            startWithFloat={modal.startWithFloat}
+            kick={async () => {
+              await hardware.kickDrawer();
+              rt.sync.kick();
+            }}
+            onStarted={modal.thenCash ? () => setModal({ kind: 'cash' }) : undefined}
+            onClose={() => setModal({ kind: 'none' })}
+          />
+        </Overlay>
+      )}
+
       {modal.kind === 'override' && (
         <Overlay>
           <OverridePrompt
@@ -687,7 +713,8 @@ function CashModal({ total, onCancel, onTender }: { total: number; onCancel: () 
         <Pressable style={s.ghost} onPress={onCancel}>
           <Text>Back</Text>
         </Pressable>
-        <Pressable style={[s.primary, typed < total && s.disabled]} disabled={typed < total} onPress={() => onTender(typed)}>
+        {/* Black, not red: this button carries a dollar amount. */}
+        <Pressable style={[s.primary, { backgroundColor: C.black }, typed < total && s.disabled]} disabled={typed < total} onPress={() => onTender(typed)}>
           <Text style={s.primaryText}>Take {usd(typed)}</Text>
         </Pressable>
       </View>
@@ -786,6 +813,7 @@ const s = StyleSheet.create({
   whoLock: { color: '#bbb', fontSize: 12 },
   pillOk: { backgroundColor: C.greenBg },
   pillWarn: { backgroundColor: C.amberBg },
+  pillDark: { backgroundColor: '#333' },
   pillText: { fontWeight: '700', fontSize: 12 },
   drawerFlash: { position: 'absolute', top: 60, alignSelf: 'center', backgroundColor: C.black, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 16, zIndex: 5 },
   drawerText: { color: '#fff', fontWeight: '700' },

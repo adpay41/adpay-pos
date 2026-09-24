@@ -45,6 +45,8 @@ export interface SessionState {
 
 /** Events that record who is at the register rather than what was sold. */
 export type StaffEventType = 'staff.signed_in' | 'staff.signed_out' | 'staff.pin_failed' | 'override.granted';
+/** Cash drawer events outside a sale (P6). */
+export type DrawerEventType = 'drawer.session_opened' | 'drawer.cash_movement' | 'drawer.session_closed' | 'drawer.opened';
 
 export class SaleSession {
   /** Signed-in person; stamped on every event as `actor_user_id` (P3). */
@@ -81,6 +83,11 @@ export class SaleSession {
 
   actorId(): string | null {
     return this.actor;
+  }
+
+  /** Record a drawer session, cash movement or no-sale open. Returns the stored event. */
+  recordDrawerEvent<T extends DrawerEventType>(type: T, payload: EventPayload<T>): Promise<RegisterEvent> {
+    return this.serial(() => this.emit(type, payload, null));
   }
 
   /** Record a sign-in, sign-out, PIN failure or manager override (saleless unless tied to a ticket). */

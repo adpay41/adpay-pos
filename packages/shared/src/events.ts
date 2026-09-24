@@ -118,8 +118,32 @@ const Empty = z.strictObject({});
 const ReceiptPrinted = z.strictObject({ copy: z.enum(['original', 'reprint', 'none']) });
 
 const DrawerOpened = z.strictObject({
-  reason: z.enum(['cash_sale', 'manual', 'refund', 'eod']),
+  /** `manual` = "no sale": opened outside a cash sale, behind the `drawer.no_sale` permission. */
+  reason: z.enum(['cash_sale', 'manual', 'refund', 'eod', 'movement', 'count']),
   by_user_id: Uuid.nullable(),
+});
+
+// Cash drawer sessions (P6). What the drawer should hold is folded from events (drawer.ts).
+const PositiveCents = z.int().positive().max(100_000_000);
+const DrawerSessionOpened = z.strictObject({
+  session_id: Uuid,
+  /** Starting cash, counted when the drawer goes in. */
+  float_cents: NonNegCents,
+});
+const DrawerCashMovement = z.strictObject({
+  movement_id: Uuid,
+  session_id: Uuid,
+  kind: z.enum(['drop', 'paid_out', 'paid_in']),
+  amount_cents: PositiveCents,
+  reason: z.string().trim().min(1).max(200),
+  /** Who was paid (paid-out to a vendor), when it applies. */
+  payee: z.string().trim().max(120).nullable(),
+});
+const DrawerSessionClosed = z.strictObject({
+  session_id: Uuid,
+  /** The closing count, entered before the expected amount is shown (blind count). */
+  counted_cents: NonNegCents,
+  blind: z.boolean(),
 });
 
 // Staff at the register (P3). PINs are checked on the device; these events are the record.
@@ -156,6 +180,9 @@ export const EventPayloads = {
   'sale.resumed': Empty,
   'receipt.printed': ReceiptPrinted,
   'drawer.opened': DrawerOpened,
+  'drawer.session_opened': DrawerSessionOpened,
+  'drawer.cash_movement': DrawerCashMovement,
+  'drawer.session_closed': DrawerSessionClosed,
   'staff.signed_in': StaffSignedIn,
   'staff.signed_out': StaffSignedOut,
   'staff.pin_failed': StaffPinFailed,
@@ -168,6 +195,9 @@ export const EVENT_TYPES = Object.keys(EventPayloads) as EventType[];
 /** Events that belong to a sale must carry its sale_id; these may stand alone (sale_id null). */
 const SALELESS: ReadonlySet<EventType> = new Set([
   'drawer.opened',
+  'drawer.session_opened',
+  'drawer.cash_movement',
+  'drawer.session_closed',
   'staff.signed_in',
   'staff.signed_out',
   'staff.pin_failed',

@@ -20,6 +20,8 @@ export interface EventStore {
   nextSeq(): Promise<number>;
   append(event: RegisterEvent): Promise<void>;
   eventsForSale(saleId: string): Promise<RegisterEvent[]>;
+  /** Every event from `seq` on, in order (the drawer folds a session from its opening event). */
+  eventsSince(seq: number): Promise<RegisterEvent[]>;
   /** Oldest-first events the server has not acknowledged. */
   unacked(limit: number): Promise<RegisterEvent[]>;
   ack(eventIds: readonly string[], outcome: AckOutcome, reason?: string): Promise<void>;
@@ -50,6 +52,9 @@ export class MemoryEventStore implements EventStore {
   }
   async eventsForSale(saleId: string) {
     return this.events.filter((e) => e.sale_id === saleId).sort((a, b) => a.device_seq - b.device_seq);
+  }
+  async eventsSince(seq: number) {
+    return this.events.filter((e) => e.device_seq >= seq).sort((a, b) => a.device_seq - b.device_seq);
   }
   async unacked(limit: number) {
     return this.events
