@@ -95,6 +95,11 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
       case 'sale.line_removed':
         lines.delete(e.payload.line_id);
         break;
+      case 'sale.line_qty_changed': {
+        const line = lines.get(e.payload.line_id);
+        if (line) line.qty = e.payload.qty;
+        break;
+      }
       case 'sale.line_discounted': {
         const line = lines.get(e.payload.line_id);
         if (line) {

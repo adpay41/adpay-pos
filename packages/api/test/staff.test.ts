@@ -51,7 +51,7 @@ describe('staff and register PINs', () => {
     expect(member.pin_hash).toMatch(/^pbkdf2-sha256\$10000\$/);
     expect(verifyPin('2468', member.pin_hash)).toBe(true);
     expect(verifyPin('2469', member.pin_hash)).toBe(false);
-    expect(member.permissions).toEqual(['ticket.void', 'cash.drop']);
+    expect(member.permissions).toEqual(['ticket.void', 'cash.drop', 'item.create']);
 
     // The merchant app's view has no hash, and neither does the editor snapshot or the audit trail.
     const listed = await app.inject({ method: 'GET', url: '/merchant/staff', headers: auth(ownerA) });
@@ -129,7 +129,7 @@ describe('staff and register PINs', () => {
   it('permission overrides flow to the register snapshot', async () => {
     await app.inject({ method: 'PUT', url: '/merchant/permissions', headers: auth(ownerA), payload: { cashier: { 'sale.refund': true, 'cash.drop': false } } });
     const maria = (await snapshot()).staff!.members.find((m) => m.name === 'Maria Santos')!;
-    expect(maria.permissions).toEqual(['ticket.void', 'sale.refund']);
+    expect(maria.permissions).toEqual(['ticket.void', 'sale.refund', 'item.create']);
     const bad = await app.inject({ method: 'PUT', url: '/merchant/permissions', headers: auth(ownerA), payload: { cashier: { 'launch.missiles': true } } });
     expect(bad.statusCode).toBe(400);
     await app.inject({ method: 'PUT', url: '/merchant/permissions', headers: auth(ownerA), payload: {} });

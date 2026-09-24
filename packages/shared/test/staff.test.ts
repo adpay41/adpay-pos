@@ -31,12 +31,12 @@ describe('permissions', () => {
     expect(permissionsFor('owner')).toEqual(PERMISSION_KEYS);
     expect(permissionsFor('manager')).not.toContain('staff.manage');
     expect(permissionsFor('manager')).toContain('sale.refund');
-    expect(permissionsFor('cashier')).toEqual(['ticket.void', 'cash.drop']);
+    expect(permissionsFor('cashier')).toEqual(['ticket.void', 'cash.drop', 'item.create']);
   });
 
   it('merchant overrides add and remove, but never take anything from owners', () => {
     const o = PermissionOverridesSchema.parse({ cashier: { 'sale.refund': true, 'ticket.void': false }, manager: { 'sale.void': false } });
-    expect(permissionsFor('cashier', o)).toEqual(['sale.refund', 'cash.drop']);
+    expect(permissionsFor('cashier', o)).toEqual(['sale.refund', 'cash.drop', 'item.create']);
     expect(can('manager', 'sale.void', o)).toBe(false);
     expect(PermissionOverridesSchema.safeParse({ owner: { 'sale.void': false } }).success).toBe(false);
     expect(can('owner', 'sale.void', o)).toBe(true);

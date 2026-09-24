@@ -3,11 +3,12 @@
  * Everything the register needs to sell is local; the network only ever adds freshness.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { CatalogSnapshot, DeviceIdentity, HeartbeatResponse } from '@adpay/shared';
+import type { CatalogSnapshot, DeviceIdentity, DeviceItemResult, HeartbeatResponse } from '@adpay/shared';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import { PREVIEW_HEALTH } from './core/hardware';
+import { NewItemOutbox } from './core/new-items';
 import { DeviceLog, OpsAgent } from './core/ops';
 import { SaleSession } from './core/session';
 import { SqliteEventStore } from './core/sqlite-store';
@@ -62,6 +63,9 @@ export interface Runtime {
   staff: StaffGate;
   ops: OpsAgent;
   log: DeviceLog;
+  /** Items created here from unknown barcodes, waiting for the server (P5). */
+  items: NewItemOutbox;
+  uuid: () => string;
 }
 
 export const APP_VERSION = Constants.expoConfig?.version ?? '0.0.0';
@@ -120,6 +124,13 @@ export async function boot(token: string): Promise<Runtime> {
   // Who may sign in comes with the config snapshot; a newer snapshot refreshes it (P3).
   const staff = new StaffGate(store, session);
   await staff.restore(catalog.staff);
+  // Items created at this register go to the server ahead of the sales that use them (P5).
+  const items = new NewItemOutbox(store, { createItem: (cmd) => call<DeviceItemResult>('/device/items', token, cmd) }, (cmd, why) =>
+    log.warn('new item refused by the server', { name: cmd.name, upc: cmd.upc, reason: why.slice(0, 200) }),
+  );
+  await items.load();
+  sync.setBeforePush(() => items.flush());
+
   sync.onCatalog((c) => {
     void staff.update(c.staff);
     log.info('catalog updated', { catalog_version: c.catalog_version, items: c.items.length });
@@ -150,5 +161,5 @@ export async function boot(token: string): Promise<Runtime> {
   session.subscribe(() => sync.kick());
   await sync.start();
   ops.start();
-  return { store, identity, catalog, session, sync, staff, ops, log };
+  return { store, identity, catalog, session, sync, staff, ops, log, items, uuid: () => Crypto.randomUUID() };
 }

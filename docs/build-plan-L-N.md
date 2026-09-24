@@ -29,12 +29,12 @@ The **Phase** column refers to section 5.
 
 | # | Item (Bible §) | Status | What exists / what's missing | Phase |
 | --- | --- | --- | --- | --- |
-| L1 | Scan-first, zero-tap sale (1.1) | ⬜ | No scanning. Cash takes 3 taps (Cash → amount → receipt choice). Needs keyboard-wedge scan input and a "default receipt choice" setting. | P5, P8 |
+| L1 | Scan-first, zero-tap sale (1.1) | 🟡 | P5: scan-first works (keyboard-wedge scanner; scan rings at once, same item again raises qty). Zero-tap receipt default is P8. | P5, P8 |
 | L2 | Quick-key grid with per-store layout, colors, images, favorites (1.1, L part) | ✅ | P2: per-location favorites page, category + item order, fixed-palette tile colors, product photos (ADR 0010). Drag-to-arrange is N (P14). | P2 |
-| L3 | Quantity intelligence: tap twice = qty 2; long-press keypad; case barcode = pack qty (1.1) | ⬜ | Tapping twice adds a second line. No `line_qty_changed` event. | P5 |
-| L4 | Item search by name/UPC/PLU/first letters, fuzzy (1.1) | ⬜ | None. | P5 |
-| L5 | Unknown barcode flow, manual (1.1) | ⬜ | No scan; no item-create API; no device→server catalog write path. | P2, P5 |
-| L6 | Open-price items with keypad (1.1) | ⬜ | No open-price flag on items; line events assume a catalog price. | P2, P5 |
+| L3 | Quantity intelligence: tap twice = qty 2; long-press keypad; case barcode = pack qty (1.1) | ✅ | P5: ring the same item again = qty +1 (`sale.line_qty_changed`); long-press tile or line for a typed qty; case barcode = pack qty. | P5 |
+| L4 | Item search by name/UPC/PLU/first letters, fuzzy (1.1) | ✅ | P5: name prefix / first letters / one-typo fuzzy ("coke zro"), UPC (any spelling), PLU, last digits of a barcode. | P5 |
+| L5 | Unknown barcode flow, manual (1.1) | ✅ | P5: unknown barcode → one screen (name, price, category) → rung at once, offline; synced via idempotent `POST /device/items`, duplicates aliased (ADR 0013). | P5 |
+| L6 | Open-price items with keypad (1.1) | ✅ | P5: open-price items ask for the price on a cents keypad; card price follows the dual %; `price_source: open` on the line. | P5 |
 | L7 | Hold / recall tickets (1.1) | 🟡 | `sale.suspended`/`sale.resumed` event types exist, and fold handles them. No UI; only one open ticket at a time. | P7 |
 | L8 | Split tender, correct dual pricing per portion (1.1) | 🟡 | Fold sums multiple tenders, but a sale has one `price_mode`. Needs a per-portion pricing rule (design in P9) and a card leg. | P9 |
 | L9 | Cash tender keypad with quick-cash buttons (1.2) | ✅ | Exact / next $ / bills, and a cents keypad. | — |
@@ -56,8 +56,8 @@ The **Phase** column refers to section 5.
 | L25 | Self-healing: crash → auto-restart into same ticket (1.7) | 🟡 | Open ticket restores after reload ✅. OS-level auto-restart ⛔ Android build/kiosk. | P-HW |
 | L26 | Printer/scanner/terminal health on the sync pill; one-tap tests (1.7) | ⛔ | P4 built the health model (per-slot state in every heartbeat, device panel, alerts) and the remote printer test. Real readings need the hardware module. | P-HW |
 | L27 | Cashier PIN sign-in, roles, permissions per action (1.8) | ✅ | P3: tap name → PIN, checked on-device (offline); lockout; 12-action permission matrix; manager override by PIN (ADR 0011). | P3 |
-| L28 | Case-break pricing (1.9, L part) | 🟡 | `sell_unit`/`pack_qty` on items and events; separate carton item in seed. No "scan case barcode → pack". | P5 |
-| L29 | Price check: scan without ringing; cash/card/margin (margin with PIN) (1.9) | 🟡 | Step-1 shell had tap-to-price-check; replaced by the sale screen. No scan, no cost/margin. | P5 |
+| L28 | Case-break pricing (1.9, L part) | ✅ | P5: extra barcodes carry a pack qty — scanning a carton rings 10 packs. | P5 |
+| L29 | Price check: scan without ringing; cash/card/margin (margin with PIN) (1.9) | ✅ | P5: Price check mode (scan or tap, nothing rung); cost/margin behind `item.view_cost` or a manager PIN. | P5 |
 
 ### Merchant app
 
@@ -98,7 +98,7 @@ The **Phase** column refers to section 5.
 | # | Item | Status | Notes | Phase |
 | --- | --- | --- | --- | --- |
 | L54 | Both prices before paying, every time | ✅ | Customer screen cart state. Must stay true on every new path (split, card). | every phase |
-| L55 | Under 20 seconds in and out | ⬜ | A target, not a feature. Measured once scan/quantity/zero-tap land. P5 adds a sale-duration metric to the event log. | P5 |
+| L55 | Under 20 seconds in and out | 🟡 | P5: measured — median seconds per sale and % under 20 s in admin and merchant summaries. Hitting the target needs real stores and hardware. | P5 |
 | L56 | Change in big green numbers | ✅ | Same as L10. | — |
 | L57 | Never sees a processor's name, a spinner, or "system down" | 🟡 | Offline sale works silently. Card states and error copy come in P9. | P9 |
 | L58 | Customer screen "tap on the card machine" (same as L19) | 🟡 | | P9 |
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P4 Ops layer | #8 | PR open — heartbeat every 30 s, device log ring + upload, remote-action queue (WS push + heartbeat fallback, audited), admin Fleet / Device page / Alert console, alert rules every minute, merchant Alerts tab, realtime `/ws` over LISTEN/NOTIFY (instant catalog nudge, live sales feed). ADR 0012. |
+| P5 Register speed | #9 | PR open — keyboard-wedge scanning, forgiving search, qty merge + long-press qty, case barcodes, open price, unknown barcode → item minted on the register (offline outbox, idempotent, aliases), price check with cost behind a PIN, sale-speed metric. ADR 0013. |
+| P4 Ops layer | #8 | merged — heartbeat every 30 s, device log ring + upload, remote-action queue (WS push + heartbeat fallback, audited), admin Fleet / Device page / Alert console, alert rules every minute, merchant Alerts tab, realtime `/ws` over LISTEN/NOTIFY (instant catalog nudge, live sales feed). ADR 0012. |
 | P3 Staff, PINs, roles, permissions | #7 | merged — memberships (store switcher), register sign-in by name + PIN checked on-device, lockout, permission matrix + manager override, `actor_user_id` on every event; Staff tab in the merchant app and admin. ADR 0011. |
 | P2 Catalog from the phone | #6 | merged — merchant app: add/edit items with photo (camera or library, shrunk on the phone), tile color, favorite toggle; favorites page, category order/add/hide, dual-price % with preview. Admin: photo, color, favorites panel. Register: ★ Favorites page first, colored tiles with photos. ADR 0010. |
 | P1 Catalog management | #5 | merged — admin catalog editor (items, categories, barcodes, open price, cost, PLU), dual-price % with card-price preview, price history, `catalog_version` bump; the register picks up changes on its next sync tick (≤15s). 72 tests on real Postgres. |

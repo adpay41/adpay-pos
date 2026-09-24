@@ -165,3 +165,27 @@ export function favoriteKeys(snapshot: Pick<CatalogSnapshot, 'items' | 'quick_ke
   const byId = new Map(snapshot.items.map((i) => [i.item_id, i]));
   return (snapshot.quick_keys ?? []).map((id) => byId.get(id)).filter((i): i is CatalogItem => !!i && i.active);
 }
+
+/**
+ * An item created at the register from an unknown barcode (P5, Bible 1.1 "unknown barcode flow").
+ * The device mints the id so it can sell the item immediately, offline. The server applies the
+ * command idempotently: replaying it is a no-op, and if another register already created the same
+ * barcode, the server keeps one item and records this id as an alias (see ADR 0013).
+ */
+export const DeviceItemCreateInput = z.strictObject({
+  item_id: z.uuid(),
+  name: z.string().trim().min(1).max(120),
+  category_id: z.uuid().nullable(),
+  cash_price_cents: Cents,
+  upc: Barcode,
+  created_by_user_id: z.uuid().nullable(),
+  created_at: z.iso.datetime({ offset: true }),
+});
+export type DeviceItemCreate = z.infer<typeof DeviceItemCreateInput>;
+
+export interface DeviceItemResult {
+  /** The id the catalog uses: the device's own, or the existing item it was merged into. */
+  item_id: string;
+  status: 'created' | 'exists' | 'aliased';
+  catalog_version: number;
+}

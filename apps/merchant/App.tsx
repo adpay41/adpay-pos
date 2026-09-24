@@ -256,6 +256,11 @@ function SalesTab({ token }: { token: string }) {
               {data.sale_count.toLocaleString('en-US')} tickets · avg {usd(data.sale_count ? Math.round(data.gross_cents / data.sale_count) : 0)} · tax{' '}
               {usd(data.tax_cents)}
             </Text>
+            {data.median_sale_seconds !== null ? (
+              <Text style={s.muted}>
+                {data.median_sale_seconds}s per sale (median) · {data.sale_count ? Math.round((data.sales_under_20s * 100) / data.sale_count) : 0}% under 20 s
+              </Text>
+            ) : null}
           </View>
           <View style={s.row2}>
             {data.by_tender.map((t) => (

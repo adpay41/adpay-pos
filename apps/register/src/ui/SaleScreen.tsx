@@ -4,10 +4,15 @@
  * events. Works fully offline; the sync pill shows what's queued.
  */
 import {
+  WedgeDecoder,
+  barcodeIndex,
   categoryKeys,
   cents,
+  deriveCardPrice,
   favoriteKeys,
   foldSale,
+  lookupBarcode,
+  searchCatalog,
   mulQty,
   quickCashOptions,
   renderReceipt,
@@ -18,22 +23,31 @@ import {
   type ReceiptLine,
 } from '@adpay/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { DevSettings, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { DevSettings, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { createDisplayChannel, displayFor } from '../core/display';
 import { PREVIEW_HEALTH, WebPreviewHardware, type Hardware } from '../core/hardware';
 import type { SessionState } from '../core/session';
+import { pendingItem } from '../core/new-items';
 import type { StaffState } from '../core/staff';
 import type { SyncStatus } from '../core/sync';
 import type { Runtime } from '../runtime';
 import { QuickKey } from './QuickKey';
+import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
 import { C, usd } from './theme';
 
 const FAVORITES = '__favorites__';
 
+type Entry = 'key' | 'scan' | 'search' | 'new_item';
+
 type Modal =
   | { kind: 'none' }
-  | { kind: 'age'; item: CatalogItem }
+  | { kind: 'age'; item: CatalogItem; qty: number; entry: Entry }
+  | { kind: 'add_qty'; item: CatalogItem; entry: Entry }
+  | { kind: 'set_qty'; line_id: string; name: string; qty: number }
+  | { kind: 'open_price'; item: CatalogItem; qty: number; entry: Entry; ageConfirmed: boolean }
+  | { kind: 'unknown'; code: string }
+  | { kind: 'price_check'; item: CatalogItem; showCost: boolean }
   | { kind: 'cash' }
   | { kind: 'done'; sale: FoldedSale; change: number }
   | { kind: 'receipt'; lines: readonly ReceiptLine[]; title: string }
@@ -76,8 +90,20 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   }, [session.sale, modal.kind, display, rt.identity.merchant_name]);
 
   const sale = session.sale;
-  const favorites = useMemo(() => favoriteKeys(catalog), [catalog]);
-  const items = useMemo(() => (category === FAVORITES ? favorites : categoryKeys(catalog, category)), [catalog, category, favorites]);
+  // Items created here but not yet in a server snapshot are overlaid, so they ring up offline (P5).
+  const [pendingCount, setPendingCount] = useState(0);
+  useEffect(() => rt.items.subscribe((p) => setPendingCount(p.length)), [rt]);
+  // pendingCount is the change signal: the outbox mutates in place, so the memo keys on its size.
+  const shown = useMemo(() => rt.items.overlay(catalog), [rt, catalog, pendingCount]);
+  const index = useMemo(() => barcodeIndex(shown), [shown]);
+  const [query, setQuery] = useState('');
+  const [priceCheck, setPriceCheck] = useState(false);
+  const favorites = useMemo(() => favoriteKeys(shown), [shown]);
+  const results = useMemo(() => (query.trim() ? searchCatalog(shown, query, 40).map((h) => h.item) : null), [shown, query]);
+  const items = useMemo(
+    () => results ?? (category === FAVORITES ? favorites : categoryKeys(shown, category)),
+    [results, shown, category, favorites],
+  );
 
   const run = useCallback(
     async (fn: () => Promise<unknown>) => {
@@ -97,10 +123,71 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     else setModal({ kind: 'override', permission, saleId, then: action });
   };
 
-  const addItem = (item: CatalogItem) => {
-    if (item.min_age) setModal({ kind: 'age', item });
-    else void run(() => rt.session.addItem(item));
+  /**
+   * Ring an item (or price-check it). Quantity intelligence lives in the session: ringing the same
+   * item again raises its line. Age checks are skipped only when it merges into an already-checked
+   * line; open-price items ask for the price.
+   */
+  const ring = (item: CatalogItem, opts: { qty?: number; entry: Entry; ageConfirmed?: boolean }) => {
+    const qty = opts.qty ?? 1;
+    if (priceCheck) return setModal({ kind: 'price_check', item, showCost: false });
+    if (item.min_age && !opts.ageConfirmed && !rt.session.wouldMerge(item)) return setModal({ kind: 'age', item, qty, entry: opts.entry });
+    if (item.open_price) return setModal({ kind: 'open_price', item, qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed });
+    void run(() => rt.session.addItem(item, { qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed }));
   };
+  const addItem = (item: CatalogItem) => ring(item, { entry: query ? 'search' : 'key' });
+
+  /** A scanned (or typed) barcode: ring it, or offer to add it to the catalog if we don't know it. */
+  const onCode = (code: string) => {
+    const hit = lookupBarcode(index, code);
+    if (hit) {
+      rt.log.info('scan', { matched: hit.matched, qty: hit.qty });
+      ring(hit.item, { qty: hit.qty, entry: 'scan' });
+    } else if (priceCheck) {
+      setModal({ kind: 'error', message: `Barcode ${code} isn’t in the catalog.` });
+    } else {
+      rt.log.info('unknown barcode scanned', { code });
+      guarded('item.create', sale?.sale_id ?? null, async () => setModal({ kind: 'unknown', code }));
+    }
+  };
+
+  // Keyboard-wedge scanner (USB/Bluetooth HID): a fast burst of keys ending in Enter. Captured
+  // before the page sees it, so a scan into the search box rings the item instead of searching.
+  const onCodeRef = useRef(onCode);
+  onCodeRef.current = onCode;
+  const modalRef = useRef(modal.kind);
+  modalRef.current = modal.kind;
+  useEffect(() => {
+    if (Platform.OS !== 'web') return; // The Kotlin module delivers scans on the device (P-HW).
+    const decoder = new WedgeDecoder();
+    const onKey = (e: KeyboardEvent) => {
+      const code = decoder.feed(e.key, e.timeStamp || performance.now());
+      if (!code) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setQuery('');
+      if (modalRef.current === 'none' || modalRef.current === 'price_check') onCodeRef.current(code);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+
+  async function createUnknown(code: string, v: { name: string; cash: number; category_id: string | null }) {
+    const cmd = {
+      item_id: rt.uuid(),
+      name: v.name,
+      category_id: v.category_id,
+      cash_price_cents: v.cash,
+      upc: code,
+      created_by_user_id: rt.session.actorId(),
+      created_at: new Date().toISOString(),
+    };
+    await rt.items.add(cmd);
+    rt.log.info('item created at the register', { name: v.name, code });
+    setModal({ kind: 'none' });
+    ring(pendingItem(catalog, cmd), { entry: 'new_item' });
+    rt.sync.kick();
+  }
 
   const receiptFor = (s: FoldedSale, copy: 'original' | 'reprint') =>
     renderReceipt({
@@ -231,11 +318,55 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           ))}
         </View>
 
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={s.grid}>
-          {items.map((i) => (
-            <QuickKey key={i.item_id} item={i} onPress={addItem} />
-          ))}
-        </ScrollView>
+        <View style={{ flex: 1 }}>
+          <View style={s.searchRow}>
+            <TextInput
+              style={s.search}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search name, UPC or PLU — or scan"
+              autoCorrect={false}
+              onSubmitEditing={() => {
+                const q = query.trim();
+                if (!q) return;
+                if (/^\d{3,}$/.test(q) && lookupBarcode(index, q)) {
+                  setQuery('');
+                  onCode(q);
+                } else if (results?.length === 1) {
+                  setQuery('');
+                  ring(results[0]!, { entry: 'search' });
+                } else if (/^\d{6,}$/.test(q) && !results?.length) {
+                  setQuery('');
+                  onCode(q);
+                }
+              }}
+              accessibilityLabel="Search items"
+            />
+            {query ? (
+              <Pressable onPress={() => setQuery('')} style={s.clear} accessibilityLabel="Clear search">
+                <Text style={s.clearText}>×</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          {priceCheck ? (
+            <View style={s.checkBanner}>
+              <Text style={s.checkText}>Price check — scan or tap an item to see its prices. Nothing is rung up.</Text>
+              <Pressable onPress={() => setPriceCheck(false)}>
+                <Text style={s.checkText}>Done</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={s.grid} keyboardShouldPersistTaps="handled">
+            {items.map((i) => (
+              <QuickKey key={i.item_id} item={i} onPress={addItem} onLongPress={(it) => setModal({ kind: 'add_qty', item: it, entry: query ? 'search' : 'key' })} />
+            ))}
+            {results && results.length === 0 ? (
+              <Text style={s.mutedSmall}>
+                Nothing matches “{query}”.{/^\d{6,}$/.test(query.trim()) ? ' Press Enter to add it as a new item.' : ''}
+              </Text>
+            ) : null}
+          </ScrollView>
+        </View>
 
         <View style={s.ticket}>
           <Text style={s.ticketTitle}>{sale ? `Ticket ${sale.sale_id.slice(0, 4).toUpperCase()}` : 'New ticket'}</Text>
@@ -244,7 +375,13 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Text style={s.mutedSmall}>Tap an item to start a sale.</Text>
             ) : (
               sale.lines.map((l) => (
-                <View key={l.line_id} style={s.line}>
+                <Pressable
+                  key={l.line_id}
+                  style={s.line}
+                  onLongPress={() => setModal({ kind: 'set_qty', line_id: l.line_id, name: l.name, qty: l.qty })}
+                  delayLongPress={450}
+                  accessibilityHint="Long-press to change the quantity"
+                >
                   <View style={{ flex: 1 }}>
                     <Text style={s.lineName}>
                       {l.qty > 1 ? `${l.qty} × ` : ''}
@@ -260,7 +397,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   <Pressable onPress={() => void run(() => rt.session.removeLine(l.line_id))} style={s.remove} accessibilityLabel={`Remove ${l.name}`}>
                     <Text style={s.removeText}>×</Text>
                   </Pressable>
-                </View>
+                </Pressable>
               ))
             )}
           </ScrollView>
@@ -301,6 +438,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Pressable style={[s.ghost, !session.lastCompleted && s.disabled]} disabled={!session.lastCompleted} onPress={() => void reprintLast()}>
                 <Text>Reprint last</Text>
               </Pressable>
+              <Pressable style={[s.ghost, priceCheck && s.ghostOn]} onPress={() => setPriceCheck((v) => !v)}>
+                <Text style={priceCheck ? { color: '#fff' } : undefined}>Price check</Text>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -319,9 +459,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             <Pressable
               style={s.primary}
               onPress={() => {
-                const item = modal.item;
+                const { item, qty, entry } = modal;
                 setModal({ kind: 'none' });
-                void run(() => rt.session.addItem(item, { ageConfirmed: true }));
+                ring(item, { qty, entry, ageConfirmed: true });
               }}
             >
               <Text style={s.primaryText}>ID checked — {modal.item.min_age}+</Text>
@@ -375,6 +515,92 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onCatalog={setCatalog}
             onForget={onForget}
             onError={(m) => setModal({ kind: 'error', message: m })}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'add_qty' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <NumberPad
+            title={`How many ${modal.item.name}?`}
+            money={false}
+            max={999}
+            confirmLabel={(n) => `Ring up ${n || ''}`}
+            onCancel={() => setModal({ kind: 'none' })}
+            onConfirm={(n) => {
+              const { item, entry } = modal;
+              setModal({ kind: 'none' });
+              ring(item, { qty: n, entry });
+            }}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'set_qty' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <NumberPad
+            title={`Quantity — ${modal.name}`}
+            subtitle="0 removes the line"
+            money={false}
+            max={9999}
+            allowZero
+            initial={modal.qty}
+            confirmLabel={(n) => (n === 0 ? 'Remove line' : `Set to ${n}`)}
+            onCancel={() => setModal({ kind: 'none' })}
+            onConfirm={(n) => {
+              const lineId = modal.line_id;
+              setModal({ kind: 'none' });
+              void run(() => rt.session.setQty(lineId, n));
+            }}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'open_price' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <NumberPad
+            title={`Price — ${modal.item.name}`}
+            subtitle={`Card price follows automatically (+${(catalog.dual_price_rate_ppm / 10_000).toString()}%)`}
+            money
+            max={9_999_99}
+            initial={modal.item.cash_price_cents || undefined}
+            confirmLabel={(c) => (c ? `Ring up ${usd(c)}` : 'Enter a price')}
+            onCancel={() => setModal({ kind: 'none' })}
+            onConfirm={(c) => {
+              const { item, qty, entry, ageConfirmed } = modal;
+              setModal({ kind: 'none' });
+              const cash = cents(c);
+              void run(() => rt.session.addItem(item, { qty, entry, ageConfirmed, price: { cash, card: deriveCardPrice(cash, catalog.dual_price_rate_ppm) } }));
+            }}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'unknown' && (
+        <Overlay>
+          <UnknownItemForm
+            code={modal.code}
+            categories={catalog.categories.filter((c) => c.active !== false)}
+            dualRatePpm={catalog.dual_price_rate_ppm}
+            onCancel={() => setModal({ kind: 'none' })}
+            onCreate={(v) => void run(() => createUnknown(modal.code, v))}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'price_check' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <PriceCheckCard
+            item={modal.item}
+            showCost={modal.showCost}
+            onDone={() => setModal({ kind: 'none' })}
+            onShowCost={() => {
+              const item = modal.item;
+              const show = async () => setModal({ kind: 'price_check', item, showCost: true });
+              // Margin only with a PIN that may see it (Bible 1.9).
+              if (rt.staff.can('item.view_cost')) void run(show);
+              else setModal({ kind: 'override', permission: 'item.view_cost', saleId: null, then: show });
+            }}
           />
         </Overlay>
       )}
@@ -572,6 +798,13 @@ const s = StyleSheet.create({
   catAge: { color: C.muted, fontSize: 12, fontWeight: '600' },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', padding: 10, gap: 10, alignContent: 'flex-start' },
+  searchRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingTop: 10, gap: 6 },
+  search: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16 },
+  clear: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: C.line },
+  clearText: { fontSize: 20, color: C.muted, lineHeight: 22 },
+  checkBanner: { marginHorizontal: 10, marginTop: 8, backgroundColor: C.black, borderRadius: 8, padding: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  checkText: { color: '#fff', fontWeight: '700' },
+  ghostOn: { backgroundColor: C.black, borderColor: C.black },
 
   ticket: { width: 340, borderLeftWidth: 1, borderLeftColor: C.line, backgroundColor: '#fff', padding: 14 },
   ticketTitle: { fontSize: 13, color: C.muted, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8 },

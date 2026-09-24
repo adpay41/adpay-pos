@@ -42,9 +42,20 @@ const LineAdded = z.strictObject({
   /** Sold as the unit or as a pack (case-break); `pack_qty` units per pack. */
   sell_unit: z.enum(['each', 'pack']).default('each'),
   pack_qty: z.int().min(1).default(1),
+  /**
+   * Where the price came from (P5): the catalog; typed at the register for an open-price item
+   * (the card price then follows the location's dual-price %); or a price override (P7).
+   * Additive: older events default to catalog.
+   */
+  price_source: z.enum(['catalog', 'open', 'override']).default('catalog'),
+  /** How it was rung: tapped key, scanned barcode, search result, or a device-created item (P5). */
+  entry: z.enum(['key', 'scan', 'search', 'new_item']).default('key'),
 });
 
 const LineRemoved = z.strictObject({ line_id: Uuid });
+
+/** "Tap the same item twice = qty 2"; long-press to type a quantity (Bible 1.1, P5). */
+const LineQtyChanged = z.strictObject({ line_id: Uuid, qty: Qty });
 
 const LineDiscounted = z.strictObject({
   line_id: Uuid,
@@ -134,6 +145,7 @@ export const EventPayloads = {
   'sale.opened': SaleOpened,
   'sale.line_added': LineAdded,
   'sale.line_removed': LineRemoved,
+  'sale.line_qty_changed': LineQtyChanged,
   'sale.line_discounted': LineDiscounted,
   'sale.age_verified': AgeVerified,
   'sale.tender_added': TenderAdded,
