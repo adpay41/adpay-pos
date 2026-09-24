@@ -3,8 +3,52 @@
  * Money is integer cents; editors parse typed dollars with `parseUsdToCents` before sending.
  */
 import { z } from 'zod';
+import type { CatalogItem, CatalogSnapshot } from './api';
 
 const Cents = z.int().min(0).max(100_000_000);
+
+/**
+ * Quick-key tile colors. A fixed palette rather than free hex, so the brand rule holds on the
+ * register: tiles sit next to prices, and **red is never near a dollar amount**. Green is left out
+ * too, because it means "approved / money" on this product. Each color is a pale tile fill with a
+ * strong stripe; the price text stays black on every one.
+ */
+export const TILE_COLORS = {
+  blue: { fill: '#e7effb', stripe: '#1f5fbf', label: 'Blue' },
+  teal: { fill: '#e3f4f4', stripe: '#0f7c80', label: 'Teal' },
+  purple: { fill: '#efe9f8', stripe: '#6b3fb0', label: 'Purple' },
+  orange: { fill: '#fdf0e2', stripe: '#c46a0c', label: 'Orange' },
+  yellow: { fill: '#fdf8dc', stripe: '#a88a00', label: 'Yellow' },
+  brown: { fill: '#f3ece6', stripe: '#7a5536', label: 'Brown' },
+  gray: { fill: '#efefef', stripe: '#555555', label: 'Gray' },
+  navy: { fill: '#e6e9f2', stripe: '#1f2d5c', label: 'Navy' },
+} as const;
+export type TileColor = keyof typeof TILE_COLORS;
+export const TileColorInput = z.enum(Object.keys(TILE_COLORS) as [TileColor, ...TileColor[]]);
+
+/** Most favorites a location can pin to the first quick-key page. */
+export const MAX_QUICK_KEYS = 48;
+
+export const QuickKeysInput = z.strictObject({
+  item_ids: z
+    .array(z.uuid())
+    .max(MAX_QUICK_KEYS, `At most ${MAX_QUICK_KEYS} favorites`)
+    .refine((ids) => new Set(ids).size === ids.length, 'An item can be a favorite only once'),
+});
+
+/** Reorder in one write: `sort` becomes the index in each list. */
+export const CatalogOrderInput = z
+  .strictObject({
+    categories: z.array(z.uuid()).max(200).optional(),
+    items: z.array(z.uuid()).max(2000).optional(),
+  })
+  .refine((v) => v.categories !== undefined || v.items !== undefined, 'Nothing to reorder');
+
+/** Product photos: what the API accepts (the clients resize to ~512px JPEG before upload). */
+export const MEDIA_MAX_BYTES = 1_000_000;
+export const MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+export type MediaType = (typeof MEDIA_TYPES)[number];
+
 const Barcode = z.string().trim().regex(/^[0-9A-Za-z-]{4,32}$/, 'Barcodes are 4–32 letters/digits');
 const Plu = z.string().trim().regex(/^\d{3,6}$/, 'PLU is 3–6 digits');
 
@@ -29,6 +73,10 @@ export const ItemCreateInput = z
     pack_qty: z.int().min(1).max(1000).default(1),
     barcodes: z.array(ItemBarcodeInput).max(20).default([]),
     active: z.boolean().default(true),
+    color: TileColorInput.nullable().default(null),
+    /** A `media_id` returned by the upload endpoint; must belong to the same merchant. */
+    image_id: z.uuid().nullable().default(null),
+    sort: z.int().min(0).max(100_000).optional(),
   })
   .refine((i) => i.sell_unit === 'pack' || i.pack_qty === 1, { message: 'pack_qty must be 1 unless sold as a pack', path: ['pack_qty'] });
 
@@ -49,6 +97,9 @@ export const ItemUpdateInput = z.strictObject({
   pack_qty: z.int().min(1).max(1000).optional(),
   barcodes: z.array(ItemBarcodeInput).max(20).optional(),
   active: z.boolean().optional(),
+  color: TileColorInput.nullable().optional(),
+  image_id: z.uuid().nullable().optional(),
+  sort: z.int().min(0).max(100_000).optional(),
 });
 
 export type ItemUpdate = z.infer<typeof ItemUpdateInput>;
@@ -100,4 +151,17 @@ export function ppmToPercent(ppm: number): string {
   const whole = Math.trunc(ppm / 10_000);
   const frac = String(ppm % 10_000).padStart(4, '0').replace(/0+$/, '');
   return frac ? `${whole}.${frac}` : String(whole);
+}
+
+/** Active items of one category in quick-key order: `sort`, then name. */
+export function categoryKeys(snapshot: Pick<CatalogSnapshot, 'items'>, categoryId: string | null): CatalogItem[] {
+  return snapshot.items
+    .filter((i) => i.active && i.category_id === categoryId)
+    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.name.localeCompare(b.name)); // sort is absent in pre-P2 cached snapshots
+}
+
+/** The location's favorites page, in the order the merchant set; inactive or deleted items drop out. */
+export function favoriteKeys(snapshot: Pick<CatalogSnapshot, 'items' | 'quick_keys'>): CatalogItem[] {
+  const byId = new Map(snapshot.items.map((i) => [i.item_id, i]));
+  return (snapshot.quick_keys ?? []).map((id) => byId.get(id)).filter((i): i is CatalogItem => !!i && i.active);
 }

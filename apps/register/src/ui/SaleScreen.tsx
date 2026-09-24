@@ -4,7 +4,9 @@
  * events. Works fully offline; the sync pill shows what's queued.
  */
 import {
+  categoryKeys,
   cents,
+  favoriteKeys,
   foldSale,
   mulQty,
   quickCashOptions,
@@ -21,7 +23,10 @@ import { WebPreviewHardware, type Hardware } from '../core/hardware';
 import type { SessionState } from '../core/session';
 import type { SyncStatus } from '../core/sync';
 import type { Runtime } from '../runtime';
+import { QuickKey } from './QuickKey';
 import { C, usd } from './theme';
+
+const FAVORITES = '__favorites__';
 
 type Modal =
   | { kind: 'none' }
@@ -36,7 +41,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const [catalog, setCatalog] = useState<CatalogSnapshot>(rt.catalog);
   const [session, setSession] = useState<SessionState>(rt.session.state());
   const [sync, setSync] = useState<SyncStatus | null>(null);
-  const [category, setCategory] = useState<string | null>(rt.catalog.categories[0]?.category_id ?? null);
+  // FAVORITES is the location's own first page; a store without favorites opens on its first category.
+  const [category, setCategory] = useState<string | null>(favoriteKeys(rt.catalog).length ? FAVORITES : (rt.catalog.categories[0]?.category_id ?? null));
   const [modal, setModal] = useState<Modal>({ kind: 'none' });
   const [drawerFlash, setDrawerFlash] = useState(false);
   const display = useRef(createDisplayChannel()).current;
@@ -64,7 +70,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   }, [session.sale, modal.kind, display, rt.identity.merchant_name]);
 
   const sale = session.sale;
-  const items = useMemo(() => catalog.items.filter((i) => i.active && i.category_id === category), [catalog, category]);
+  const favorites = useMemo(() => favoriteKeys(catalog), [catalog]);
+  const items = useMemo(() => (category === FAVORITES ? favorites : categoryKeys(catalog, category)), [catalog, category, favorites]);
 
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     try {
@@ -154,6 +161,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       <View style={s.body}>
         <View style={s.catCol}>
+          {favorites.length > 0 ? (
+            <Pressable onPress={() => setCategory(FAVORITES)} style={[s.cat, category === FAVORITES && s.catActive]}>
+              <Text style={[s.catText, category === FAVORITES && { color: '#fff' }]}>★ Favorites</Text>
+            </Pressable>
+          ) : null}
           {catalog.categories.filter((c) => c.active !== false).map((c) => (
             <Pressable key={c.category_id} onPress={() => setCategory(c.category_id)} style={[s.cat, category === c.category_id && s.catActive]}>
               <Text style={[s.catText, category === c.category_id && { color: '#fff' }]}>{c.name}</Text>
@@ -164,15 +176,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
         <ScrollView style={{ flex: 1 }} contentContainerStyle={s.grid}>
           {items.map((i) => (
-            <Pressable key={i.item_id} onPress={() => addItem(i)} style={({ pressed }) => [s.key, pressed && s.keyPressed]}>
-              <Text style={s.keyName} numberOfLines={3}>
-                {i.name}
-              </Text>
-              <View>
-                <Text style={s.keyCash}>{usd(i.cash_price_cents)}</Text>
-                <Text style={s.keyCard}>card {usd(i.card_price_cents)}</Text>
-              </View>
-            </Pressable>
+            <QuickKey key={i.item_id} item={i} onPress={addItem} />
           ))}
         </ScrollView>
 
@@ -490,11 +494,6 @@ const s = StyleSheet.create({
   catAge: { color: C.muted, fontSize: 12, fontWeight: '600' },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', padding: 10, gap: 10, alignContent: 'flex-start' },
-  key: { width: 140, height: 104, backgroundColor: '#fff', borderRadius: 10, padding: 10, justifyContent: 'space-between', borderWidth: 2, borderColor: C.line },
-  keyPressed: { borderColor: C.black, backgroundColor: '#fafafa' },
-  keyName: { fontWeight: '600', color: C.ink, fontSize: 14 },
-  keyCash: { color: C.black, fontWeight: '800', fontSize: 16, fontVariant: ['tabular-nums'] },
-  keyCard: { color: C.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
 
   ticket: { width: 340, borderLeftWidth: 1, borderLeftColor: C.line, backgroundColor: '#fff', padding: 14 },
   ticketTitle: { fontSize: 13, color: C.muted, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8 },

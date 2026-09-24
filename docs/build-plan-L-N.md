@@ -30,7 +30,7 @@ The **Phase** column refers to section 5.
 | # | Item (Bible §) | Status | What exists / what's missing | Phase |
 | --- | --- | --- | --- | --- |
 | L1 | Scan-first, zero-tap sale (1.1) | ⬜ | No scanning. Cash takes 3 taps (Cash → amount → receipt choice). Needs keyboard-wedge scan input and a "default receipt choice" setting. | P5, P8 |
-| L2 | Quick-key grid with per-store layout, colors, images, favorites (1.1, L part) | 🟡 | Category grid of uniform white tiles, fixed order. No per-store layout, colors, images or favorites. | P2, P5 |
+| L2 | Quick-key grid with per-store layout, colors, images, favorites (1.1, L part) | ✅ | P2: per-location favorites page, category + item order, fixed-palette tile colors, product photos (ADR 0010). Drag-to-arrange is N (P14). | P2 |
 | L3 | Quantity intelligence: tap twice = qty 2; long-press keypad; case barcode = pack qty (1.1) | ⬜ | Tapping twice adds a second line. No `line_qty_changed` event. | P5 |
 | L4 | Item search by name/UPC/PLU/first letters, fuzzy (1.1) | ⬜ | None. | P5 |
 | L5 | Unknown barcode flow, manual (1.1) | ⬜ | No scan; no item-create API; no device→server catalog write path. | P2, P5 |
@@ -67,8 +67,8 @@ The **Phase** column refers to section 5.
 | L31 | Today vs yesterday vs same day last week, by hour; "up 12%" (2.1) | ⬜ | Only today/7d/month totals. | P11 |
 | L32 | Multi-store switcher (2.1, L part) | ⬜ | A merchant user belongs to exactly one merchant. Needs a membership model. | P3, P11 |
 | L33 | Deposits, matched to batches (2.2) | ⛔ | Needs a live processor (Finix under AD Pay LLC). Placeholder text exists. | P-PAY |
-| L34 | Item add/edit with photo, pushed to all registers in seconds (2.3) | ⬜ | Items are read-only everywhere. | P2 |
-| L35 | Dual-price % per location; preview card prices before pushing (2.3) | ⬜ | % is stored per location; no edit UI. | P2 |
+| L34 | Item add/edit with photo, pushed to all registers in seconds (2.3) | ✅ | P1 admin editor + P2 merchant app with camera/library photo; registers pick it up on the next sync tick (≤15s; instant with the P4 WebSocket nudge). | P1, P2 |
+| L35 | Dual-price % per location; preview card prices before pushing (2.3) | ✅ | Admin (P1) and merchant app (P2), both with a preview of every card price that changes. | P1, P2 |
 | L36 | Staff list, PINs, roles, permissions from the phone (2.5) | ⬜ | | P3 |
 | L37 | Alerts: register offline > 5 min; terminal offline; printer out of paper (2.6) | ⬜ | No heartbeat. Terminal/printer parts ⛔ hardware. | P4, P11 |
 | L38 | Alerts: drawer opened outside a sale; void/refund over $X; no-sale spike (2.6) | ⬜ | Needs P6/P7 events + alert rules. | P4, P11 |
@@ -365,4 +365,5 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P1 Catalog management | #5 | PR open — admin catalog editor (items, categories, barcodes, open price, cost, PLU), dual-price % with card-price preview, price history, `catalog_version` bump; the register picks up changes on its next sync tick (≤15s). 72 tests on real Postgres. |
+| P2 Catalog from the phone | #6 | PR open — merchant app: add/edit items with photo (camera or library, shrunk on the phone), tile color, favorite toggle; favorites page, category order/add/hide, dual-price % with preview. Admin: photo, color, favorites panel. Register: ★ Favorites page first, colored tiles with photos. ADR 0010. |
+| P1 Catalog management | #5 | merged — admin catalog editor (items, categories, barcodes, open price, cost, PLU), dual-price % with card-price preview, price history, `catalog_version` bump; the register picks up changes on its next sync tick (≤15s). 72 tests on real Postgres. |

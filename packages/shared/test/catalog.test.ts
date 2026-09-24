@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { ItemCreateInput, LocationRatesInput, percentToPpm, ppmToPercent } from '../src';
+import {
+  CatalogOrderInput,
+  ItemCreateInput,
+  LocationRatesInput,
+  MAX_QUICK_KEYS,
+  QuickKeysInput,
+  TILE_COLORS,
+  TileColorInput,
+  categoryKeys,
+  favoriteKeys,
+  percentToPpm,
+  ppmToPercent,
+  type CatalogItem,
+} from '../src';
 
 describe('percent <-> ppm (no floats)', () => {
   it('parses typed percentages exactly', () => {
@@ -38,5 +51,38 @@ describe('catalog input validation', () => {
     expect(() => LocationRatesInput.parse({ dual_price_rate_ppm: 100_001 })).toThrow();
     expect(LocationRatesInput.parse({ dual_price_rate_ppm: 40_000 })).toEqual({ dual_price_rate_ppm: 40_000 });
     expect(() => LocationRatesInput.parse({})).toThrow();
+  });
+});
+
+describe('quick keys', () => {
+  const base = { category_id: 'c1', active: true, sort: 0 } as const;
+  const item = (item_id: string, name: string, extra: Partial<CatalogItem> = {}) => ({ ...base, item_id, name, ...extra }) as CatalogItem;
+
+  it('the tile palette has no red or green, and every stripe is a dark color that reads on white', () => {
+    for (const [key, c] of Object.entries(TILE_COLORS)) {
+      expect(key).not.toMatch(/red|green/);
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.stripe.slice(i, i + 2), 16)) as [number, number, number];
+      expect(r > 150 && g < 90 && b < 90, `${key} stripe looks red`).toBe(false);
+      expect(g > 120 && r < 100 && b < 100, `${key} stripe looks green`).toBe(false);
+    }
+    expect(TileColorInput.safeParse('red').success).toBe(false);
+    expect(TileColorInput.safeParse('blue').success).toBe(true);
+  });
+
+  it('category keys follow sort, then name; inactive items drop out', () => {
+    const items = [item('a', 'Zeta', { sort: 1 }), item('b', 'Alpha', { sort: 1 }), item('c', 'Mid', { sort: 0 }), item('d', 'Gone', { active: false })];
+    expect(categoryKeys({ items }, 'c1').map((i) => i.item_id)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('favorites keep the merchant order and skip inactive or unknown ids', () => {
+    const items = [item('a', 'A'), item('b', 'B', { active: false }), item('c', 'C')];
+    expect(favoriteKeys({ items, quick_keys: ['c', 'b', 'zzz', 'a'] }).map((i) => i.item_id)).toEqual(['c', 'a']);
+  });
+
+  it('favorites and reorder inputs reject duplicates and cap the list', () => {
+    const id = '0f6e0a57-6a8e-4a26-9a57-1f4e4b1e6a11';
+    expect(QuickKeysInput.safeParse({ item_ids: [id, id] }).success).toBe(false);
+    expect(QuickKeysInput.safeParse({ item_ids: Array.from({ length: MAX_QUICK_KEYS + 1 }, () => crypto.randomUUID()) }).success).toBe(false);
+    expect(CatalogOrderInput.safeParse({}).success).toBe(false);
   });
 });

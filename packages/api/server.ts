@@ -50,7 +50,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(cors, {
     origin: config.corsOrigins,
     // @fastify/cors defaults to GET/HEAD/POST only; the catalog editor PATCHes from the browser.
-    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: false,
     exposedHeaders: ['x-trace-id'],
   });
