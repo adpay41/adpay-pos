@@ -111,6 +111,9 @@ export interface SalesSummary {
   tax_cents: number;
   refunds_cents: number;
   voids: number;
+  /** Seconds from a ticket's first action to completion, median of the range (Bible L55: target < 20). */
+  median_sale_seconds: number | null;
+  sales_under_20s: number;
   by_tender: { tender_type: 'cash' | 'card'; amount_cents: number; count: number }[];
   by_hour: { hour: number; amount_cents: number; count: number }[];
   by_register: { register_id: string; register_name: string; amount_cents: number; count: number }[];

@@ -9,13 +9,15 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { API_URL } from '../runtime';
 import { C, usd } from './theme';
 
-export function QuickKey({ item, onPress }: { item: CatalogItem; onPress: (i: CatalogItem) => void }) {
+export function QuickKey({ item, onPress, onLongPress }: { item: CatalogItem; onPress: (i: CatalogItem) => void; onLongPress?: (i: CatalogItem) => void }) {
   const [imageFailed, setImageFailed] = useState(false);
   const palette = item.color ? TILE_COLORS[item.color] : null;
   const showImage = !!item.image_url && !imageFailed;
   return (
     <Pressable
       onPress={() => onPress(item)}
+      onLongPress={onLongPress ? () => onLongPress(item) : undefined}
+      delayLongPress={450}
       accessibilityRole="button"
       accessibilityLabel={`${item.name}, ${usd(item.cash_price_cents)}`}
       style={({ pressed }) => [s.key, palette && { backgroundColor: palette.fill }, pressed && s.pressed]}

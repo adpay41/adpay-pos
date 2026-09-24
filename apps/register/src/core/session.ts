@@ -157,11 +157,34 @@ export class SaleSession {
   /**
    * Add a catalog item. Age-restricted items require the cashier's confirmation, recorded as its
    * own event (manual check in v1; ID scan later).
+   *
+   * Quantity intelligence (Bible 1.1): ringing the same item again right after itself raises that
+   * line's quantity instead of adding a line ("tap twice = qty 2", scanning a second can). A case
+   * barcode arrives with `qty` = its pack quantity. An open-price item carries the typed `price`.
    */
-  addItem(item: CatalogItem, opts: { qty?: number; ageConfirmed?: boolean } = {}): Promise<SessionState> {
+  addItem(
+    item: CatalogItem,
+    opts: {
+      qty?: number;
+      ageConfirmed?: boolean;
+      entry?: 'key' | 'scan' | 'search' | 'new_item';
+      /** Typed at the register for an open-price item: both prices, card derived by the caller. */
+      price?: { cash: Cents; card: Cents };
+    } = {},
+  ): Promise<SessionState> {
     return this.serial(async () => {
       if (!item.active) throw new SaleError(`${item.name} is not for sale`);
+      const qty = opts.qty ?? 1;
+      const last = this.saleId ? this.lastLine() : null;
+      const merge = !opts.price && !item.open_price && last && last.item_id === item.item_id && last.unit_cash_price_cents === item.cash_price_cents;
+      if (merge) {
+        // Same customer, same line: an age check already done for it covers this unit too.
+        await this.emit('sale.line_qty_changed', { line_id: last.line_id, qty: Math.min(10_000, last.qty + qty) }, this.saleId!);
+        this.notify();
+        return this.state();
+      }
       if (item.min_age && !opts.ageConfirmed) throw new SaleError(`${item.name} needs an age check (${item.min_age}+)`);
+      if (item.open_price && !opts.price) throw new SaleError(`Enter a price for ${item.name}`);
       const saleId = await this.ensureOpen();
       const line_id = this.deps.uuid();
       await this.emit(
@@ -171,18 +194,51 @@ export class SaleSession {
           item_id: item.item_id,
           name: item.name,
           category_id: item.category_id,
-          qty: opts.qty ?? 1,
-          unit_cash_price_cents: item.cash_price_cents,
-          unit_card_price_cents: item.card_price_cents,
+          qty,
+          unit_cash_price_cents: opts.price?.cash ?? item.cash_price_cents,
+          unit_card_price_cents: opts.price?.card ?? item.card_price_cents,
           taxable: item.taxable,
           tax_rate_ppm: item.tax_rate_ppm,
           min_age: item.min_age,
           sell_unit: item.sell_unit,
           pack_qty: item.pack_qty,
+          price_source: opts.price ? 'open' : 'catalog',
+          entry: opts.entry ?? 'key',
         },
         saleId,
       );
       if (item.min_age) await this.emit('sale.age_verified', { line_id, method: 'manual', verified_by_user_id: this.actor }, saleId);
+      this.notify();
+      return this.state();
+    });
+  }
+
+  /** Would ringing `item` now just raise the last line's quantity? (The UI skips the age prompt then.) */
+  wouldMerge(item: CatalogItem): boolean {
+    if (!this.saleId || item.open_price) return false;
+    const last = this.lastLine();
+    return !!last && last.item_id === item.item_id && last.unit_cash_price_cents === item.cash_price_cents;
+  }
+
+  /** The most recently added line still on the ticket. */
+  private lastLine(): FoldedSale['lines'][number] | null {
+    const sale = foldSale(this.saleId!, this.events);
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const e = this.events[i]!;
+      if (e.type === 'sale.line_added') return sale.lines.find((l) => l.line_id === e.payload.line_id) ?? null;
+    }
+    return null;
+  }
+
+  /** Long-press → type a quantity (Bible 1.1). Zero is "remove the line". */
+  setQty(lineId: string, qty: number): Promise<SessionState> {
+    return this.serial(async () => {
+      const sale = this.current();
+      const line = sale.lines.find((l) => l.line_id === lineId);
+      if (!line) throw new SaleError('No such line');
+      if (!Number.isInteger(qty) || qty < 0 || qty > 10_000) throw new SaleError('Quantity must be 0 to 10,000');
+      if (qty === 0) await this.emit('sale.line_removed', { line_id: lineId }, sale.sale_id);
+      else if (qty !== line.qty) await this.emit('sale.line_qty_changed', { line_id: lineId, qty }, sale.sale_id);
       this.notify();
       return this.state();
     });

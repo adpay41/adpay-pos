@@ -40,12 +40,18 @@ export class SyncEngine {
   private status: SyncStatus = { online: false, queued: 0, rejected: 0, lastSyncAt: null, lastError: null, catalogVersion: null };
   private listeners = new Set<(s: SyncStatus) => void>();
   private catalogListeners = new Set<(c: CatalogSnapshot) => void>();
+  private beforePush: (() => Promise<void>) | null = null;
 
   constructor(
     private readonly store: EventStore,
     private readonly transport: Transport,
     private readonly now: () => Date = () => new Date(),
   ) {}
+
+  /** Work to send ahead of events on every push, e.g. items created at this register (P5). */
+  setBeforePush(fn: () => Promise<void>): void {
+    this.beforePush = fn;
+  }
 
   subscribe(fn: (s: SyncStatus) => void): () => void {
     this.listeners.add(fn);
@@ -98,6 +104,7 @@ export class SyncEngine {
 
   /** Push everything queued. Returns how many events the server now holds from this call. */
   async pushOnce(): Promise<number> {
+    await this.beforePush?.();
     let sent = 0;
     for (;;) {
       const batch = await this.store.unacked(BATCH_SIZE);

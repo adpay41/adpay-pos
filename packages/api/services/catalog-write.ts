@@ -7,9 +7,19 @@
  * `merchantId` always comes from the caller's credential (merchant user) or an admin-scoped route;
  * every lookup is filtered by it, so an id from another merchant is a 404, never a cross-tenant write.
  */
-import type { CategoryCreateInput, CategoryUpdateInput, ItemCreate, ItemUpdate, LocationRatesInput, MediaType, PriceHistoryEntry } from '@adpay/shared';
+import type {
+  CategoryCreateInput,
+  CategoryUpdateInput,
+  DeviceItemCreate,
+  DeviceItemResult,
+  ItemCreate,
+  ItemUpdate,
+  LocationRatesInput,
+  MediaType,
+  PriceHistoryEntry,
+} from '@adpay/shared';
 import type { z } from 'zod';
-import type { AdminPrincipal, MerchantUserPrincipal } from '../auth/principal';
+import type { AdminPrincipal, DevicePrincipal, MerchantUserPrincipal } from '../auth/principal';
 import type { Db, Queryable } from '../db/db';
 import { badRequest, notFound } from '../http/errors';
 import { audit } from './audit';
@@ -432,5 +442,90 @@ export async function uploadMedia(
       });
     }
     return { media_id: r.media_id, url: mediaUrl(r.media_id) };
+  });
+}
+
+/**
+ * An item created at a register from an unknown barcode (P5). Idempotent on the device-minted id:
+ *  - the same command again → `exists` (no second item, no second version bump);
+ *  - the barcode is already in the catalog (another register, or admin, got there first) → the
+ *    device id becomes an alias of that item → `aliased`, and the register adopts the canonical id
+ *    at its next catalog pull;
+ *  - otherwise → a new item with the device's id → `created`.
+ * The register checked the cashier's `item.create` permission; the audit entry names the register.
+ */
+export async function createItemFromDevice(
+  db: Db,
+  d: DevicePrincipal,
+  input: DeviceItemCreate,
+  traceId: string,
+): Promise<DeviceItemResult> {
+  return db.tx(async (q) => {
+    const m = await merchantFor(q, d.merchant_id);
+    const version = async () => catalogVersion(q, d.merchant_id);
+
+    const same = await q.query<{ item_id: string }>(
+      `SELECT item_id FROM items WHERE item_id = $1 AND merchant_id = $2
+        UNION ALL SELECT item_id FROM item_aliases WHERE alias_item_id = $1 AND merchant_id = $2`,
+      [input.item_id, d.merchant_id],
+    );
+    if (same.rows[0]) {
+      const canonical = same.rows[0].item_id;
+      return { item_id: canonical, status: canonical === input.item_id ? 'exists' : 'aliased', catalog_version: await version() };
+    }
+
+    // Same product under another spelling of its barcode (UPC-A vs EAN-13 leading zeros) counts.
+    const dup = await q.query<{ item_id: string }>(
+      `SELECT item_id FROM items WHERE merchant_id = $1 AND upc IS NOT NULL
+          AND (upc = $2 OR (upc ~ '^[0-9]+$' AND $2 ~ '^[0-9]+$' AND ltrim(upc, '0') = ltrim($2, '0')))
+       UNION ALL
+       SELECT item_id FROM item_barcodes WHERE merchant_id = $1
+          AND (barcode = $2 OR (barcode ~ '^[0-9]+$' AND $2 ~ '^[0-9]+$' AND ltrim(barcode, '0') = ltrim($2, '0')))
+       LIMIT 1`,
+      [d.merchant_id, input.upc],
+    );
+    if (dup.rows[0]) {
+      await q.query(
+        `INSERT INTO item_aliases (alias_item_id, item_id, org_id, merchant_id, register_id) VALUES ($1, $2, $3, $4, $5)`,
+        [input.item_id, dup.rows[0].item_id, m.org_id, m.merchant_id, d.register_id],
+      );
+      await audit(q, {
+        actor: d,
+        action: 'catalog.item_alias_from_register',
+        tenancy: d,
+        target: input.item_id,
+        details: { item_id: dup.rows[0].item_id, upc: input.upc, name: input.name },
+        trace_id: traceId,
+      });
+      return { item_id: dup.rows[0].item_id, status: 'aliased', catalog_version: await version() };
+    }
+
+    if (input.category_id) {
+      const c = await q.query('SELECT 1 FROM categories WHERE category_id = $1 AND merchant_id = $2', [input.category_id, d.merchant_id]);
+      if (!c.rows[0]) throw badRequest('That category does not belong to this merchant');
+    }
+    await q.query(
+      `INSERT INTO items (item_id, org_id, merchant_id, category_id, name, upc, cash_price_cents, origin_register_id, created_at,
+                          sort)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+               (SELECT coalesce(max(sort), -1) + 1 FROM items WHERE merchant_id = $3 AND category_id IS NOT DISTINCT FROM $4))`,
+      [input.item_id, m.org_id, m.merchant_id, input.category_id, input.name, input.upc, input.cash_price_cents, d.register_id, input.created_at],
+    );
+    const v = await bumpCatalogVersion(q, d.merchant_id);
+    await q.query(
+      `INSERT INTO item_price_history (org_id, merchant_id, item_id, cash_price_cents, card_price_cents, cost_cents,
+                                       catalog_version, changed_by, changed_by_kind, trace_id)
+       VALUES ($1, $2, $3, $4, NULL, NULL, $5, $6, 'device', $7)`,
+      [m.org_id, m.merchant_id, input.item_id, input.cash_price_cents, v, input.created_by_user_id, traceId],
+    );
+    await audit(q, {
+      actor: d,
+      action: 'catalog.item_created_at_register',
+      tenancy: d,
+      target: input.item_id,
+      details: { name: input.name, upc: input.upc, cash_price_cents: input.cash_price_cents, by_user_id: input.created_by_user_id, catalog_version: v },
+      trace_id: traceId,
+    });
+    return { item_id: input.item_id, status: 'created', catalog_version: v };
   });
 }

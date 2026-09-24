@@ -8,5 +8,6 @@ export * from './api';
 export * from './catalog';
 export * from './staff';
 export * from './ops';
+export * from './scan';
 export * from './tender';
 export * from './receipt';

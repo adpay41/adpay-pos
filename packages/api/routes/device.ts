@@ -2,11 +2,12 @@
  * Register routes. Identity and tenancy come from the device token alone.
  */
 import { EventBatchSchema } from '@adpay/shared';
+import { DeviceItemCreateInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { asDevice, requireDevice } from '../http/auth-hooks';
 import type { AppDeps } from '../server';
 import { getCatalogSnapshot } from '../services/catalog';
-import { catalogVersion } from '../services/catalog-write';
+import { catalogVersion, createItemFromDevice } from '../services/catalog-write';
 import { ingestEvents } from '../services/events';
 import { deviceIdentity } from '../services/onboarding';
 import { registerStaff } from '../services/staff';
@@ -29,6 +30,12 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
   app.get('/device/catalog/version', async (request) => {
     const d = asDevice(request);
     return { catalog_version: await catalogVersion(db, d.merchant_id) };
+  });
+
+  /** An item created at this register from an unknown barcode (P5). Idempotent on its device-minted id. */
+  app.post('/device/items', async (request) => {
+    const d = asDevice(request);
+    return createItemFromDevice(db, d, DeviceItemCreateInput.parse(request.body), request.logContext.trace_id);
   });
 
   /** Append-only, idempotent event push (device wins on sales). Safe to retry any number of times. */

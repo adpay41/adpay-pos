@@ -23,6 +23,7 @@ interface SaleRow {
   tax_cents: number;
   refunds_cents: number;
   voids_in_range: number;
+  duration_s: number | null;
 }
 
 export async function salesSummary(
@@ -58,7 +59,10 @@ export async function salesSummary(
             coalesce(max((e.payload->>'tax_cents')::bigint) FILTER (WHERE e.type = 'sale.completed'), 0)::bigint AS tax_cents,
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (
               WHERE e.type = 'sale.refunded' AND e.business_date BETWEEN $2::date AND $3::date), 0)::bigint AS refunds_cents,
-            count(*) FILTER (WHERE e.type = 'sale.voided' AND e.business_date BETWEEN $2::date AND $3::date) AS voids_in_range
+            count(*) FILTER (WHERE e.type = 'sale.voided' AND e.business_date BETWEEN $2::date AND $3::date) AS voids_in_range,
+            -- Speed at the counter (Bible L55): first action to completion, from the events themselves.
+            extract(epoch FROM max(e.occurred_at) FILTER (WHERE e.type = 'sale.completed')
+                             - min(e.occurred_at) FILTER (WHERE e.type = 'sale.opened'))::int AS duration_s
        FROM sale_events e
        JOIN registers r ON r.register_id = e.register_id
        JOIN locations l ON l.location_id = e.location_id
@@ -91,6 +95,10 @@ export async function salesSummary(
     registers.set(r.register_id, [...(registers.get(r.register_id) ?? []), r]);
   }
 
+  // Median, not mean: one ticket left open over lunch shouldn't make every sale look slow.
+  const durations = counted.map((r) => r.duration_s).filter((d): d is number => d !== null && d >= 0).sort((a, b) => a - b);
+  const median = durations.length ? durations[Math.floor((durations.length - 1) / 2)]! : null;
+
   return {
     range,
     from: d_from,
@@ -100,6 +108,8 @@ export async function salesSummary(
     tax_cents: sum(counted.map((r) => cents(r.tax_cents))),
     refunds_cents: sum(rows.map((r) => cents(r.refunds_cents))),
     voids: rows.reduce((n, r) => n + r.voids_in_range, 0),
+    median_sale_seconds: median,
+    sales_under_20s: durations.filter((d) => d < 20).length,
     by_tender: byTender,
     by_hour: [...hours.entries()]
       .sort(([a], [b]) => a - b)

@@ -34,6 +34,13 @@ export function SummaryView({ s }: { s: SalesSummary }) {
           </div>
         </div>
         <div className="panel stat">
+          <div className="label">Speed at the counter</div>
+          <div className="value">{s.median_sale_seconds === null ? '—' : `${s.median_sale_seconds}s`}</div>
+          <div className="muted">
+            median per sale · {s.sale_count ? Math.round((s.sales_under_20s * 100) / s.sale_count) : 0}% under 20 s
+          </div>
+        </div>
+        <div className="panel stat">
           <div className="label">Voids · refunds</div>
           <div className="value">{s.voids}</div>
           <div className="muted">
