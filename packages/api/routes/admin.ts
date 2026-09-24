@@ -1,7 +1,7 @@
 /**
  * Admin (AD Pay staff) routes. Cross-tenant by role; every write is audited.
  */
-import { PACK_IDS } from '@adpay/shared';
+import { KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asAdmin, requireAdmin } from '../http/auth-hooks';
@@ -18,6 +18,7 @@ import {
   tenancyTree,
 } from '../services/onboarding';
 import { cashReport } from '../services/cash';
+import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPlans, updateOnboarding } from '../services/merchant-setup';
 import { recentSales, salesSummary } from '../services/reports';
 
 const Ppm = z.int().min(0).max(1_000_000);
@@ -28,6 +29,42 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
   app.addHook('preHandler', requireAdmin);
 
   app.get('/admin/tenancy', async () => tenancyTree(db));
+
+  // Onboarding wizard (P12a, ADR 0020): one call, one transaction.
+  app.post('/admin/onboarding', async (request, reply) => {
+    reply.status(201);
+    return onboardMerchant(db, asAdmin(request), OnboardingInput.parse(request.body), request.logContext.trace_id);
+  });
+  app.get('/admin/onboarding', async () => ({ merchants: await onboardingList(db) }));
+  app.patch('/admin/onboarding/:merchantId', async (request) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    const body = z
+      .strictObject({
+        status: z.enum(ONBOARDING_STATUSES).optional(),
+        kyb_status: z.enum(KYB_STATUSES).optional(),
+        install_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+        hardware_note: z.string().trim().max(500).nullable().optional(),
+      })
+      .parse(request.body);
+    await updateOnboarding(db, asAdmin(request), merchantId, body, request.logContext.trace_id);
+    return { ok: true };
+  });
+  // Printable install kit: fresh 14-day setup codes for every unpaired register (L43).
+  app.post('/admin/merchants/:merchantId/install-kit', async (request) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    return installKit(db, asAdmin(request), merchantId, request.logContext.trace_id);
+  });
+  // Pricing plans with history (L51).
+  app.get('/admin/merchants/:merchantId/pricing', async (request) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    return { plans: await pricingPlans(db, merchantId) };
+  });
+  app.post('/admin/merchants/:merchantId/pricing', async (request, reply) => {
+    const { merchantId } = z.object({ merchantId: z.uuid() }).parse(request.params);
+    const body = z.strictObject({ plan: PricingPlanInput, apply_to_locations: z.boolean().default(false) }).parse(request.body);
+    reply.status(201);
+    return addPricingPlan(db, asAdmin(request), merchantId, body.plan, body.apply_to_locations, request.logContext.trace_id);
+  });
 
   app.post('/admin/orgs', async (request) => {
     const admin = asAdmin(request);

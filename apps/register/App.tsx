@@ -120,8 +120,8 @@ function Pair({ onPaired, notice }: { onPaired: (token: string) => void; notice:
         <Text style={s.pairTitle}>Set up this register</Text>
         {notice ? <Text style={s.error}>{notice}</Text> : null}
         <Text style={s.muted}>
-          Enter the setup code from the admin back-office (Merchants → register → Setup code). In production this arrives as a QR
-          the owner scans.
+          Scan the QR on the install kit with the register's scanner, or type the code printed under it. (Admin → Onboarding → Print
+          install kit.)
         </Text>
         {__DEV__ ? (
           <Text style={s.muted}>Local demo: JSQ3-DEMO (Jersey City · Register 3). More codes are in the README.</Text>
@@ -133,6 +133,8 @@ function Pair({ onPaired, notice }: { onPaired: (token: string) => void; notice:
           placeholder="ABCD-2345"
           autoCapitalize="characters"
           autoCorrect={false}
+          // A 2D scanner types the kit's QR (just the code) and presses Enter, so the field starts focused.
+          autoFocus
           onSubmitEditing={pair}
         />
         {error ? <Text style={s.error}>{error}</Text> : null}
