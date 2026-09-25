@@ -20,6 +20,16 @@ npm run dev        # or: pnpm dev
 From a clean clone this creates `.env` (local values, fresh JWT secret, gitignored), installs,
 starts Postgres 16 + Redis in Docker, migrates, seeds a demo c-store and opens:
 
+### Share it with someone outside this machine
+
+`npm run share` does four things:
+- opens free Cloudflare quick tunnels (no account) for the API and all three apps;
+- starts the stack pointed at the **tunnelled API** (CORS and the apps' API URL are set for it);
+- waits until each public URL answers;
+- prints the URLs and the demo logins.
+
+It needs `cloudflared` (`winget install Cloudflare.cloudflared`). Stop `npm run dev` first, because it uses the same ports. The URLs change on every run, so send the new ones each time. **They are public**: anyone with a URL can sign in with the demo logins below. Ctrl+C stops it.
+
 ### How to log in (local demo — fixed values)
 
 | What | URL | Sign in with |
