@@ -8,6 +8,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:reset": "node scripts/dev.mjs --reset",
     "logins": "corepack pnpm --filter @adpay/api db:seed",
+    "share": "node scripts/share.mjs",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @adpay/api db:migrate",

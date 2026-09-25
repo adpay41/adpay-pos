@@ -122,7 +122,10 @@ const width = Math.max(...SERVICES.map((s) => s.name.length));
 const children = [];
 
 for (const svc of SERVICES) {
-  const child = spawn('corepack', ['pnpm', '--filter', svc.filter, svc.script], {
+  // `npm run share` sets ADPAY_EXPO_CLEAR: Expo inlines EXPO_PUBLIC_API_URL into the bundle and Metro
+  // caches it, so a new tunnel URL needs a cleared cache or the apps keep calling the old API.
+  const extra = process.env.ADPAY_EXPO_CLEAR === '1' && svc.script === 'web' ? ['--', '--clear'] : [];
+  const child = spawn('corepack', ['pnpm', '--filter', svc.filter, svc.script, ...extra], {
     cwd: ROOT,
     shell: isWin,
     env: {
