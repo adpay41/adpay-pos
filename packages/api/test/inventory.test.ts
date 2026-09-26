@@ -95,6 +95,16 @@ describe('inventory', () => {
     expect(r.expiring.map((x: { item_id: string }) => x.item_id)).toEqual([milk]);
   });
 
+  it('shrink: a count short of what was expected, and write-offs by reason, at cost', async () => {
+    await app.inject({ method: 'PATCH', url: `/merchant/items/${pack}`, headers: auth(owner), payload: { cost_cents: 1_000 } });
+    await move({ kind: 'count', item_id: pack, qty: 15 }); // the fold expected 19: 4 missing
+    const today = new Date().toISOString().slice(0, 10);
+    const r = (await app.inject({ method: 'GET', url: `/merchant/inventory/shrink?location_id=${a.location_id}&from=${today}&to=${today}`, headers: auth(owner) })).json();
+    expect(r.items.find((i: { key: string }) => i.key === pack)).toMatchObject({ missing_units: 4, written_off_units: 3, cost_cents: 7 * 1_000 });
+    expect(r.by_reason).toEqual([{ reason: 'damaged', units: 3, cost_cents: 3_000 }]);
+    expect(Array.isArray(r.cashiers)).toBe(true);
+  });
+
   it('movements are append-only', async () => {
     await expect(db.query(`UPDATE inventory_movements SET qty = 999 WHERE item_id = $1`, [pack])).rejects.toThrow();
   });

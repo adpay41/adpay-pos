@@ -10,6 +10,7 @@ import {
   RegisterEventSchema,
   type InventoryMovementInput,
   type ItemStockSettings,
+  type StockLevel,
   type Movement,
   type RegisterEvent,
 } from '@adpay/shared';
@@ -19,6 +20,7 @@ import type { Db, Queryable } from '../db/db';
 import { badRequest, notFound } from '../http/errors';
 import { audit } from './audit';
 import { bumpCatalogVersion, merchantFor } from './catalog-write';
+import { cashierPerformance } from './performance';
 
 type Actor = MerchantUserPrincipal | AdminPrincipal;
 
@@ -68,8 +70,8 @@ export async function movementsFromEvents(q: Queryable, events: readonly Registe
   );
 }
 
-/** Stock at one store for every tracked item, and perishable lots close to their date. */
-export async function stockLevels(q: Queryable, merchantId: string, locationId: string, now = new Date()): Promise<{ items: StockRow[]; expiring: ExpiringLot[] }> {
+/** Fold one store's tracked items: the items, their movements, and the resulting levels. */
+async function foldLocation(q: Queryable, merchantId: string, locationId: string, now: Date) {
   const { rows: loc } = await q.query('SELECT 1 FROM locations WHERE location_id = $1 AND merchant_id = $2', [locationId, merchantId]);
   if (!loc[0]) throw notFound('Location not found');
   const { rows: items } = await q.query<{ item_id: string; name: string; category: string | null; track_stock: boolean; reorder_point: number | null; stock_of: string | null; stock_ratio: number; perishable: boolean }>(
@@ -78,10 +80,10 @@ export async function stockLevels(q: Queryable, merchantId: string, locationId: 
       WHERE i.merchant_id = $1 AND (i.track_stock OR i.stock_of IS NOT NULL)`,
     [merchantId],
   );
-  if (items.length === 0) return { items: [], expiring: [] };
+  if (items.length === 0) return { items, moves: [], levels: new Map<string, StockLevel>() };
   const ids = items.map((i) => i.item_id);
-  const { rows: moves } = await q.query<{ item_id: string; kind: Movement['kind']; qty: number; occurred_at: Date; expires_on: string | null }>(
-    `SELECT item_id, kind, qty, occurred_at, to_char(expires_on, 'YYYY-MM-DD') AS expires_on FROM inventory_movements
+  const { rows: moves } = await q.query<{ item_id: string; kind: Movement['kind']; qty: number; occurred_at: Date; expires_on: string | null; reason: string | null }>(
+    `SELECT item_id, kind, qty, occurred_at, to_char(expires_on, 'YYYY-MM-DD') AS expires_on, reason FROM inventory_movements
       WHERE merchant_id = $1 AND location_id = $2 AND item_id = ANY($3::uuid[]) ORDER BY occurred_at`,
     [merchantId, locationId, ids],
   );
@@ -111,7 +113,12 @@ export async function stockLevels(q: Queryable, merchantId: string, locationId: 
     moves.map((m) => ({ item_id: m.item_id, kind: m.kind, qty: m.qty, at: m.occurred_at.toISOString() })),
     sales,
   );
+  return { items, moves, levels };
+}
 
+/** Stock at one store for every tracked item, and perishable lots close to their date. */
+export async function stockLevels(q: Queryable, merchantId: string, locationId: string, now = new Date()): Promise<{ items: StockRow[]; expiring: ExpiringLot[] }> {
+  const { items, moves, levels } = await foldLocation(q, merchantId, locationId, now);
   const rows: StockRow[] = items
     .filter((i) => i.track_stock && !i.stock_of)
     .map((i) => {
@@ -197,4 +204,83 @@ export async function setStockSettings(db: Db, actor: Actor, merchantId: string,
     await audit(q, { actor, action: 'inventory.settings_set', tenancy: merchant, target: itemId, details: { ...s, catalog_version: version }, trace_id: traceId });
     return { item_id: itemId, catalog_version: version };
   });
+}
+
+export interface ShrinkLine {
+  key: string;
+  name: string;
+  /** Units a count found missing (expected more than was on the shelf). */
+  missing_units: number;
+  /** Units a count found beyond what was expected. */
+  found_units: number;
+  written_off_units: number;
+  /** Missing and written-off units at today's cost; items without a cost are counted apart. */
+  cost_cents: number;
+  uncosted_units: number;
+}
+
+/**
+ * Shrink at one store (Bible 2.4): what counts found missing against what the fold expected, and what
+ * was written off by reason, by category and item, at today's cost; with the cashier patterns that
+ * go with it (voids, refunds, "no sale" opens).
+ */
+export async function shrinkReport(q: Queryable, merchantId: string, locationId: string, from: string, to: string, now = new Date()) {
+  const { items, moves, levels } = await foldLocation(q, merchantId, locationId, now);
+  const { rows: meta } = await q.query<{ item_id: string; cost_cents: number | null; category: string | null }>(
+    `SELECT i.item_id, i.cost_cents, c.name AS category FROM items i LEFT JOIN categories c ON c.category_id = i.category_id WHERE i.merchant_id = $1`,
+    [merchantId],
+  );
+  const info = new Map(meta.map((m) => [m.item_id, m]));
+  const inRange = (at: string) => at.slice(0, 10) >= from && at.slice(0, 10) <= to;
+  const blank = (key: string, name: string): ShrinkLine => ({ key, name, missing_units: 0, found_units: 0, written_off_units: 0, cost_cents: 0, uncosted_units: 0 });
+  const byItem = new Map<string, ShrinkLine>();
+  const byCat = new Map<string, ShrinkLine>();
+  const byReason = new Map<string, { reason: string; units: number; cost_cents: number }>();
+  const total = blank('total', 'All');
+  const add = (itemId: string, patch: { missing?: number; found?: number; written?: number }) => {
+    const it = items.find((i) => i.item_id === itemId);
+    const cat = info.get(itemId)?.category ?? 'No category';
+    if (!byItem.has(itemId)) byItem.set(itemId, blank(itemId, it?.name ?? 'item'));
+    if (!byCat.has(cat)) byCat.set(cat, blank(cat, cat));
+    const cost = info.get(itemId)?.cost_cents ?? null;
+    const lost = (patch.missing ?? 0) + (patch.written ?? 0);
+    for (const l of [total, byItem.get(itemId)!, byCat.get(cat)!]) {
+      l.missing_units += patch.missing ?? 0;
+      l.found_units += patch.found ?? 0;
+      l.written_off_units += patch.written ?? 0;
+      if (cost === null) l.uncosted_units += lost;
+      else l.cost_cents += lost * cost;
+    }
+  };
+  for (const [itemId, level] of levels) {
+    for (const v of level.variances) {
+      if (!inRange(v.at)) continue;
+      const d = v.counted - v.expected;
+      if (d < 0) add(itemId, { missing: -d });
+      else if (d > 0) add(itemId, { found: d });
+    }
+  }
+  for (const m of moves) {
+    if (m.kind !== 'adjust' || m.qty >= 0 || !inRange(m.occurred_at.toISOString())) continue;
+    const it = items.find((i) => i.item_id === m.item_id);
+    const base = it?.stock_of ?? m.item_id;
+    const units = -m.qty * (it?.stock_of ? it.stock_ratio : 1);
+    add(base, { written: units });
+    const reason = m.reason ?? 'other';
+    const cost = info.get(base)?.cost_cents ?? 0;
+    const cur = byReason.get(reason) ?? { reason, units: 0, cost_cents: 0 };
+    cur.units += units;
+    cur.cost_cents += units * cost;
+    byReason.set(reason, cur);
+  }
+  const { cashiers } = await cashierPerformance(q, merchantId, from, to);
+  return {
+    from,
+    to,
+    total,
+    by_category: [...byCat.values()].sort((a, b) => b.cost_cents - a.cost_cents),
+    by_reason: [...byReason.values()].sort((a, b) => b.cost_cents - a.cost_cents),
+    items: [...byItem.values()].sort((a, b) => b.cost_cents - a.cost_cents || b.missing_units - a.missing_units).slice(0, 20),
+    cashiers: cashiers.map((c) => ({ name: c.name, sales: c.sales, voids: c.voids, refunds: c.refunds, refund_cents: c.refund_cents, no_sale_opens: c.no_sale_opens })),
+  };
 }

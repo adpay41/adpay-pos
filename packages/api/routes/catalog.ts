@@ -34,7 +34,7 @@ import { languageStatuses } from '../services/i18n';
 import { listPromotions, savePromotion, setPromotionActive } from '../services/promotions';
 import { bulkPriceChange } from '../services/price-tools';
 import { labelTemplates, printPriceLabels, printShelfTags, saveLabelTemplate, tagQueue } from '../services/labels';
-import { recordMovement, setStockSettings, stockLevels } from '../services/inventory';
+import { recordMovement, setStockSettings, shrinkReport, stockLevels } from '../services/inventory';
 import { closePurchaseOrder, createPurchaseOrder, purchaseOrders, reorderSuggestions, saveVendor, sendPurchaseOrder, setItemsVendor, vendors } from '../services/ordering';
 import { createMessageSender } from '../messaging/sender';
 import { z } from 'zod';
@@ -212,6 +212,14 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId } = scope.resolve(r, false);
       const { location_id } = z.object({ location_id: z.uuid() }).parse(r.query);
       return stockLevels(db, merchantId, location_id);
+    });
+    s.get(`${p}/inventory/shrink`, async (r) => {
+      const { merchantId } = scope.resolve(r, false);
+      const q = z
+        .object({ location_id: z.uuid(), from: z.iso.date(), to: z.iso.date() })
+        .refine((x) => x.from <= x.to && Date.parse(x.to) - Date.parse(x.from) <= 93 * 86_400_000, 'Up to a quarter, from ≤ to')
+        .parse(r.query);
+      return shrinkReport(db, merchantId, q.location_id, q.from, q.to);
     });
     s.post(`${p}/inventory/movements`, async (r, reply) => {
       const { merchantId, actor } = scope.resolve(r, true);

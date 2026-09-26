@@ -181,7 +181,7 @@ section 5.
 | Reorder suggestions (2.4) | ✅ | Merchant app → Orders: per vendor, enough until the delivery after next by weekday (4-week average), plus the low point, less shelf and on-order, in whole cases (P23a, ADR 0035). | P23 |
 | Vendor list; one-tap order text/email (2.4) | 🔶 | Vendors (rep contact, delivery days, items supplied); orders made from suggestions and sent in one tap through `MessageSender` (P23a). **Deferred:** delivery (Twilio/SES accounts); the log sender records and the app says to call the rep. | P23 |
 | Receive by scan, discrepancy report (2.4) | ✅ | Receive by scan at the register (P22b), against an open order (P23a); each order shows ordered vs received per line, short and over in amber. | P22 / P23 |
-| Shrink dashboard (2.4) | ⬜ | P6, P7, P22 | P23 |
+| Shrink dashboard (2.4) | ✅ | Stock tab → Shrink: missing at counts (expected vs counted), write-offs by reason, by category and item at cost; voids / refunds / no-sale by cashier (P23b, ADR 0034). | P23 |
 | Hours and payroll export (2.5) | ✅ | Merchant app Hours tab: per person per day, overtime, CSV export (P15). | P15 |
 | Cashier performance (2.5) | ✅ | Hours tab: per cashier sales, $/hour on the clock, voids, refunds, no-sale opens, drawer over/short, age checks (by ID scan; sold without a check) (P19b). | P19 |
 | Alerts: EOD not closed; cash short > $Y (2.6) | ✅ | eod_missing after 1 a.m. store time (P16a); drawer short > $Y (P6, threshold P11). | P16 |
@@ -369,7 +369,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P23a Ordering | #34 | PR open — vendors, reorder suggestions by weekday until the delivery after next in whole cases, purchase orders sent through `MessageSender`, received at the register against the order, ordered vs received. ADR 0035. |
+| P23b Shrink | #35 | PR open — count variances (expected vs counted) and write-offs by reason, by category and item at cost, with cashier voids / refunds / no-sale; Stock tab Shrink card. ADR 0034. |
+| P23a Ordering | #34 | Merged — vendors, reorder suggestions by weekday until the delivery after next in whole cases, purchase orders sent through `MessageSender`, received at the register against the order, ordered vs received. ADR 0035. |
 | P22b Register inventory | #33 | Merged — receive a delivery by scan, write-offs behind a PIN, low-stock badges on tiles, sell-soon on the cashier's idle screen, /device/stock. ADR 0034. |
 | P22a Inventory model | #32 | Merged — stock folded from append-only movements (counts, receipts, write-offs) and sales, case-break by stock ratio, low / dead / expiring, merchant app Stock tab, register inventory events ingested. ADR 0034. |
 | P21 Labels | #31 | Merged — shelf tags as PDF (Avery sheet / thermal), both prices + barcode (UPC-A / EAN-13 / Code 128, in-store UPC assigned), reprint queue, deli price labels rung at the printed price, label templates. ADR 0033. |

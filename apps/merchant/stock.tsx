@@ -108,6 +108,7 @@ export function StockTab({ token }: { token: string }) {
           {open === i.item_id && loc ? <Actions token={token} row={i} locationId={loc} onDone={reload} /> : null}
         </Pressable>
       ))}
+      {loc ? <ShrinkCard key={loc + nonce} token={token} locationId={loc} /> : null}
       {catalog ? <TrackItems token={token} catalog={catalog} onDone={reload} /> : null}
     </ScrollView>
   );
@@ -266,3 +267,62 @@ const s = StyleSheet.create({
   button: { backgroundColor: C.black, borderRadius: 8, padding: 12, alignItems: 'center' },
   buttonText: { color: '#fff', fontWeight: '700' },
 });
+
+interface ShrinkLine {
+  key: string;
+  name: string;
+  missing_units: number;
+  found_units: number;
+  written_off_units: number;
+  cost_cents: number;
+  uncosted_units: number;
+}
+
+/** Shrink over the last 30 days (Bible 2.4): missing at counts, write-offs by reason, cashier patterns. */
+export function ShrinkCard({ token, locationId }: { token: string; locationId: string }) {
+  const [data, setData] = useState<{
+    total: ShrinkLine;
+    by_category: ShrinkLine[];
+    by_reason: { reason: string; units: number; cost_cents: number }[];
+    items: ShrinkLine[];
+    cashiers: { name: string; sales: number; voids: number; refunds: number; refund_cents: number; no_sale_opens: number }[];
+  } | null>(null);
+  useEffect(() => {
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
+    api<NonNullable<typeof data>>(`/merchant/inventory/shrink?location_id=${locationId}&from=${from}&to=${to}`, token).then(setData, () => undefined);
+  }, [token, locationId]);
+  if (!data) return null;
+  const usd = (c: number) => `$${Math.trunc(c / 100)}.${String(c % 100).padStart(2, '0')}`;
+  const lost = data.total.missing_units + data.total.written_off_units;
+  return (
+    <View style={s.card}>
+      <Text style={s.label}>Shrink · last 30 days</Text>
+      {lost === 0 ? <Text style={s.muted}>Nothing missing at counts and nothing written off.</Text> : (
+        <>
+          <Text style={s.body}>
+            {data.total.missing_units} missing at counts · {data.total.written_off_units} written off · {usd(data.total.cost_cents)} at cost
+            {data.total.uncosted_units ? ` (+${data.total.uncosted_units} without a cost)` : ''}
+          </Text>
+          {data.by_category.filter((c) => c.missing_units + c.written_off_units > 0).map((c) => (
+            <Text key={c.key} style={s.muted}>
+              {c.name}: {c.missing_units} missing, {c.written_off_units} written off · {usd(c.cost_cents)}
+            </Text>
+          ))}
+          {data.by_reason.length ? <Text style={s.muted}>Write-offs: {data.by_reason.map((r) => `${r.reason} ${r.units}`).join(' · ')}</Text> : null}
+          {data.items.filter((i) => i.missing_units > 0).slice(0, 5).map((i) => (
+            <Text key={i.key} style={s.warn}>
+              {i.name}: {i.missing_units} missing
+            </Text>
+          ))}
+        </>
+      )}
+      {data.cashiers.length ? <Text style={[s.label, { marginTop: 6 }]}>By cashier</Text> : null}
+      {data.cashiers.map((c) => (
+        <Text key={c.name} style={s.muted}>
+          {c.name}: {c.sales} sales · {c.voids} voids · {c.refunds} refunds{c.refunds ? ` (${usd(c.refund_cents)})` : ''} · {c.no_sale_opens} “no sale”
+        </Text>
+      ))}
+    </View>
+  );
+}
