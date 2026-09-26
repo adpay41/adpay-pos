@@ -54,6 +54,8 @@ describe('stock', () => {
     expect(pack.sold_since_count).toBe(17);
     expect(pack.last_sold_at).toBe('2026-09-04T15:00:00Z');
     expect(foldStock(items, moves, sales).has(CARTON)).toBe(false); // a carton has no stock of its own
+    const recount = foldStock(items, [...moves, { item_id: PACK, kind: 'count', qty: 45, at: '2026-09-05T09:00:00Z' }], sales).get(PACK)!;
+    expect(recount.variances).toEqual([{ at: '2026-09-05T09:00:00Z', expected: 51, counted: 45 }]); // 6 missing
   });
 
   it('without a count, stock starts at zero and can go negative (a count fixes it)', () => {

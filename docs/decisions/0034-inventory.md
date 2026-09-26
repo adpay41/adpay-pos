@@ -61,3 +61,17 @@ The catalog snapshot carries each item's stock settings, for the register in P22
   tile shows "3 left" at or below the low point, or "Out". Offline, the last levels stay: it's a
   glance, and the server's fold is the truth.
 - **Sell soon**: lots near their date show on the cashier's screen between customers.
+
+## Shrink (P23b)
+Every count after an item's first records a **variance**: what the fold expected against what was on
+the shelf. `GET …/inventory/shrink` (up to a quarter) reports, by category and item and valued at
+today's cost:
+- units **missing** at counts;
+- units **found**, where a count came in over;
+- **write-offs by reason**.
+
+Units without a cost are counted apart. The same report carries the cashier patterns from P19b:
+sales, voids, refunds and "no sale" opens.
+
+The merchant app shows it on the Stock tab for the last 30 days. Valuing at today's cost keeps the
+report simple; margin reports use the cost in force at the time (ADR 0032).

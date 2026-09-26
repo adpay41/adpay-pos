@@ -59,6 +59,8 @@ export interface StockLevel {
   counted_at: string | null;
   sold_since_count: number;
   last_sold_at: string | null;
+  /** Every count after the first: what the fold expected vs what was on the shelf (shrink, P23b). */
+  variances: { at: string; expected: number; counted: number }[];
 }
 
 /**
@@ -72,7 +74,7 @@ export function foldStock(items: readonly StockItem[], movements: readonly Movem
   const levels = new Map<string, StockLevel>();
   const level = (id: string) => {
     let l = levels.get(id);
-    if (!l) levels.set(id, (l = { item_id: id, on_hand: 0, counted_at: null, sold_since_count: 0, last_sold_at: null }));
+    if (!l) levels.set(id, (l = { item_id: id, on_hand: 0, counted_at: null, sold_since_count: 0, last_sold_at: null, variances: [] }));
     return l;
   };
 
@@ -99,6 +101,8 @@ export function foldStock(items: readonly StockItem[], movements: readonly Movem
   for (const c of changes) {
     const l = level(c.item);
     if (c.count !== undefined) {
+      // The first count sets the level; later ones show what went missing (or turned up).
+      if (l.counted_at !== null) l.variances.push({ at: c.at, expected: l.on_hand, counted: c.count });
       l.on_hand = c.count;
       l.counted_at = c.at;
       l.sold_since_count = 0;
