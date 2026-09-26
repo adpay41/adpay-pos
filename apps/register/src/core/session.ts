@@ -86,6 +86,8 @@ export type CardRefunder = (req: { sale_id: string; refund_id: string; provider_
 }>;
 
 /** Cash drawer events outside a sale (P6). */
+/** Inventory at the register (P22b): deliveries scanned in, write-offs, shelf counts. */
+export type InventoryEventType = 'inventory.received' | 'inventory.written_off' | 'inventory.counted';
 export type DrawerEventType = 'drawer.session_opened' | 'drawer.cash_movement' | 'drawer.session_closed' | 'drawer.opened' | 'drawer.counterfeit' | 'eod.closed';
 
 export class SaleSession {
@@ -135,6 +137,12 @@ export class SaleSession {
   }
 
   /** Record a sign-in, sign-out, PIN failure or manager override (saleless unless tied to a ticket). */
+  recordInventory<T extends InventoryEventType>(type: T, payload: EventPayload<T>): Promise<void> {
+    return this.serial(async () => {
+      await this.emit(type, payload, null);
+    });
+  }
+
   recordStaff<T extends StaffEventType>(type: T, payload: EventPayload<T>, saleId: string | null = null): Promise<void> {
     return this.serial(async () => {
       await this.emit(type, payload, saleId);

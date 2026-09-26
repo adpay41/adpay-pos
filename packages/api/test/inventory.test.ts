@@ -17,13 +17,14 @@ let pack: string;
 let carton: string;
 let milk: string;
 let seq = 0;
+let deviceToken: string;
 
 beforeAll(async () => {
   db = await createTestDb();
   app = await createTestApp(db);
   a = await createTenant(db, 'Stock', '201-555-2050');
   owner = await merchantLogin(app, a.owner_phone);
-  await pairDevice(app, db, a.register_id);
+  deviceToken = await pairDevice(app, db, a.register_id);
   const add = async (payload: object) => (await app.inject({ method: 'POST', url: '/merchant/items', headers: auth(owner), payload: { category_id: null, ...payload } })).json().item_id as string;
   pack = await add({ name: 'Marlboro Red pack', cash_price_cents: 1400 });
   carton = await add({ name: 'Marlboro Red carton', cash_price_cents: 13500 });
@@ -86,6 +87,12 @@ describe('inventory', () => {
     await move({ kind: 'receive', item_id: milk, qty: 6, expires_on: tomorrow });
     await sell(milk, 2);
     expect((await levels()).expiring).toEqual([expect.objectContaining({ item_id: milk, name: 'Milk 1 gal', expires_on: tomorrow, qty: 4 })]);
+  });
+
+  it('the register reads its store levels for tile badges and sell-soon', async () => {
+    const r = (await app.inject({ method: 'GET', url: '/device/stock', headers: auth(deviceToken) })).json();
+    expect(r.items.find((i: { item_id: string }) => i.item_id === pack)).toEqual({ item_id: pack, on_hand: 19, reorder_point: 20 });
+    expect(r.expiring.map((x: { item_id: string }) => x.item_id)).toEqual([milk]);
   });
 
   it('movements are append-only', async () => {

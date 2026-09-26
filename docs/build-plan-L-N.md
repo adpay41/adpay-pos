@@ -153,11 +153,11 @@ section 5.
 | Time clock (1.8) | ✅ | Clock in/out by the cashier's name, separate from sign-in; punches are events; hours in the merchant app, weekly overtime (P15). | P15 |
 | Shift handover with photo (1.8) | ✅ | Close with count (+photo) → next session starts with that float, outgoing cashier clocked and signed out (P15). | P15 |
 | Training mode (1.8) | ✅ | Separate in-memory session: cash only, no drawer, receipts say TRAINING, never synced (P16a, ADR 0025). | P16 |
-| Receive delivery by scan (1.9) | ⬜ | Inventory model (P22), P5 | P22 |
-| Low-stock badge (1.9) | ⬜ | P22 | P22 |
+| Receive delivery by scan (1.9) | ✅ | Register → Receive: scan each case or item (a case barcode counts its pack size), invoice number, expiry for perishables; offline-safe inventory events (P22b, ADR 0034). | P22 |
+| Low-stock badge (1.9) | ✅ | "3 left" / "Out" on the tile at or below the low point, from the store's levels, counted down by the register's own sales between refreshes (P22b). | P22 |
 | Case-break inventory conversion (1.9) | ✅ | An item counts in another item's units (carton = 10 packs): its sales and deliveries move the base item's stock (P22a, ADR 0034). | P22 |
-| Expiry dates, sell-by alerts on idle (1.9) | ⬜ | P22 | P22 |
-| Waste/spoilage/theft write-offs with reason, PIN (1.9) | ⬜ | P3, P22 | P22 |
+| Expiry dates, sell-by alerts on idle (1.9) | ✅ | Expiry on perishable receipts; "Sell soon" on the cashier's screen between customers and in the merchant app (P22). | P22 |
+| Waste/spoilage/theft write-offs with reason, PIN (1.9) | ✅ | Register → Write off behind the new `inventory.write_off` permission (manager PIN override), with reason; merchant app too (P22). | P22 |
 | Hourly target ribbon (1.10) | ✅ | Register top bar: today so far vs yesterday by now, from /device/pulse (P15). | P15 |
 | Mobile register on the owner's phone with Tap to Pay (1.11) | ⛔ | Tap-to-Pay entitlement + processor SDK. Cash-only mobile register is buildable (same RN code). | P-HW |
 
@@ -180,7 +180,7 @@ section 5.
 | Stock levels, low stock, dead stock (2.4) | ✅ | Merchant app → Stock: per store, folded from counts, deliveries, write-offs and sales; Low / Not selling (60 days) filters; sell-soon lots (P22a). | P22 |
 | Reorder suggestions (2.4) | ⬜ | P22 + history | P23 |
 | Vendor list; one-tap order text/email (2.4) | 🟡-able | Vendor records buildable; sending needs SMS/email provider ⛔ | P23 |
-| Receive by scan, discrepancy report (2.4) | ⬜ | P22 | P22 |
+| Receive by scan, discrepancy report (2.4) | 🟡 | Receive by scan at the register (P22b). The discrepancy report against an order comes with purchase orders (P23). | P22 / P23 |
 | Shrink dashboard (2.4) | ⬜ | P6, P7, P22 | P23 |
 | Hours and payroll export (2.5) | ✅ | Merchant app Hours tab: per person per day, overtime, CSV export (P15). | P15 |
 | Cashier performance (2.5) | ✅ | Hours tab: per cashier sales, $/hour on the clock, voids, refunds, no-sale opens, drawer over/short, age checks (by ID scan; sold without a check) (P19b). | P19 |
@@ -369,7 +369,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P22a Inventory model | #32 | PR open — stock folded from append-only movements (counts, receipts, write-offs) and sales, case-break by stock ratio, low / dead / expiring, merchant app Stock tab, register inventory events ingested. ADR 0034. |
+| P22b Register inventory | #PR | PR open — receive a delivery by scan, write-offs behind a PIN, low-stock badges on tiles, sell-soon on the cashier's idle screen, /device/stock. ADR 0034. |
+| P22a Inventory model | #32 | Merged — stock folded from append-only movements (counts, receipts, write-offs) and sales, case-break by stock ratio, low / dead / expiring, merchant app Stock tab, register inventory events ingested. ADR 0034. |
 | P21 Labels | #31 | Merged — shelf tags as PDF (Avery sheet / thermal), both prices + barcode (UPC-A / EAN-13 / Code 128, in-store UPC assigned), reprint queue, deli price labels rung at the printed price, label templates. ADR 0033. |
 | P20b Bulk prices, history, profit | #30 | Merged — bulk price change (preview, below-cost warning, one write with history), price history in the item editor, profit by category/item at the cost in force when sold. ADR 0032. |
 | P20a Promotions | #29 | Merged — promotions builder (N for $X mix & match, buy X get Y, happy hour; dates, days, hours, per store), register repricing as promo line discounts, receipt deal names + "You saved", customer-screen deals of the day. ADR 0031. |

@@ -57,6 +57,7 @@ import type { SyncStatus } from '../core/sync';
 import { API_URL, type Runtime } from '../runtime';
 import { LanguageButton } from './LanguageUI';
 import { Qr } from './Qr';
+import { ReceivePanel, WriteOffPanel } from './ReceiveUI';
 import { QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
 import { CardPanel, type CardPhase } from './TenderUI';
@@ -91,7 +92,9 @@ type Modal =
   | { kind: 'batch_age'; batch: Batch; label: string }
   | { kind: 'save_usual' }
   | { kind: 'eod'; z: ZReport | null; lines: string[] | null; done: boolean }
-  | { kind: 'remove_usual'; usual: CashierUsual };
+  | { kind: 'remove_usual'; usual: CashierUsual }
+  | { kind: 'receive' }
+  | { kind: 'write_off' };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
   const t = useT();
@@ -255,6 +258,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   // Time clock and the hourly ribbon (P15). The clock re-renders each minute while someone is on it.
   const [, setTick] = useState(0);
   useEffect(() => rt.clock.subscribe(() => setTick((t) => t + 1)), [rt]);
+  // Stock (P22b): tile badges and sell-soon follow the latest levels.
+  useEffect(() => rt.stock.subscribe(() => setTick((t) => t + 1)), [rt]);
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 60_000);
     return () => clearInterval(t);
@@ -362,8 +367,15 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     });
   const startBatch = (batch: Batch, label: string) => (batch.min_age ? setModal({ kind: 'batch_age', batch, label }) : ringAll(batch, label, false));
 
+  /** While a delivery is being received (P22b), scans go to it instead of the ticket. */
+  const receiveScan = useRef<((code: string) => void) | null>(null);
+  const registerReceiveScan = useCallback((fn: ((code: string) => void) | null) => {
+    receiveScan.current = fn;
+  }, []);
+
   /** A scanned (or typed) barcode: ring it, or offer to add it to the catalog if we don't know it. */
   const onCode = (code: string) => {
+    if (receiveScan.current) return receiveScan.current(code);
     const hit = lookupBarcode(index, code);
     if (hit) {
       rt.log.info('scan', { matched: hit.matched, qty: hit.qty });
@@ -717,7 +729,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           ) : null}
           <ScrollView style={{ flex: 1 }} contentContainerStyle={s.grid} keyboardShouldPersistTaps="handled">
             {items.map((i) => (
-              <QuickKey key={i.item_id} item={i} onPress={addItem} onLongPress={(it) => setModal({ kind: 'add_qty', item: it, entry: query ? 'search' : 'key' })} />
+              <QuickKey key={i.item_id} item={i} badge={rt.stock.badge(i)} onPress={addItem} onLongPress={(it) => setModal({ kind: 'add_qty', item: it, entry: query ? 'search' : 'key' })} />
             ))}
             {results && results.length === 0 ? (
               <Text style={s.mutedSmall}>
@@ -761,7 +773,15 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           ) : null}
           <ScrollView style={{ flex: 1 }}>
             {!sale || sale.lines.length === 0 ? (
-              <Text style={s.mutedSmall}>{t('Tap an item to start a sale.')}</Text>
+              <>
+                <Text style={s.mutedSmall}>{t('Tap an item to start a sale.')}</Text>
+                {/* Sell-by alerts for the cashier between customers (Bible 1.9, P22b). */}
+                {rt.stock.expiring().slice(0, 4).map((x) => (
+                  <Text key={x.item_id + x.expires_on} style={s.sellSoon}>
+                    {t('Sell soon: {name} ({qty}) by {date}', { name: x.name, qty: x.qty, date: x.expires_on })}
+                  </Text>
+                ))}
+              </>
             ) : (
               sale.lines.map((l) => (
                 <Pressable
@@ -948,6 +968,16 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               >
                 <Text style={training ? { color: '#fff' } : undefined}>{training ? t('Exit training') : t('Training')}</Text>
               </Pressable>
+              {!training ? (
+                <>
+                  <Pressable style={s.ghost} onPress={() => guarded('inventory.receive', null, async () => setModal({ kind: 'receive' }))}>
+                    <Text>{t('Receive')}</Text>
+                  </Pressable>
+                  <Pressable style={s.ghost} onPress={() => guarded('inventory.write_off', null, async () => setModal({ kind: 'write_off' }))}>
+                    <Text>{t('Write off')}</Text>
+                  </Pressable>
+                </>
+              ) : null}
               {!training ? (
                 <Pressable
                   style={s.ghost}
@@ -1205,6 +1235,34 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               }
             />
           )}
+        </Overlay>
+      )}
+
+      {modal.kind === 'receive' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <ReceivePanel
+            rt={rt}
+            catalog={shown}
+            index={index}
+            registerScan={registerReceiveScan}
+            onDone={(message) => {
+              setModal(message ? { kind: 'error', message } : { kind: 'none' });
+              void rt.stock.refresh();
+            }}
+          />
+        </Overlay>
+      )}
+
+      {modal.kind === 'write_off' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <WriteOffPanel
+            rt={rt}
+            catalog={shown}
+            onDone={(message) => {
+              setModal(message ? { kind: 'error', message } : { kind: 'none' });
+              void rt.stock.refresh();
+            }}
+          />
         </Overlay>
       )}
 
@@ -1683,6 +1741,7 @@ const s = StyleSheet.create({
   lineName: { color: C.ink, fontWeight: '600' },
   lineAmt: { color: C.black, fontWeight: '700', fontVariant: ['tabular-nums'] },
   lineDeal: { color: C.green, fontSize: 12, fontWeight: '700' },
+  sellSoon: { color: C.amber, fontWeight: '700', marginTop: 8 },
   remove: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: C.ground },
   removeText: { fontSize: 18, color: C.muted, lineHeight: 20 },
   totals: { borderTopWidth: 1, borderTopColor: C.line, paddingTop: 10, gap: 6 },

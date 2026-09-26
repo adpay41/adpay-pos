@@ -10,7 +10,18 @@ import { API_URL } from '../runtime';
 import { useT } from './i18n';
 import { C, usd } from './theme';
 
-export function QuickKey({ item, onPress, onLongPress }: { item: CatalogItem; onPress: (i: CatalogItem) => void; onLongPress?: (i: CatalogItem) => void }) {
+export function QuickKey({
+  item,
+  badge,
+  onPress,
+  onLongPress,
+}: {
+  item: CatalogItem;
+  /** Low stock (P22b): the count left, or 'out'. */
+  badge?: string | null;
+  onPress: (i: CatalogItem) => void;
+  onLongPress?: (i: CatalogItem) => void;
+}) {
   const t = useT();
   const [imageFailed, setImageFailed] = useState(false);
   const palette = item.color ? TILE_COLORS[item.color] : null;
@@ -25,6 +36,11 @@ export function QuickKey({ item, onPress, onLongPress }: { item: CatalogItem; on
       style={({ pressed }) => [s.key, palette && { backgroundColor: palette.fill }, pressed && s.pressed]}
     >
       {palette ? <View style={[s.stripe, { backgroundColor: palette.stripe }]} /> : null}
+      {badge ? (
+        <View style={s.badge} accessibilityLabel={badge === 'out' ? t('Out of stock') : t('{count} left', { count: badge })}>
+          <Text style={s.badgeText}>{badge === 'out' ? t('Out') : t('{count} left', { count: badge })}</Text>
+        </View>
+      ) : null}
       <View style={s.top}>
         {showImage ? (
           // Photos are immutable URLs with a year-long cache header, so they keep showing offline once seen.
@@ -57,6 +73,9 @@ const s = StyleSheet.create({
   },
   pressed: { borderColor: C.black, opacity: 0.85 },
   stripe: { position: 'absolute', top: 0, left: 0, right: 0, height: 5 },
+  // Amber, not red: the tile has prices on it.
+  badge: { position: 'absolute', top: 6, right: 6, backgroundColor: C.amberBg, borderColor: C.amber, borderWidth: 1, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1, zIndex: 2 },
+  badgeText: { color: C.amber, fontSize: 11, fontWeight: '800' },
   top: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
   photo: { width: 40, height: 40, borderRadius: 6, backgroundColor: C.ground },
   name: { flex: 1, fontWeight: '600', color: C.ink, fontSize: 14 },
