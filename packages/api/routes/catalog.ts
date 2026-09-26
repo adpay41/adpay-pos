@@ -8,6 +8,7 @@
  */
 import {
   LANGUAGES,
+  PromotionInput,
   CATALOG_TEMPLATES,
   CatalogOrderInput,
   CategoryCreateInput,
@@ -24,6 +25,7 @@ import {
 } from '@adpay/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { languageStatuses } from '../services/i18n';
+import { listPromotions, savePromotion, setPromotionActive } from '../services/promotions';
 import { z } from 'zod';
 import { asAdmin, asMerchantUser, requireAdmin, requireMerchantUser } from '../http/auth-hooks';
 import { badRequest, forbidden } from '../http/errors';
@@ -152,6 +154,27 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId } = scope.resolve(r, false);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return (await getCatalogSnapshot(db, merchantId, locationId)).receipt;
+    });
+
+    // Promotions builder (P20a): 2 for $5, buy X get Y, happy hour; per store, with dates and hours.
+    s.get(`${p}/promotions`, async (r) => {
+      const { merchantId } = scope.resolve(r, false);
+      return { promotions: await listPromotions(db, merchantId) };
+    });
+    s.post(`${p}/promotions`, async (r, reply) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      reply.status(201);
+      return savePromotion(db, actor, merchantId, null, PromotionInput.parse(r.body), trace(r));
+    });
+    s.put(`${p}/promotions/:promoId`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { promoId } = z.object({ promoId: z.uuid() }).parse(r.params);
+      return savePromotion(db, actor, merchantId, promoId, PromotionInput.parse(r.body), trace(r));
+    });
+    s.post(`${p}/promotions/:promoId/:state`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { promoId, state } = z.object({ promoId: z.uuid(), state: z.enum(['end', 'resume']) }).parse(r.params);
+      return setPromotionActive(db, actor, merchantId, promoId, state === 'resume', trace(r));
     });
 
     // The languages a store can offer on its customer screen (P18): drafts are listed but can't be offered.

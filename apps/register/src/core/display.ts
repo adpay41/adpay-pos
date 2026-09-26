@@ -17,7 +17,7 @@ export type DisplayPhase = 'idle' | 'cart' | 'card' | 'approved' | 'declined' | 
 export interface DisplayState {
   phase: DisplayPhase;
   merchant_name: string;
-  lines: { line_id: string; name: string; qty: number; cash_cents: number; card_cents: number }[];
+  lines: { line_id: string; name: string; qty: number; cash_cents: number; card_cents: number; deal: { kind: 'promo'; name: string } | { kind: 'reward' } | null }[];
   cash_total_cents: number;
   card_total_cents: number;
   tax_cash_cents: number;
@@ -47,11 +47,13 @@ export interface DisplayState {
   } | null;
   /** Paid phase: what happened to "text me my receipt". */
   receipt_text: 'sent' | 'not_delivered' | 'failed' | null;
+  /** Idle: the store's running deals, as the customer reads them (P20a, Bible 1.5 deals of the day). */
+  deals: string[];
 }
 
 /** Language context the register adds to every state it publishes (P18). */
-export type DisplayContext = Pick<DisplayState, 'language' | 'languages' | 'overrides' | 'receipt_url' | 'loyalty' | 'receipt_text'>;
-const NO_CONTEXT: DisplayContext = { language: 'en', languages: ['en'], overrides: {}, receipt_url: null, loyalty: null, receipt_text: null };
+export type DisplayContext = Pick<DisplayState, 'language' | 'languages' | 'overrides' | 'receipt_url' | 'loyalty' | 'receipt_text' | 'deals'>;
+const NO_CONTEXT: DisplayContext = { language: 'en', languages: ['en'], overrides: {}, receipt_url: null, loyalty: null, receipt_text: null, deals: [] };
 
 /** What the customer screen sends back: a language, or a phone number for rewards or the receipt (P19a). */
 export type CustomerMessage =
@@ -95,6 +97,7 @@ function base(merchantName: string, sale: FoldedSale): DisplayState {
       qty: l.qty,
       cash_cents: lineTotal(l, 'cash'),
       card_cents: lineTotal(l, 'card'),
+      deal: l.discount_promo_id && l.discount_reason ? { kind: 'promo', name: l.discount_reason.replace(/^Promo: /, '') } : l.discount_reason === 'Loyalty reward' ? { kind: 'reward' } : null,
     })),
     cash_total_cents: sale.cash.total_cents,
     card_total_cents: sale.card.total_cents,

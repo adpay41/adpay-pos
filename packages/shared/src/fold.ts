@@ -26,6 +26,9 @@ export interface FoldedLine {
   unit_card_price_cents: Cents;
   cash_discount_cents: Cents;
   card_discount_cents: Cents;
+  /** Why the line is discounted ("Promo: 2 for $5", "Loyalty reward") and which promotion, if one (P20a). */
+  discount_reason: string | null;
+  discount_promo_id: string | null;
   taxable: boolean;
   tax_rate_ppm: number;
   min_age: number | null;
@@ -134,6 +137,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           charges: p.charges ?? [],
           is_fee: p.price_source === 'fee',
           category_id: p.category_id ?? null,
+          discount_reason: null,
+          discount_promo_id: null,
         });
         break;
       }
@@ -150,6 +155,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
         if (line) {
           line.cash_discount_cents = cents(e.payload.cash_discount_cents);
           line.card_discount_cents = cents(e.payload.card_discount_cents);
+          line.discount_reason = e.payload.cash_discount_cents || e.payload.card_discount_cents ? e.payload.reason : null;
+          line.discount_promo_id = e.payload.cash_discount_cents || e.payload.card_discount_cents ? (e.payload.promo_id ?? null) : null;
         }
         break;
       }

@@ -142,7 +142,7 @@ section 5.
 | Digital receipt: QR or text-to-phone (1.5) | 🔶 | QR on the receipt and on the customer screen after paying → `/r/<token>` page (receipt as printed, in the sale's language; P18a, ADR 0027). Works through `npm run share`. **Deferred:** always-on public hosting = the AWS deploy (founder). Text-to-phone: the merchant app sends the link by text or email (P18b, `MessageSender`); the customer types their number on the paid screen ("Text me my receipt", P19a). **Deferred:** SMS delivery (Twilio account + TCPA review). | P18 |
 | Loyalty by phone number on the customer screen (1.5) | ✅ | Customer types their number on the customer screen; the sale carries a keyed hash + last four (never the number); punch card or points folded from sales; cashier applies the reward (needs a connection; earning works offline) (P19a, ADR 0029). | P19 |
 | Language toggle, 8 languages, cashier and customer independently (1.5) | 🔶 | Customer side (P18a): all 8 catalogs, picker in native script, Arabic right to left, sale records the language. Cashier side (P18b, ADR 0028): every register screen after pairing translatable, picker on sign-in and in the header, remembered per cashier; **English and Spanish complete**. **Deferred:** a translator for the other 7 cashier catalogs (filled in admin → Translations, no code change) and a professional review of all 8 customer catalogs; Bengali, Gujarati, Haitian Creole stay drafts until reviewed. | P18 |
-| Deals of the day / promotions in idle (1.5) | ⬜ | P9, promotions (P20) | P20 |
+| Deals of the day / promotions in idle (1.5) | ✅ | The running promotions the store chose to show, on the idle customer screen (P20a, ADR 0031). | P20 |
 | Lottery results and jackpot in idle (1.5) | ✖ dropped | Dropped with the lottery module (founder, 2026-09-26). Was blocked on: A lottery results data feed (NJ/NY), licence terms | P-3P |
 | Accessibility: high contrast, large type, screen reader labels (1.5) | ✅ | The Bible item is the customer screen (P18a): Larger-text/high-contrast toggle, spoken labels with both prices, live regions. The register's new controls carry roles and labels; its text follows Android's system font size. | P18 |
 | Receipt language follows customer screen (1.6) | 🔶 | Printed, previewed and digital receipts in the captured language, laid out in printer columns (CJK = 2) (P18a). **Boundary:** non-Latin glyphs on the thermal printer depend on the printer module (P-HW). | P18 |
@@ -175,7 +175,7 @@ section 5.
 | Profit: margin by item/category once costs are in (2.2) | ⬜ | Cost field (P2), reports | P20 |
 | Bulk price change (2.3) | ⬜ | P2 | P20 |
 | Price history and who changed what (2.3) | ⬜ | P2 records it from day one; this adds the UI | P20 |
-| Promotions builder: 2 for $5, mix & match, BOGO, happy hour (2.3) | ⬜ | Pricing engine extension in shared + events | P20 |
+| Promotions builder: 2 for $5, mix & match, BOGO, happy hour (2.3) | ✅ | Merchant app → Deals: N for $X (mix & match), buy X get Y, % off with hours; dates, weekdays, per store. The register reprices on every change as line discounts carrying the promotion id; receipt names the deal and says what was saved (P20a). | P20 |
 | Shelf label print queue (2.3) | ⛔ | Label printer; see label printing | P21 |
 | Stock levels, low stock, dead stock (2.4) | ⬜ | P22 | P22 |
 | Reorder suggestions (2.4) | ⬜ | P22 + history | P23 |
@@ -369,7 +369,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P19b Roll-up, accountant, performance, alerts | #28 | PR open — multi-store roll-up, accountant role (read-only, no PIN) + daily journal CSV, cashier performance, big-ticket / slow-hour / late-first-sale alerts. ADR 0030. |
+| P20a Promotions | #29 | PR open — promotions builder (N for $X mix & match, buy X get Y, happy hour; dates, days, hours, per store), register repricing as promo line discounts, receipt deal names + "You saved", customer-screen deals of the day. ADR 0031. |
+| P19b Roll-up, accountant, performance, alerts | #28 | Merged — multi-store roll-up, accountant role (read-only, no PIN) + daily journal CSV, cashier performance, big-ticket / slow-hour / late-first-sale alerts. ADR 0030. |
 | P19a Loyalty & customers | #27 | Merged — loyalty by phone (keyed hash on the sale, never the number; punch card or points folded from sales; reward applied by the cashier, online), opt-in to texts with the exact consent, customer list, promo texts once a week with STOP, "text me my receipt" on the customer screen; all texts through `MessageSender` (log). ADR 0029. |
 | P18b Cashier language & send receipt | #26 | Merged — every register screen after pairing translatable (282 strings keyed by English, extracted and typed), picker on sign-in and in the header, remembered per cashier; Spanish complete; admin Translations covers cashier strings; `MessageSender` + merchant-app Send receipt (log sender records, delivers nothing). ADR 0028. |
 | P18a Languages & digital receipt | #25 | Merged — 8-language customer screen + receipt (catalogs in shared, draft/offered/reviewed per language), customer picks, sale records it, receipt follows; digital receipt QR → public `/r/<token>` page; admin Translations; customer-screen larger text/high contrast + screen-reader labels. ADR 0027. |

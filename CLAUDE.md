@@ -100,6 +100,7 @@ purpose: support is one person for the first 200 stores.
 | [0028](docs/decisions/0028-cashier-language-send-receipt.md) | Cashier language: strings keyed by English, extracted to a typed shared list, Spanish complete, others filled in admin; choice per cashier on the register; `MessageSender` (log only) for receipts sent later by text/email, recipient masked |
 | [0029](docs/decisions/0029-loyalty-by-phone.md) | Loyalty by phone: sales carry a keyed hash (merchant salt) + last four, never the number; number stored only with opt-in that matches the hash, with the exact consent; balances folded from sales; rewards need a connection; promos once a week with STOP through `MessageSender` |
 | [0030](docs/decisions/0030-rollup-accountant-performance-alerts.md) | Roll-up over every store with `reports.view`; `accountant` role fixed read-only, never a PIN, daily journal CSV for QuickBooks/Xero import; cashier performance folded from events; big-ticket / slow-hour / late-first-sale alerts with thresholds |
+| [0031](docs/decisions/0031-promotions.md) | Promotions are config; the register reprices on every line change as `sale.line_discounted` with `promo_id`; manual/loyalty discounts win; card side derived from the promo cash price; deals of the day on the idle screen |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

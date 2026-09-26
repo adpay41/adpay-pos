@@ -133,7 +133,10 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
     const qtyPrefix = line.qty > 1 ? `${line.qty} x ` : '';
     push(pad(`${qtyPrefix}${line.name}${line.taxable ? '' : ' N'}`, money(mulQty(unit, line.qty))));
     if (line.qty > 1) push(`   ${t('r_each', { price: money(unit) })}`);
-    if (discount > 0) push(pad(`   ${t('r_discount')}`, `-${money(discount)}`));
+    if (discount > 0) {
+      const why = line.discount_promo_id && line.discount_reason ? line.discount_reason.replace(/^Promo: /, '') : line.discount_reason === 'Loyalty reward' ? t('r_reward') : t('r_discount');
+      push(pad(`   ${why}`, `-${money(discount)}`));
+    }
     // Per-unit charges (P10): deposit, excise, fee, each on its own line under the item.
     for (const c of line.charges) {
       const each = cents(mode === 'card' ? c.unit_card_cents : c.unit_cash_cents);
@@ -159,6 +162,9 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
   if (groups.length === 0) push(pad(t('r_tax'), money(totals.tax_cents)));
   for (const g of groups) push(pad(t('r_tax_rate', { rate: ppmToPercent(g.rate_ppm), amount: money(g.taxable_cents) }), money(g.tax_cents)));
   push(pad(t('r_total'), money(totals.total_cents)), 'bold');
+  // Promotions and rewards, added up (P20a): the customer sees what the deal was worth.
+  const saved = sale.lines.reduce((n, l) => n + (mode === 'card' ? l.card_discount_cents : l.cash_discount_cents), 0);
+  if (saved > 0) push(center(t('r_saved', { amount: money(saved) })), 'center');
   push(
     pad(
       t(sale.price_mode === 'split' ? 'r_split_applied' : mode === 'card' ? 'r_card_applied' : 'r_cash_applied'),

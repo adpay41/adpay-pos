@@ -85,6 +85,7 @@ export const CASHIER_EN = [
   'Declined. Try again, another card, or cash.',
   'Delete',
   'Device',
+  'Discount',
   'Discount a line',
   'Don’t take it. Hand it back and ask for another payment. This logs which note, when and who, for the owner.',
   'Done',
