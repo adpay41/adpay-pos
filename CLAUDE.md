@@ -104,6 +104,7 @@ purpose: support is one person for the first 200 stores.
 | [0032](docs/decisions/0032-bulk-prices-history-profit.md) | Bulk price change previewed then one write with history; profit folds sales at the cost in force when sold (history), uncosted units counted apart, pass-through charges excluded |
 | [0033](docs/decisions/0033-labels.md) | Labels are PDFs we write (built-in Helvetica, bars as rects); shared tested barcode encoders; in-store UPC for items without one; reprint queue from printed prices; price-embedded UPC for deli items rung at the printed price |
 | [0034](docs/decisions/0034-inventory.md) | No editable stock: folded from append-only movements (count sets, receive adds, write-off subtracts) and sales; case-break by stock ratio on the base item; low / dead (60 days) / expiring |
+| [0035](docs/decisions/0035-ordering.md) | Vendors with delivery days; suggestion = weekday forecast until the delivery after next + low point − shelf − on order, in cases; POs sent via `MessageSender`; received against at the register (po_id on the movement), ordered vs received read, never stored |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

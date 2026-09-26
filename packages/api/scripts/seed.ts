@@ -386,6 +386,7 @@ async function main() {
     await ensureDemoLoyalty(db);
     await ensureDemoPromotion(db);
     await ensureDemoInventory(db);
+    await ensureDemoVendors(db);
 
     // Registers with history are "already paired" devices in the field.
     for (const r of [jc1, jc2, ast1, bay1]) {
@@ -575,10 +576,32 @@ async function ensureDemoInventory(db: Db): Promise<void> {
   await db.query('UPDATE merchants SET catalog_version = catalog_version + 1 WHERE merchant_id = $1', [l.merchant_id]);
 }
 
+/** Demo vendors (P23): who supplies the tracked items, with delivery days, so suggestions show. */
+async function ensureDemoVendors(db: Db): Promise<void> {
+  const { rows: m } = await db.query<{ org_id: string; merchant_id: string }>(
+    `SELECT org_id, merchant_id FROM merchants WHERE name = 'Journal Square Deli & Grocery' AND NOT EXISTS (SELECT 1 FROM vendors v WHERE v.merchant_id = merchants.merchant_id)`,
+  );
+  const r = m[0];
+  if (!r) return;
+  const vendors: [string, string, number[], string[]][] = [
+    ['Big Geyser (energy drinks)', '+12015550171', [1, 4], ['Red Bull 8.4 oz', 'Monster Energy 16 oz']],
+    ['Core-Mark (tobacco)', '+12015550172', [2], ['Marlboro Red — Pack', 'Newport Menthol — Pack']],
+    ['Tuscan Dairy', '+12015550173', [1, 3, 5], ['Whole Milk — Gallon']],
+  ];
+  for (const [name, phone, days, items] of vendors) {
+    const { rows } = await db.query<{ vendor_id: string }>(
+      `INSERT INTO vendors (org_id, merchant_id, name, phone, order_via, delivery_days) VALUES ($1, $2, $3, $4, 'sms', $5) RETURNING vendor_id`,
+      [r.org_id, r.merchant_id, name, phone, days],
+    );
+    await db.query('UPDATE items SET vendor_id = $3 WHERE merchant_id = $1 AND name = ANY($2::text[])', [r.merchant_id, items, rows[0]!.vendor_id]);
+  }
+}
+
 async function printLogins(db: Db) {
   await ensureDemoLoyalty(db);
   await ensureDemoPromotion(db);
   await ensureDemoInventory(db);
+  await ensureDemoVendors(db);
   const pins = await ensureDemoStaff(db);
   const { rows } = await db.query<{ register_id: string; label: string }>(
     `SELECT r.register_id, m.name || ' · ' || l.name || ' · ' || r.name AS label

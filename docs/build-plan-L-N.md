@@ -178,9 +178,9 @@ section 5.
 | Promotions builder: 2 for $5, mix & match, BOGO, happy hour (2.3) | ✅ | Merchant app → Deals: N for $X (mix & match), buy X get Y, % off with hours; dates, weekdays, per store. The register reprices on every change as line discounts carrying the promotion id; receipt names the deal and says what was saved (P20a). | P20 |
 | Shelf label print queue (2.3) | ✅ | Items → Tags: every tag whose price moved since it was printed (and recent price changes never tagged); "Print N tags" (P21). | P21 |
 | Stock levels, low stock, dead stock (2.4) | ✅ | Merchant app → Stock: per store, folded from counts, deliveries, write-offs and sales; Low / Not selling (60 days) filters; sell-soon lots (P22a). | P22 |
-| Reorder suggestions (2.4) | ⬜ | P22 + history | P23 |
-| Vendor list; one-tap order text/email (2.4) | 🟡-able | Vendor records buildable; sending needs SMS/email provider ⛔ | P23 |
-| Receive by scan, discrepancy report (2.4) | 🟡 | Receive by scan at the register (P22b). The discrepancy report against an order comes with purchase orders (P23). | P22 / P23 |
+| Reorder suggestions (2.4) | ✅ | Merchant app → Orders: per vendor, enough until the delivery after next by weekday (4-week average), plus the low point, less shelf and on-order, in whole cases (P23a, ADR 0035). | P23 |
+| Vendor list; one-tap order text/email (2.4) | 🔶 | Vendors (rep contact, delivery days, items supplied); orders made from suggestions and sent in one tap through `MessageSender` (P23a). **Deferred:** delivery (Twilio/SES accounts); the log sender records and the app says to call the rep. | P23 |
+| Receive by scan, discrepancy report (2.4) | ✅ | Receive by scan at the register (P22b), against an open order (P23a); each order shows ordered vs received per line, short and over in amber. | P22 / P23 |
 | Shrink dashboard (2.4) | ⬜ | P6, P7, P22 | P23 |
 | Hours and payroll export (2.5) | ✅ | Merchant app Hours tab: per person per day, overtime, CSV export (P15). | P15 |
 | Cashier performance (2.5) | ✅ | Hours tab: per cashier sales, $/hour on the clock, voids, refunds, no-sale opens, drawer over/short, age checks (by ID scan; sold without a check) (P19b). | P19 |
@@ -369,7 +369,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P22b Register inventory | #33 | PR open — receive a delivery by scan, write-offs behind a PIN, low-stock badges on tiles, sell-soon on the cashier's idle screen, /device/stock. ADR 0034. |
+| P23a Ordering | #34 | PR open — vendors, reorder suggestions by weekday until the delivery after next in whole cases, purchase orders sent through `MessageSender`, received at the register against the order, ordered vs received. ADR 0035. |
+| P22b Register inventory | #33 | Merged — receive a delivery by scan, write-offs behind a PIN, low-stock badges on tiles, sell-soon on the cashier's idle screen, /device/stock. ADR 0034. |
 | P22a Inventory model | #32 | Merged — stock folded from append-only movements (counts, receipts, write-offs) and sales, case-break by stock ratio, low / dead / expiring, merchant app Stock tab, register inventory events ingested. ADR 0034. |
 | P21 Labels | #31 | Merged — shelf tags as PDF (Avery sheet / thermal), both prices + barcode (UPC-A / EAN-13 / Code 128, in-store UPC assigned), reprint queue, deli price labels rung at the printed price, label templates. ADR 0033. |
 | P20b Bulk prices, history, profit | #30 | Merged — bulk price change (preview, below-cost warning, one write with history), price history in the item editor, profit by category/item at the cost in force when sold. ADR 0032. |

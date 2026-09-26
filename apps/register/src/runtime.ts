@@ -85,6 +85,8 @@ export interface Runtime {
   loyalty: LoyaltyClient;
   /** Stock levels for tile badges and sell-soon alerts (P22b). */
   stock: StockView;
+  /** Orders sent to vendors for this store, to receive against (P23). Online only; empty offline. */
+  openOrders: () => Promise<OpenOrder[]>;
   /** Today so far vs yesterday by this time, for the ribbon; null when offline (P15). */
   pulse: () => Promise<{ today_cents: number; yesterday_cents: number; vs_yesterday_tenths: number | null } | null>;
   /** Upload a JPEG (count-sheet photo, P15); returns its media id. Online only. */
@@ -94,6 +96,14 @@ export interface Runtime {
     remove(usualId: string): Promise<void>;
   };
   uuid: () => string;
+}
+
+/** A purchase order the store is waiting for (P23). */
+export interface OpenOrder {
+  po_id: string;
+  vendor: string;
+  sent_at: string | null;
+  lines: { item_id: string; name: string; ordered: number; received: number }[];
 }
 
 export interface CardOutcome {
@@ -215,6 +225,13 @@ export async function boot(token: string): Promise<Runtime> {
   session.subscribe((st) => {
     if (st.lastCompleted) stock.noteSale(st.lastCompleted);
   });
+  const openOrders = async (): Promise<OpenOrder[]> => {
+    try {
+      return (await call<{ orders: OpenOrder[] }>('/device/purchase-orders', token)).orders;
+    } catch {
+      return [];
+    }
+  };
   sync.setBeforePush(async () => {
     await items.flush();
     await loyalty.flush();
@@ -296,5 +313,5 @@ export async function boot(token: string): Promise<Runtime> {
     },
   };
 
-  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, loyalty, stock, pulse, uploadPhoto, eod, training, uuid: () => Crypto.randomUUID() };
+  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, loyalty, stock, openOrders, pulse, uploadPhoto, eod, training, uuid: () => Crypto.randomUUID() };
 }

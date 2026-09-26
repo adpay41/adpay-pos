@@ -15,6 +15,7 @@ import { RollupCard } from './team';
 import { ProfitCard } from './pricing-tools';
 import { DealsTab } from './deals';
 import { StockTab } from './stock';
+import { OrdersTab } from './orders';
 import { AlertsTab } from './alerts';
 import { CashTab } from './cash';
 import { CatalogTab } from './catalog';
@@ -158,8 +159,8 @@ function Login({ onToken }: { onToken: (t: string) => void }) {
   );
 }
 
-type Tab = 'sales' | 'tickets' | 'cash' | 'hours' | 'customers' | 'items' | 'stock' | 'deals' | 'alerts' | 'staff' | 'help';
-const TAB_LABEL: Record<Tab, string> = { sales: 'Sales', tickets: 'Tickets', cash: 'Cash', hours: 'Hours', customers: 'Customers', items: 'Items', stock: 'Stock', deals: 'Deals', alerts: 'Alerts', staff: 'Staff', help: 'Help' };
+type Tab = 'sales' | 'tickets' | 'cash' | 'hours' | 'customers' | 'items' | 'stock' | 'orders' | 'deals' | 'alerts' | 'staff' | 'help';
+const TAB_LABEL: Record<Tab, string> = { sales: 'Sales', tickets: 'Tickets', cash: 'Cash', hours: 'Hours', customers: 'Customers', items: 'Items', stock: 'Stock', orders: 'Orders', deals: 'Deals', alerts: 'Alerts', staff: 'Staff', help: 'Help' };
 
 interface MeResponse {
   principal: Me & { merchant_id: string };
@@ -181,7 +182,7 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
   // Tabs follow what this person may do at this store (P3 permissions).
   const can = (p: Permission) => !!me?.principal.permissions.includes(p);
   const tabs: Tab[] = me
-    ? [...(can('reports.view') ? (['sales', 'tickets', 'cash', 'hours'] as const) : []), ...(can('customers.view') ? (['customers'] as const) : []), ...(can('catalog.edit') ? (['items', 'stock', 'deals'] as const) : []), ...(can('reports.view') ? (['alerts'] as const) : []), 'staff', ...(flags?.support_chat ? (['help'] as const) : [])]
+    ? [...(can('reports.view') ? (['sales', 'tickets', 'cash', 'hours'] as const) : []), ...(can('customers.view') ? (['customers'] as const) : []), ...(can('catalog.edit') ? (['items', 'stock', 'orders', 'deals'] as const) : []), ...(can('reports.view') ? (['alerts'] as const) : []), 'staff', ...(flags?.support_chat ? (['help'] as const) : [])]
     : [];
   const current = tab && tabs.includes(tab) ? tab : (tabs[0] ?? null);
 
@@ -220,6 +221,7 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
       {current === 'tickets' && <TicketsTab token={token} />}
       {current === 'deals' && <DealsTab token={token} />}
       {current === 'stock' && <StockTab token={token} />}
+      {current === 'orders' && <OrdersTab token={token} />}
       {current === 'customers' && <CustomersTab token={token} canSetUp={can('catalog.edit')} canMessage={can('customers.message')} />}
       {current === 'cash' && <CashTab token={token} />}
       {current === 'hours' && <HoursTab token={token} />}

@@ -13,6 +13,7 @@ import { createMessageSender } from '../messaging/sender';
 import { customerStatus, loyaltyConfig, recordOptIn } from '../services/loyalty';
 import { textReceiptFromRegister } from '../services/messaging';
 import { stockLevels } from '../services/inventory';
+import { purchaseOrders } from '../services/ordering';
 import { getCatalogSnapshot } from '../services/catalog';
 import { catalogVersion, createItemFromDevice, uploadMedia } from '../services/catalog-write';
 import { ingestEvents } from '../services/events';
@@ -81,6 +82,12 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
     const d = asDevice(request);
     const s = await stockLevels(db, d.merchant_id, d.location_id);
     return { items: s.items.map((i) => ({ item_id: i.item_id, on_hand: i.on_hand, reorder_point: i.reorder_point })), expiring: s.expiring };
+  });
+
+  // Open orders at this store (P23): the register's receive panel checks a delivery against one.
+  app.get('/device/purchase-orders', async (request) => {
+    const d = asDevice(request);
+    return { orders: (await purchaseOrders(db, d.merchant_id, { locationId: d.location_id, open: true })).filter((o) => o.status === 'sent') };
   });
 
   // Loyalty (P19a, ADR 0029): the customer's standing, their opt-in to texts, and "text me my receipt".

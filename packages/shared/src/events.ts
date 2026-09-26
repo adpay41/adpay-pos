@@ -159,6 +159,8 @@ const InventoryReceived = z.strictObject({
   qty: z.int().min(1).max(100_000),
   invoice_ref: z.string().max(60).nullable(),
   expires_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  /** Received against this purchase order (P23): what arrived vs what was ordered. Additive. */
+  po_id: Uuid.nullable().optional(),
 });
 const InventoryWrittenOff = z.strictObject({
   item_id: Uuid,
