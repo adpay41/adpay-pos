@@ -6,7 +6,7 @@
 import { lookupBarcode, searchCatalog, WRITE_OFF_REASONS, type CatalogItem, type CatalogSnapshot, type ScanMatch, type WriteOffReason } from '@adpay/shared';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import type { Runtime } from '../runtime';
+import type { OpenOrder, Runtime } from '../runtime';
 import { tk, useT } from './i18n';
 import { C } from './theme';
 
@@ -45,6 +45,12 @@ export function ReceivePanel({
   const [query, setQuery] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Receiving against an order (P23): what was ordered shows next to each line.
+  const [orders, setOrders] = useState<OpenOrder[]>([]);
+  const [po, setPo] = useState<OpenOrder | null>(null);
+  useEffect(() => {
+    void rt.openOrders().then(setOrders);
+  }, [rt]);
 
   const add = (item: CatalogItem, qty: number) =>
     setLines((ls) => {
@@ -74,6 +80,7 @@ export function ReceivePanel({
           qty: l.qty,
           invoice_ref: invoice.trim() || null,
           expires_on: /^\d{4}-\d{2}-\d{2}$/.test(l.expires_on) ? l.expires_on : null,
+          po_id: po?.po_id ?? null,
         });
       }
       rt.log.info('delivery received', { lines: lines.length, units: lines.reduce((n, l) => n + l.qty, 0) });
@@ -89,6 +96,16 @@ export function ReceivePanel({
     <View style={{ gap: 10, maxWidth: 560 }}>
       <Text style={s.title}>{t('Receive a delivery')}</Text>
       <Text style={s.muted}>{t('Scan each case or item. A case barcode counts its pack size.')}</Text>
+      {orders.length ? (
+        <View style={s.chips}>
+          <Text style={s.muted}>{t('Against an order?')}</Text>
+          {orders.map((o) => (
+            <Pressable key={o.po_id} onPress={() => setPo(po?.po_id === o.po_id ? null : o)} style={[s.chip, po?.po_id === o.po_id && s.chipOn]}>
+              <Text style={po?.po_id === o.po_id ? { color: '#fff', fontWeight: '700' } : undefined}>{o.vendor}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       <TextInput style={s.input} value={invoice} onChangeText={setInvoice} placeholder={t('Invoice number (optional)')} />
       <TextInput style={s.input} value={query} onChangeText={setQuery} placeholder={t('No barcode? Type the name')} />
       {hits.map((h) => (
@@ -103,6 +120,7 @@ export function ReceivePanel({
             <Text style={{ flex: 1 }} numberOfLines={1}>
               {l.item.name}
               {l.item.track_stock || l.item.stock_of ? '' : ` · ${t('not tracked')}`}
+              {po ? ` · ${t('ordered {count}', { count: po.lines.find((x) => x.item_id === l.item.item_id)?.ordered ?? 0 })}` : ''}
             </Text>
             {l.item.perishable ? (
               <TextInput

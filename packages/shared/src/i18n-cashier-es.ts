@@ -295,6 +295,8 @@ export const CASHIER_ES: Partial<Record<CashierKey, string>> = {
   'Z-report #{number} taken': 'Reporte Z n.º {number} hecho',
   Accountant: 'Contador',
   Discount: 'Descuento',
+  'Against an order?': '¿Contra un pedido?',
+  'ordered {count}': 'pedido {count}',
   // Inventory (P22b)
   '{count} left': 'quedan {count}',
   'Add {count} to stock': 'Agregar {count} al inventario',

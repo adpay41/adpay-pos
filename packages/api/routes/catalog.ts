@@ -8,6 +8,8 @@
  */
 import {
   BulkPriceInput,
+  PurchaseOrderInput,
+  VendorInput,
   InventoryMovementInput,
   ItemStockSettingsInput,
   LabelTemplateInput,
@@ -33,6 +35,8 @@ import { listPromotions, savePromotion, setPromotionActive } from '../services/p
 import { bulkPriceChange } from '../services/price-tools';
 import { labelTemplates, printPriceLabels, printShelfTags, saveLabelTemplate, tagQueue } from '../services/labels';
 import { recordMovement, setStockSettings, stockLevels } from '../services/inventory';
+import { closePurchaseOrder, createPurchaseOrder, purchaseOrders, reorderSuggestions, saveVendor, sendPurchaseOrder, setItemsVendor, vendors } from '../services/ordering';
+import { createMessageSender } from '../messaging/sender';
 import { z } from 'zod';
 import { asAdmin, asMerchantUser, requireAdmin, requireMerchantUser } from '../http/auth-hooks';
 import { badRequest, forbidden } from '../http/errors';
@@ -161,6 +165,46 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId } = scope.resolve(r, false);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return (await getCatalogSnapshot(db, merchantId, locationId)).receipt;
+    });
+
+    // Vendors, reorder suggestions, purchase orders (P23).
+    const orders = deps.messages ?? createMessageSender('log', deps.logger);
+    s.get(`${p}/vendors`, async (r) => ({ vendors: await vendors(db, scope.resolve(r, false).merchantId) }));
+    s.post(`${p}/vendors`, async (r, reply) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      reply.status(201);
+      return saveVendor(db, actor, merchantId, null, VendorInput.parse(r.body), trace(r));
+    });
+    s.put(`${p}/vendors/:vendorId`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { vendorId } = z.object({ vendorId: z.uuid() }).parse(r.params);
+      return saveVendor(db, actor, merchantId, vendorId, VendorInput.parse(r.body), trace(r));
+    });
+    s.put(`${p}/vendors/items`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const body = z.strictObject({ vendor_id: z.uuid().nullable(), item_ids: z.array(z.uuid()).min(1).max(2000) }).parse(r.body);
+      return setItemsVendor(db, actor, merchantId, body.vendor_id, body.item_ids, trace(r));
+    });
+    s.get(`${p}/reorder`, async (r) => {
+      const { merchantId } = scope.resolve(r, false);
+      const { location_id } = z.object({ location_id: z.uuid() }).parse(r.query);
+      return reorderSuggestions(db, merchantId, location_id);
+    });
+    s.get(`${p}/purchase-orders`, async (r) => {
+      const { merchantId } = scope.resolve(r, false);
+      const q = z.object({ location_id: z.uuid().optional(), open: z.enum(['1', '0']).optional() }).parse(r.query);
+      return { orders: await purchaseOrders(db, merchantId, { ...(q.location_id ? { locationId: q.location_id } : {}), open: q.open === '1' }) };
+    });
+    s.post(`${p}/purchase-orders`, async (r, reply) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      reply.status(201);
+      return createPurchaseOrder(db, actor, merchantId, PurchaseOrderInput.parse(r.body), trace(r));
+    });
+    s.post(`${p}/purchase-orders/:poId/:action`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { poId, action } = z.object({ poId: z.uuid(), action: z.enum(['send', 'received', 'cancel']) }).parse(r.params);
+      if (action === 'send') return sendPurchaseOrder(db, orders, actor, merchantId, poId, trace(r));
+      return closePurchaseOrder(db, actor, merchantId, poId, action === 'received' ? 'received' : 'cancelled', trace(r));
     });
 
     // Inventory (P22): stock per store, counts / receipts / write-offs, per-item stock settings.

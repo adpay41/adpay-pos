@@ -48,20 +48,20 @@ export interface ExpiringLot {
 /** Register inventory events → movements (idempotent on the event id). */
 export async function movementsFromEvents(q: Queryable, events: readonly RegisterEvent[]): Promise<void> {
   type Row = { movement_id: string; org_id: string; merchant_id: string; location_id: string; register_id: string; actor_user_id: string | null; occurred_at: string; trace_id: string;
-    item_id: string; kind: string; qty: number; reason: string | null; note: string | null; invoice_ref: string | null; expires_on: string | null; receipt_id: string | null };
+    item_id: string; kind: string; qty: number; reason: string | null; note: string | null; invoice_ref: string | null; expires_on: string | null; receipt_id: string | null; po_id?: string | null };
   const rows = events.flatMap((e): Row[] => {
     const base = { movement_id: e.event_id, org_id: e.org_id, merchant_id: e.merchant_id, location_id: e.location_id, register_id: e.register_id, actor_user_id: e.actor_user_id ?? null, occurred_at: e.occurred_at, trace_id: e.trace_id };
-    if (e.type === 'inventory.received') return [{ ...base, item_id: e.payload.item_id, kind: 'receive', qty: e.payload.qty, reason: null, note: null, invoice_ref: e.payload.invoice_ref, expires_on: e.payload.expires_on, receipt_id: e.payload.receipt_id }];
+    if (e.type === 'inventory.received') return [{ ...base, item_id: e.payload.item_id, kind: 'receive', qty: e.payload.qty, reason: null, note: null, invoice_ref: e.payload.invoice_ref, expires_on: e.payload.expires_on, receipt_id: e.payload.receipt_id, po_id: e.payload.po_id ?? null }];
     if (e.type === 'inventory.written_off') return [{ ...base, item_id: e.payload.item_id, kind: 'adjust', qty: -e.payload.qty, reason: e.payload.reason, note: e.payload.note, invoice_ref: null, expires_on: null, receipt_id: null }];
     if (e.type === 'inventory.counted') return [{ ...base, item_id: e.payload.item_id, kind: 'count', qty: e.payload.qty, reason: null, note: null, invoice_ref: null, expires_on: null, receipt_id: null }];
     return [];
   });
   if (!rows.length) return;
   await q.query(
-    `INSERT INTO inventory_movements (movement_id, org_id, merchant_id, location_id, item_id, kind, qty, reason, note, invoice_ref, expires_on, receipt_id, source, register_id, actor_user_id, occurred_at, trace_id)
-     SELECT x.movement_id, x.org_id, x.merchant_id, x.location_id, x.item_id, x.kind, x.qty, x.reason, x.note, x.invoice_ref, x.expires_on, x.receipt_id, 'register', x.register_id, x.actor_user_id, x.occurred_at, x.trace_id
+    `INSERT INTO inventory_movements (movement_id, org_id, merchant_id, location_id, item_id, kind, qty, reason, note, invoice_ref, expires_on, receipt_id, po_id, source, register_id, actor_user_id, occurred_at, trace_id)
+     SELECT x.movement_id, x.org_id, x.merchant_id, x.location_id, x.item_id, x.kind, x.qty, x.reason, x.note, x.invoice_ref, x.expires_on, x.receipt_id, x.po_id, 'register', x.register_id, x.actor_user_id, x.occurred_at, x.trace_id
        FROM jsonb_to_recordset($1::jsonb) AS x(movement_id uuid, org_id uuid, merchant_id uuid, location_id uuid, item_id uuid, kind text, qty int, reason text, note text,
-            invoice_ref text, expires_on date, receipt_id uuid, register_id uuid, actor_user_id uuid, occurred_at timestamptz, trace_id text)
+            invoice_ref text, expires_on date, receipt_id uuid, po_id uuid, register_id uuid, actor_user_id uuid, occurred_at timestamptz, trace_id text)
        JOIN items i ON i.item_id = x.item_id AND i.merchant_id = x.merchant_id
      ON CONFLICT (movement_id) DO NOTHING`,
     [JSON.stringify(rows)],
