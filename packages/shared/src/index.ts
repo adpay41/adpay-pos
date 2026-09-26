@@ -21,6 +21,7 @@ export * from './price-tools';
 export * from './labels';
 export * from './inventory';
 export * from './ordering';
+export * from './support';
 export * from './receipt';
 export * from './receipt-settings';
 export * from './compliance';

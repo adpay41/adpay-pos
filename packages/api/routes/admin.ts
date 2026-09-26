@@ -1,7 +1,7 @@
 /**
  * Admin (AD Pay staff) routes. Cross-tenant by role; every write is audited.
  */
-import { LangSchema, LANGUAGE_STATUSES, MessageKeySchema, ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
+import { CannedFixKeySchema, HardwareInput, TICKET_STATUSES, TicketInput, LangSchema, LANGUAGE_STATUSES, MessageKeySchema, ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asAdmin, requireAdmin } from '../http/auth-hooks';
@@ -26,6 +26,7 @@ import { kpis, listAnalyses, residualReport, saveAnalysis, setProcessorCost } fr
 import { merchantConfig, postSupportMessage, setFeatureFlags, setPacks, supportInbox, supportThread } from '../services/merchant-config';
 import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPlans, updateOnboarding } from '../services/merchant-setup';
 import { recentSales, salesSummary } from '../services/reports';
+import { addHardware, addTicketNote, closeRma, createTicket, hardwareHistory, installHardware, listHardware, listTickets, swapHardware, ticketDetail } from '../services/support';
 import { setLanguageStatus, setTranslation, translationsOverview, translationStrings } from '../services/i18n';
 
 const Ppm = z.int().min(0).max(1_000_000);
@@ -36,6 +37,47 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
   app.addHook('preHandler', requireAdmin);
 
   app.get('/admin/tenancy', async () => tenancyTree(db));
+
+  // Support tickets with SLA timers and canned fixes; hardware inventory and RMA (P24a).
+  const TicketParams = z.object({ ticketId: z.uuid() });
+  const UnitParams = z.object({ unitId: z.uuid() });
+  app.get('/admin/tickets', async (request) => {
+    const { status, merchant_id } = z.object({ status: z.enum(['open', 'pending', 'solved', 'active']).optional(), merchant_id: z.uuid().optional() }).parse(request.query);
+    return { tickets: await listTickets(db, { ...(status ? { status } : {}), ...(merchant_id ? { merchantId: merchant_id } : {}) }) };
+  });
+  app.post('/admin/tickets', async (request, reply) => {
+    reply.status(201);
+    return createTicket(db, asAdmin(request), { ...TicketInput.parse(request.body), source: 'admin' }, request.logContext.trace_id);
+  });
+  app.get('/admin/tickets/:ticketId', async (request) => ticketDetail(db, TicketParams.parse(request.params).ticketId, null));
+  app.post('/admin/tickets/:ticketId/notes', async (request) => {
+    const { ticketId } = TicketParams.parse(request.params);
+    const body = z
+      .strictObject({ body: z.string().trim().max(4000).default(''), canned_fix: CannedFixKeySchema.nullable().default(null), status: z.enum(TICKET_STATUSES).nullable().default(null), internal: z.boolean().default(false) })
+      .parse(request.body);
+    return addTicketNote(db, asAdmin(request), ticketId, body, request.logContext.trace_id);
+  });
+  app.get('/admin/hardware', async (request) => {
+    const { merchant_id } = z.object({ merchant_id: z.uuid().optional() }).parse(request.query);
+    return { units: await listHardware(db, merchant_id ?? null) };
+  });
+  app.post('/admin/hardware', async (request, reply) => {
+    reply.status(201);
+    return addHardware(db, asAdmin(request), HardwareInput.parse(request.body), request.logContext.trace_id);
+  });
+  app.get('/admin/hardware/:unitId/history', async (request) => ({ events: await hardwareHistory(db, UnitParams.parse(request.params).unitId) }));
+  app.post('/admin/hardware/:unitId/install', async (request) => {
+    const { register_id } = z.strictObject({ register_id: z.uuid() }).parse(request.body);
+    return installHardware(db, asAdmin(request), UnitParams.parse(request.params).unitId, register_id, request.logContext.trace_id);
+  });
+  app.post('/admin/hardware/:unitId/swap', async (request) => {
+    const b = z.strictObject({ new_unit_id: z.uuid(), ticket_id: z.uuid().nullable().default(null), reason: z.string().trim().min(3).max(300) }).parse(request.body);
+    return swapHardware(db, asAdmin(request), UnitParams.parse(request.params).unitId, b.new_unit_id, b.ticket_id, b.reason, request.logContext.trace_id);
+  });
+  app.post('/admin/hardware/:unitId/rma-close', async (request) => {
+    const { outcome } = z.strictObject({ outcome: z.enum(['repaired', 'retired']) }).parse(request.body);
+    return closeRma(db, asAdmin(request), UnitParams.parse(request.params).unitId, outcome, request.logContext.trace_id);
+  });
 
   // Onboarding wizard (P12a, ADR 0020): one call, one transaction.
   app.post('/admin/onboarding', async (request, reply) => {

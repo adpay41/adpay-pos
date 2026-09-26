@@ -387,6 +387,7 @@ async function main() {
     await ensureDemoPromotion(db);
     await ensureDemoInventory(db);
     await ensureDemoVendors(db);
+    await ensureDemoSupport(db);
 
     // Registers with history are "already paired" devices in the field.
     for (const r of [jc1, jc2, ast1, bay1]) {
@@ -597,11 +598,38 @@ async function ensureDemoVendors(db: Db): Promise<void> {
   }
 }
 
+/** Demo support (P24a): the Jersey City hardware, a spare printer in stock, and one open ticket. */
+async function ensureDemoSupport(db: Db): Promise<void> {
+  const { rows: regs } = await db.query<{ org_id: string; merchant_id: string; location_id: string; register_id: string; name: string }>(
+    `SELECT r.org_id, r.merchant_id, r.location_id, r.register_id, r.name FROM registers r JOIN locations l USING (location_id) JOIN merchants m ON m.merchant_id = r.merchant_id
+      WHERE m.name = 'Journal Square Deli & Grocery' AND l.name = 'Jersey City' AND NOT EXISTS (SELECT 1 FROM hardware_units) ORDER BY r.name`,
+  );
+  if (!regs.length) return;
+  let n = 1;
+  for (const r of regs) {
+    for (const [kind, model] of [['register', 'Sunmi T2s'], ['printer', 'Sunmi 80mm (built in)'], ['terminal', 'PAX A35']] as const) {
+      await db.query(
+        `INSERT INTO hardware_units (kind, model, serial, warranty_until, status, org_id, merchant_id, location_id, register_id) VALUES ($1, $2, $3, current_date + 365, 'installed', $4, $5, $6, $7)`,
+        [kind, model, `DEMO-${kind.slice(0, 3).toUpperCase()}-${String(n).padStart(4, '0')}`, r.org_id, r.merchant_id, r.location_id, r.register_id],
+      );
+    }
+    n++;
+  }
+  await db.query(`INSERT INTO hardware_units (kind, model, serial, warranty_until, status) VALUES ('printer', 'Sunmi 80mm', 'DEMO-PRI-SPARE', current_date + 365, 'in_stock')`);
+  const r = regs[0]!;
+  await db.query(
+    `INSERT INTO support_tickets (org_id, merchant_id, location_id, register_id, subject, body, category, priority, status, source, sla_due_at)
+     VALUES ($1, $2, $3, $4, 'Receipts come out faint', 'Since this morning the receipts are hard to read.', 'hardware', 'normal', 'open', 'merchant', now() + interval '20 hours')`,
+    [r.org_id, r.merchant_id, r.location_id, r.register_id],
+  );
+}
+
 async function printLogins(db: Db) {
   await ensureDemoLoyalty(db);
   await ensureDemoPromotion(db);
   await ensureDemoInventory(db);
   await ensureDemoVendors(db);
+  await ensureDemoSupport(db);
   const pins = await ensureDemoStaff(db);
   const { rows } = await db.query<{ register_id: string; label: string }>(
     `SELECT r.register_id, m.name || ' · ' || l.name || ' · ' || r.name AS label
