@@ -369,7 +369,7 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P22b Register inventory | #PR | PR open — receive a delivery by scan, write-offs behind a PIN, low-stock badges on tiles, sell-soon on the cashier's idle screen, /device/stock. ADR 0034. |
+| P22b Register inventory | #33 | PR open — receive a delivery by scan, write-offs behind a PIN, low-stock badges on tiles, sell-soon on the cashier's idle screen, /device/stock. ADR 0034. |
 | P22a Inventory model | #32 | Merged — stock folded from append-only movements (counts, receipts, write-offs) and sales, case-break by stock ratio, low / dead / expiring, merchant app Stock tab, register inventory events ingested. ADR 0034. |
 | P21 Labels | #31 | Merged — shelf tags as PDF (Avery sheet / thermal), both prices + barcode (UPC-A / EAN-13 / Code 128, in-store UPC assigned), reprint queue, deli price labels rung at the printed price, label templates. ADR 0033. |
 | P20b Bulk prices, history, profit | #30 | Merged — bulk price change (preview, below-cost warning, one write with history), price history in the item editor, profit by category/item at the cost in force when sold. ADR 0032. |
