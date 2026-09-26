@@ -66,7 +66,6 @@ Owners and managers can approve things a cashier isn't allowed to do. The regist
   - "Scanning" means typing the barcode into the search box and pressing Enter.
 - **Customer screen** is a second browser window. Your browser may ask you to allow pop-ups.
 - **ID scanning** of driver's licences needs a real scanner and can't be tested here.
-- **Lottery tab** in the merchant app is unfinished. Skip it.
 - **Admin → Fleet → device page**: "Re-pair terminal", "Roll back build" and "Reboot device" are greyed out on purpose.
 - **Admin → Money**: processor costs are typed in by hand; nothing is automatic yet. The statement analyzer has no PDF upload yet. Onboarding shows **KYB: not started**. All of this is expected.
 - **Tax & compliance templates** say "draft". They are starting values, not legal advice.
@@ -423,7 +422,7 @@ Expected: **"Enter the 6-digit code"**, with "Local dev — no SMS is sent. Your
 
 Expected:
 - The store name **Journal Square Deli & Grocery** and "Nadia Haddad" at the top.
-- Tabs: **Sales, Tickets, Cash, Hours, Lottery, Items, Alerts, Staff, Help**.
+- Tabs: **Sales, Tickets, Cash, Hours, Items, Alerts, Staff, Help**.
 
 **M2. Sales figures and live ticker**
 1. Open **Sales** → **Today**.
