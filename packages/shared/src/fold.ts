@@ -4,6 +4,7 @@
  * recomputed from the immutable events every time (ADR 0002, ADR 0004).
  */
 import type { RegisterEvent } from './events';
+import type { Lang } from './i18n';
 import { add, cents, sub, sum, ZERO, type Cents } from './money';
 import { computeTotals, type PriceMode, type TaxableLine, type Totals } from './pricing';
 import type { LineCharge } from './compliance';
@@ -66,6 +67,9 @@ export interface FoldedSale {
   declared: Totals | null;
   /** True when the declared totals disagree with the fold — surfaced in admin, never auto-fixed. */
   mismatch: boolean;
+  /** Customer language at payment and the digital receipt token (P18), from sale.completed. */
+  language: Lang | null;
+  receipt_token: string | null;
 }
 
 export function toTaxable(lines: FoldedLine[], mode: PriceMode): TaxableLine[] {
@@ -94,6 +98,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   let priceMode: CompletionMode | null = null;
   const covers: (number | null)[] = [];
   let declared: Totals | null = null;
+  let language: Lang | null = null;
+  let receiptToken: string | null = null;
   let refunded: Cents = ZERO;
   const refundedQty: Record<string, number> = {};
 
@@ -165,6 +171,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           tax_cents: cents(e.payload.tax_cents),
           total_cents: cents(e.payload.total_cents),
         };
+        language = e.payload.language ?? null;
+        receiptToken = e.payload.receipt_token ?? null;
         break;
       case 'sale.voided':
         status = 'voided';
@@ -229,6 +237,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
     refunded_qty: refundedQty,
     declared,
     mismatch,
+    language,
+    receipt_token: receiptToken,
   };
 }
 

@@ -7,6 +7,7 @@
  * Actions are serialized so device_seq stays strictly increasing even if the UI double-taps.
  */
 import {
+  type Lang,
   ZERO,
   cardAmountFor,
   lineCompliance,
@@ -83,6 +84,8 @@ export type DrawerEventType = 'drawer.session_opened' | 'drawer.cash_movement' |
 export class SaleSession {
   /** Signed-in person; stamped on every event as `actor_user_id` (P3). */
   private actor: string | null = null;
+  /** What the customer screen shows at payment, captured on sale.completed (P18). */
+  private completion: { language: Lang; digital_receipt: boolean } = { language: 'en', digital_receipt: false };
   private saleId: string | null = null;
   private events: RegisterEvent[] = [];
   private lastCompleted: FoldedSale | null = null;
@@ -327,6 +330,11 @@ export class SaleSession {
     });
   }
 
+  /** The customer's language and whether to mint a digital-receipt token, for the next completion (P18). */
+  setCompletionContext(ctx: { language: Lang; digital_receipt: boolean }): void {
+    this.completion = ctx;
+  }
+
   /** The completion event for a fully paid sale: cash, card, or split (ADR 0017). */
   private async complete(saleId: string): Promise<FoldedSale> {
     const sale = this.current();
@@ -339,7 +347,12 @@ export class SaleSession {
         : mode === 'card'
           ? sale.card
           : splitTotals(sale.cash, sale.card, approved.map((t) => ({ tender_type: t.tender_type, amount_cents: t.amount_cents, covers_cash_cents: t.covers_cash_cents })));
-    await this.emit('sale.completed', { price_mode: mode, ...totals }, saleId);
+    const { language, digital_receipt } = this.completion;
+    await this.emit(
+      'sale.completed',
+      { price_mode: mode, ...totals, ...(language !== 'en' ? { language } : {}), ...(digital_receipt ? { receipt_token: this.deps.uuid() } : {}) },
+      saleId,
+    );
     const done = this.current();
     this.lastCompleted = done;
     await this.deps.store.setMeta(LAST_SALE_KEY, done.sale_id);

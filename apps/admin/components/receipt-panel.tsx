@@ -4,8 +4,8 @@
  * shared renderer the register uses (P8): logo, header lines, return policy, footer, QR link, and
  * what happens after a cash sale (ask / always print / no receipt = the zero-tap sale).
  */
-import { ReceiptSettingsInput, renderReceipt, sampleReceiptSale, type ReceiptSettings } from '@adpay/shared';
-import { useMemo, useState } from 'react';
+import { ReceiptSettingsInput, renderReceipt, sampleReceiptSale, type Lang, type LanguageStatus, type ReceiptSettings } from '@adpay/shared';
+import { useEffect, useMemo, useState } from 'react';
 import { API_URL, api, shrinkPhoto, upload } from '../lib/api';
 import { ErrorBox } from './ui';
 
@@ -28,13 +28,19 @@ export function ReceiptPanel({ base, loc, merchantName, current, onSaved }: { ba
     after: current.after_sale,
     logo: current.logo_media_id,
     logoUrl: current.logo_url,
+    languages: current.languages, defaultLang: current.default_language, digital: current.digital_receipt,
   });
   const [key, setKey] = useState(loc.location_id);
   if (key !== loc.location_id) {
     setKey(loc.location_id);
-    setF({ header: current.header_lines.join('\n'), policy: current.return_policy ?? '', footer: current.footer, qrUrl: current.qr?.url ?? '', qrCaption: current.qr?.caption ?? 'Scan me', after: current.after_sale, logo: current.logo_media_id, logoUrl: current.logo_url });
+    setF({ header: current.header_lines.join('\n'), policy: current.return_policy ?? '', footer: current.footer, qrUrl: current.qr?.url ?? '', qrCaption: current.qr?.caption ?? 'Scan me', after: current.after_sale, logo: current.logo_media_id, logoUrl: current.logo_url, languages: current.languages, defaultLang: current.default_language, digital: current.digital_receipt });
   }
   const [error, setError] = useState<unknown>(null);
+  // Which languages exist and which a store may offer (P18): drafts wait for review in Translations.
+  const [langs, setLangs] = useState<{ code: Lang; name: string; native: string; status: LanguageStatus }[]>([]);
+  useEffect(() => {
+    api<{ languages: { code: Lang; name: string; native: string; status: LanguageStatus }[] }>(`${base}/languages`).then((r) => setLangs(r.languages), setError);
+  }, [base]);
   const [busy, setBusy] = useState(false);
 
   const parsed = useMemo(
@@ -46,6 +52,9 @@ export function ReceiptPanel({ base, loc, merchantName, current, onSaved }: { ba
         footer: f.footer.trim() || 'Thank you!',
         qr: f.qrUrl.trim() ? { kind: 'link', url: f.qrUrl.trim(), caption: f.qrCaption.trim() || 'Scan me' } : null,
         after_sale: f.after,
+        languages: f.languages,
+        default_language: f.defaultLang,
+        digital_receipt: f.digital,
       }),
     [f],
   );
@@ -59,8 +68,9 @@ export function ReceiptPanel({ base, loc, merchantName, current, onSaved }: { ba
       copy: 'original',
       settings: parsed.data,
       logo_url: f.logoUrl ? `${API_URL}${f.logoUrl}` : null,
+      lang: f.defaultLang,
     });
-  }, [parsed, merchantName, loc, f.logoUrl]);
+  }, [parsed, merchantName, loc, f.logoUrl, f.defaultLang]);
 
   async function chooseLogo(file: File | undefined) {
     if (!file) return;
@@ -126,6 +136,49 @@ export function ReceiptPanel({ base, loc, merchantName, current, onSaved }: { ba
           <label className="field">
             QR caption
             <input value={f.qrCaption} onChange={(e) => setF({ ...f, qrCaption: e.target.value })} maxLength={48} />
+          </label>
+          <fieldset className="span2">
+            <legend>Customer screen languages</legend>
+            <div className="muted tiny">English is always there. The customer taps the language button; their receipt prints in it.</div>
+            {langs
+              .filter((l) => l.code !== 'en')
+              .map((l) => {
+                const on = f.languages.includes(l.code);
+                return (
+                  <label key={l.code} className="check">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      disabled={l.status === 'draft' && !on}
+                      onChange={() =>
+                        setF({
+                          ...f,
+                          languages: on ? f.languages.filter((c) => c !== l.code) : [...f.languages, l.code],
+                          defaultLang: on && f.defaultLang === l.code ? 'en' : f.defaultLang,
+                        })
+                      }
+                    />{' '}
+                    {l.name} <span lang={l.code}>{l.native}</span>
+                    {l.status === 'draft' ? <span className="muted"> — draft, not offered until reviewed</span> : l.status === 'available' ? <span className="muted"> — not yet reviewed</span> : null}
+                  </label>
+                );
+              })}
+            <label className="field" style={{ maxWidth: 280 }}>
+              Each sale starts in
+              <select value={f.defaultLang} onChange={(e) => setF({ ...f, defaultLang: e.target.value as Lang })}>
+                {langs
+                  .filter((l) => l.code === 'en' || f.languages.includes(l.code))
+                  .map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </fieldset>
+          <label className="check span2">
+            <input type="checkbox" checked={f.digital} onChange={(e) => setF({ ...f, digital: e.target.checked })} /> Digital receipt: a QR on the receipt and on
+            the customer screen after paying opens the receipt on the customer&apos;s phone
           </label>
           <fieldset className="span2">
             <legend>After a cash sale</legend>

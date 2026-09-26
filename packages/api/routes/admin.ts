@@ -1,7 +1,7 @@
 /**
  * Admin (AD Pay staff) routes. Cross-tenant by role; every write is audited.
  */
-import { ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
+import { LangSchema, LANGUAGE_STATUSES, MessageKeySchema, ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asAdmin, requireAdmin } from '../http/auth-hooks';
@@ -26,6 +26,7 @@ import { kpis, listAnalyses, residualReport, saveAnalysis, setProcessorCost } fr
 import { merchantConfig, postSupportMessage, setFeatureFlags, setPacks, supportInbox, supportThread } from '../services/merchant-config';
 import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPlans, updateOnboarding } from '../services/merchant-setup';
 import { recentSales, salesSummary } from '../services/reports';
+import { setLanguageStatus, setTranslation, translationsOverview, translationStrings } from '../services/i18n';
 
 const Ppm = z.int().min(0).max(1_000_000);
 const RangeQuery = z.object({ range: z.enum(['today', 'week', 'month']).default('today') });
@@ -106,6 +107,23 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
   app.get('/admin/kpis', async () => kpis(db));
 
   // Tax tables across every location (P16b): the rate in force today, dated changes ahead, charges.
+  // Translations management (P18, Bible 3.4): language status (draft / available / reviewed) and overrides.
+  const LangParams = z.object({ lang: LangSchema });
+  app.get('/admin/translations', async () => translationsOverview(db));
+  app.get('/admin/translations/:lang', async (request) => translationStrings(db, LangParams.parse(request.params).lang));
+  app.put('/admin/translations/:lang/status', async (request) => {
+    const { lang } = LangParams.parse(request.params);
+    const body = z.strictObject({ status: z.enum(LANGUAGE_STATUSES), note: z.string().trim().max(300).nullable().default(null) }).parse(request.body);
+    await setLanguageStatus(db, asAdmin(request), lang, body.status, body.note, request.logContext.trace_id);
+    return translationsOverview(db);
+  });
+  app.put('/admin/translations/:lang/strings/:key', async (request) => {
+    const { lang, key } = z.object({ lang: LangSchema, key: MessageKeySchema }).parse(request.params);
+    const { text } = z.strictObject({ text: z.string().trim().min(1).max(200).nullable() }).parse(request.body);
+    await setTranslation(db, asAdmin(request), lang, key, text, request.logContext.trace_id);
+    return translationStrings(db, lang);
+  });
+
   app.get('/admin/tax-tables', async () => {
     const { rows } = await db.query<{ merchant_id: string; merchant_name: string; location_id: string; location_name: string; state: string | null; timezone: string; tax_rate_ppm: number; compliance: unknown }>(
       `SELECT m.merchant_id, m.name AS merchant_name, l.location_id, l.name AS location_name, l.state, l.timezone, l.tax_rate_ppm, l.compliance

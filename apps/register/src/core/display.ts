@@ -6,7 +6,7 @@
  *
  * Spec: the customer sees cash price and card price side by side before tender, every sale.
  */
-import { lineTotal, type FoldedSale } from '@adpay/shared';
+import { lineTotal, type FoldedSale, type Lang, type Overrides } from '@adpay/shared';
 
 /**
  * The customer screen's states (Bible 1.5): idle → cart → card ("tap on the card machine") →
@@ -28,6 +28,22 @@ export interface DisplayState {
   card_amount_cents: number | null;
   /** Split tender: what's been paid so far (cash part and/or earlier cards). */
   paid_so_far_cents: number | null;
+  /** The customer screen's language and the ones the customer can switch to (P18). */
+  language: Lang;
+  languages: Lang[];
+  overrides: Overrides;
+  /** Paid phase: the digital receipt link, shown as a QR (P18). */
+  receipt_url: string | null;
+}
+
+/** Language context the register adds to every state it publishes (P18). */
+export type DisplayContext = Pick<DisplayState, 'language' | 'languages' | 'overrides' | 'receipt_url'>;
+const NO_CONTEXT: DisplayContext = { language: 'en', languages: ['en'], overrides: {}, receipt_url: null };
+
+/** What the customer screen sends back: the customer picked a language. */
+export interface CustomerMessage {
+  kind: 'customer_language';
+  language: Lang;
 }
 
 export function displayFor(
@@ -51,7 +67,7 @@ export function displayFor(
   if (!sale || sale.lines.length === 0) {
     return {
       phase: 'idle', merchant_name: merchantName, lines: [], cash_total_cents: 0, card_total_cents: 0,
-      tax_cash_cents: 0, tax_card_cents: 0, paid_cents: null, change_cents: null, card_amount_cents: null, paid_so_far_cents: null,
+      tax_cash_cents: 0, tax_card_cents: 0, paid_cents: null, change_cents: null, card_amount_cents: null, paid_so_far_cents: null, ...NO_CONTEXT,
     };
   }
   return base(merchantName, sale);
@@ -76,6 +92,7 @@ function base(merchantName: string, sale: FoldedSale): DisplayState {
     change_cents: null,
     card_amount_cents: null,
     paid_so_far_cents: null,
+    ...NO_CONTEXT,
   };
 }
 
@@ -84,12 +101,15 @@ const CHANNEL = 'adpay-customer-display';
 export interface DisplayChannel {
   publish(state: DisplayState): void;
   subscribe(fn: (state: DisplayState) => void): () => void;
+  /** Customer screen → register (P18). */
+  send(msg: CustomerMessage): void;
+  onCustomer(fn: (msg: CustomerMessage) => void): () => void;
 }
 
 /** BroadcastChannel where available (browser); a no-op elsewhere until the Presentation module lands. */
 export function createDisplayChannel(): DisplayChannel {
   const BC = (globalThis as { BroadcastChannel?: typeof BroadcastChannel }).BroadcastChannel;
-  if (!BC) return { publish: () => undefined, subscribe: () => () => undefined };
+  if (!BC) return { publish: () => undefined, subscribe: () => () => undefined, send: () => undefined, onCustomer: () => () => undefined };
   const ch = new BC(CHANNEL);
   let last: DisplayState | null = null;
   // A customer window opened mid-sale asks for the current state.
@@ -104,9 +124,19 @@ export function createDisplayChannel(): DisplayChannel {
     subscribe(fn) {
       const rx = new BC(CHANNEL);
       rx.addEventListener('message', (e: MessageEvent) => {
-        if (e.data && typeof e.data === 'object') fn(e.data as DisplayState);
+        if (e.data && typeof e.data === 'object' && 'phase' in e.data) fn(e.data as DisplayState);
       });
       rx.postMessage('hello');
+      return () => rx.close();
+    },
+    send(msg) {
+      ch.postMessage(msg);
+    },
+    onCustomer(fn) {
+      const rx = new BC(CHANNEL);
+      rx.addEventListener('message', (e: MessageEvent) => {
+        if (e.data && typeof e.data === 'object' && (e.data as CustomerMessage).kind === 'customer_language') fn(e.data as CustomerMessage);
+      });
       return () => rx.close();
     },
   };

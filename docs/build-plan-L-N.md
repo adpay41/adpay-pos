@@ -18,6 +18,10 @@ Status legend:
 - 🟡 partial (named pieces exist)
 - ⬜ not started
 - ⛔ blocked outside the code (can be prepared, can't be finished)
+- 🔶 built to the boundary: our side done and demonstrable behind an interface, with a local/stub
+  implementation; only the named third-party edge is missing
+- ⏸ deferred: nothing but a third-party integration; skipped until the named dependency exists
+- ✖ dropped at the founder's request
 
 The **Phase** column refers to section 5.
 
@@ -135,13 +139,13 @@ section 5.
 | Lottery module: pack activation, per-game tracking, inventory, reconciliation vs state terminal, payouts vs drawer (1.4) | ✖ dropped | **Dropped at the founder's request (2026-09-26)**, not blocked or forgotten. The work so far is kept unmerged on branch `p17/lottery` (closed PR #23) in case he changes his mind. | — |
 | State tax tables, full (1.4) | 🟡 | Per-location dated tables (P10) + admin cross-store view with scheduled changes (P16b). A maintained jurisdiction library needs an accountant/tax-data source. | P16 |
 | Compliance log export (1.4) | ✅ | Age-check compliance log CSV (P16b). The lottery half was dropped with P17. | P16 |
-| Digital receipt: QR or text-to-phone (1.5) | 🟡-able | QR to a hosted receipt page is buildable (needs a public URL, which means deploying). Text needs SMS (Twilio signup). | P18 |
+| Digital receipt: QR or text-to-phone (1.5) | 🔶 | QR on the receipt and on the customer screen after paying → `/r/<token>` page (receipt as printed, in the sale's language; P18a, ADR 0027). Works through `npm run share`. **Deferred:** always-on public hosting = the AWS deploy (founder). Text-to-phone: P18b. | P18 |
 | Loyalty by phone number on the customer screen (1.5) | ⬜ | P9 customer-screen state machine; a customers table | P19 |
-| Language toggle, 8 languages, cashier and customer independently (1.5) | ⬜ | i18n framework (P9 lays the hook). **Human translation/review** of 8 languages. | P18 |
+| Language toggle, 8 languages, cashier and customer independently (1.5) | 🟡 | Customer side done (P18a): all 8 catalogs, picker in native script, Arabic right to left, sale records the language. Cashier side: P18b. **Deferred:** professional review of the 8 catalogs (a translator); admin marks each language reviewed when done. Bengali, Gujarati, Haitian Creole wait as drafts until then. | P18 |
 | Deals of the day / promotions in idle (1.5) | ⬜ | P9, promotions (P20) | P20 |
 | Lottery results and jackpot in idle (1.5) | ✖ dropped | Dropped with the lottery module (founder, 2026-09-26). Was blocked on: A lottery results data feed (NJ/NY), licence terms | P-3P |
-| Accessibility: high contrast, large type, screen reader labels (1.5) | ⬜ | | P18 |
-| Receipt language follows customer screen (1.6) | ⬜ | P18 | P18 |
+| Accessibility: high contrast, large type, screen reader labels (1.5) | 🟡 | Customer screen done (P18a): Larger-text/high-contrast toggle, spoken labels with both prices, live regions. Register side: P18b. | P18 |
+| Receipt language follows customer screen (1.6) | 🔶 | Printed, previewed and digital receipts in the captured language, laid out in printer columns (CJK = 2) (P18a). **Boundary:** non-Latin glyphs on the thermal printer depend on the printer module (P-HW). | P18 |
 | Email/text a receipt later from the merchant app (1.6) | ⛔ | SMS/email provider account | P18 |
 | Kitchen/deli ticket to a second printer (1.6) | ⛔ | Second printer hardware | P-HW |
 | Label printing, shelf tags with both prices (1.6) | ⛔ | Label printer hardware. Template + PDF output is buildable. | P21 |
@@ -210,7 +214,7 @@ section 5.
 | Tax tables by jurisdiction with effective dates; age rules by state (3.4) | 🟡 | /admin/tax: every store's rate today, scheduled changes, charges, age overrides, drift by state (P16b). Shared jurisdiction library: data source needed. | P16 |
 | Global UPC library, deduped (3.4) | ⬜ | P2, P5 unknown-barcode items | P25 |
 | Receipt/label template editor (3.4) | ⬜ | P8 template model | P21 |
-| Translations management (3.4) | ⬜ | P18 | P18 |
+| Translations management (3.4) | ✅ | Admin → Translations: status per language (draft / offered / reviewed, with reviewer), coverage, per-string corrections with placeholder check, stores asking; reaches registers at next sync (P18a). | P18 |
 | API keys & webhooks for partners (3.4) | ⬜ | | P25 |
 | Cohort views (3.5) | ⬜ | P13 KPIs | P25 |
 | Investor/bank pack (3.5) | ⬜ | P13 | P25 |
@@ -365,6 +369,7 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
+| P18a Languages & digital receipt | #PR | PR open — 8-language customer screen + receipt (catalogs in shared, draft/offered/reviewed per language), customer picks, sale records it, receipt follows; digital receipt QR → public `/r/<token>` page; admin Translations; customer-screen larger text/high contrast + screen-reader labels. ADR 0027. |
 | P16b ID scan, tax report, compliance log | #22 | Merged — AAMVA ID scan at the age check (derived facts only; failed scan blocks manual confirm), sales-tax report by month/rate with refunds' tax and quarterly CSV, age-check compliance log CSV, admin tax-tables view; fixes training-mode batch/held/tickets leaks. ADR 0026. |
 | P17 Lottery | #23 (closed) | **Dropped at the founder's request** (2026-09-26). The code stays on `p17/lottery`, unmerged. Its non-lottery commits (demo PINs, `npm run share`, tier-L test plan) landed separately. |
 | P16a End of day & training | #21 | merged — end of day / Z-report (spec v1): everything since the previous Z, drawer counted first, printed, eod.closed synced; server rebuilds each Z with the same function and flags mismatches; EOD-not-closed alert; merchant app Z list; training mode (in-memory, never synced, cash only, receipts say TRAINING). ADR 0025. |

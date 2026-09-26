@@ -3,8 +3,8 @@
  * a QR link, and what happens after a cash sale, with a live preview printed by the same shared
  * renderer the register uses. The store logo is uploaded in admin (it needs a desktop image).
  */
-import { ReceiptSettingsInput, renderReceipt, sampleReceiptSale, type CatalogSnapshot } from '@adpay/shared';
-import { useMemo, useState } from 'react';
+import { ReceiptSettingsInput, renderReceipt, sampleReceiptSale, type CatalogSnapshot, type Lang, type LanguageStatus } from '@adpay/shared';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from './api';
 import { C } from './theme';
@@ -30,6 +30,17 @@ export function ReceiptEditor({ token, catalog, location, onSaved }: { token: st
   const [footer, setFooter] = useState(cur?.footer ?? 'Thank you!');
   const [qr, setQr] = useState(cur?.qr?.url ?? '');
   const [after, setAfter] = useState<'ask' | 'print' | 'none'>(cur?.after_sale ?? 'ask');
+  // Customer screen languages and the digital receipt (P18).
+  const [languages, setLanguages] = useState<Lang[]>(cur?.languages ?? ['en', 'es']);
+  const [defaultLang, setDefaultLang] = useState<Lang>(cur?.default_language ?? 'en');
+  const [digital, setDigital] = useState(cur?.digital_receipt ?? true);
+  const [langs, setLangs] = useState<{ code: Lang; name: string; native: string; status: LanguageStatus }[]>([]);
+  useEffect(() => {
+    api<{ languages: { code: Lang; name: string; native: string; status: LanguageStatus }[] }>('/merchant/languages', token).then(
+      (r) => setLangs(r.languages),
+      (e: Error) => setError(e.message),
+    );
+  }, [token]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -40,6 +51,9 @@ export function ReceiptEditor({ token, catalog, location, onSaved }: { token: st
     footer: footer.trim() || 'Thank you!',
     qr: qr.trim() ? { kind: 'link', url: qr.trim(), caption: cur?.qr?.caption ?? 'Scan me' } : null,
     after_sale: after,
+    languages,
+    default_language: defaultLang,
+    digital_receipt: digital,
   });
   const preview = useMemo(
     () =>
@@ -52,6 +66,7 @@ export function ReceiptEditor({ token, catalog, location, onSaved }: { token: st
             copy: 'original',
             settings: parsed.data,
             logo_url: null,
+            lang: defaultLang,
           })
         : null,
     [parsed, location],
@@ -82,6 +97,47 @@ export function ReceiptEditor({ token, catalog, location, onSaved }: { token: st
           </Pressable>
         ))}
       </View>
+      <Text style={s.label}>Customer screen languages</Text>
+      <View style={s.card}>
+        <Text style={s.hint}>English is always there. Customers tap the language button on their screen, and the receipt prints in their language.</Text>
+        <View style={s.chips}>
+          {langs
+            .filter((l) => l.code !== 'en')
+            .map((l) => {
+              const on = languages.includes(l.code);
+              const draft = l.status === 'draft' && !on;
+              return (
+                <Pressable
+                  key={l.code}
+                  disabled={draft}
+                  onPress={() => {
+                    setLanguages(on ? languages.filter((c) => c !== l.code) : [...languages, l.code]);
+                    if (on && defaultLang === l.code) setDefaultLang('en');
+                  }}
+                  style={[s.chip, on && s.chipOn, draft && { opacity: 0.4 }]}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: on, disabled: draft }}
+                  accessibilityLabel={`${l.name}${draft ? ', not available yet' : ''}`}
+                >
+                  <Text style={[s.chipText, on && s.chipTextOn]}>{l.native}</Text>
+                </Pressable>
+              );
+            })}
+        </View>
+        {langs.some((l) => l.status === 'draft') ? <Text style={s.hint}>Faded languages are being checked by a fluent speaker and will be available soon.</Text> : null}
+        <Text style={[s.hint, { marginTop: 6 }]}>Each sale starts in</Text>
+        <View style={s.chips}>
+          {(['en', ...languages.filter((l) => l !== 'en')] as Lang[]).map((code) => (
+            <Pressable key={code} onPress={() => setDefaultLang(code)} style={[s.chip, defaultLang === code && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: defaultLang === code }}>
+              <Text style={[s.chipText, defaultLang === code && s.chipTextOn]}>{langs.find((l) => l.code === code)?.native ?? code}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+      <Pressable onPress={() => setDigital(!digital)} style={[s.card, s.radioRow]} accessibilityRole="checkbox" accessibilityState={{ checked: digital }}>
+        <View style={[s.box, digital && s.radioOn]} />
+        <Text style={[s.body, { flex: 1 }]}>Digital receipt: a QR on the receipt and on the customer screen opens it on their phone</Text>
+      </Pressable>
       <Text style={s.label}>Header lines (phone, Instagram, hours)</Text>
       <TextInput style={[s.input, { minHeight: 70 }]} value={header} onChangeText={setHeader} multiline placeholder={'(201) 555-0100\n@yourstore'} />
       <Text style={s.label}>Return policy</Text>
@@ -119,6 +175,13 @@ const s = StyleSheet.create({
   radioRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: C.muted },
   radioOn: { borderColor: C.black, backgroundColor: C.black },
+  box: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: C.muted },
+  hint: { color: C.muted, fontSize: 13 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+  chip: { borderWidth: 1, borderColor: '#cfcfcf', borderRadius: 18, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#fff' },
+  chipOn: { backgroundColor: C.black, borderColor: C.black },
+  chipText: { color: C.ink, fontSize: 15 },
+  chipTextOn: { color: '#fff', fontWeight: '700' },
   input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#cfcfcf', borderRadius: 8, padding: 12, fontSize: 16 },
   error: { color: C.red },
   button: { backgroundColor: C.red, borderRadius: 8, padding: 14, alignItems: 'center' },

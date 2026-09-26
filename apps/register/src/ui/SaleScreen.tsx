@@ -4,6 +4,9 @@
  * events. Works fully offline; the sync pill shows what's queued.
  */
 import {
+  DEFAULT_I18N,
+  languageInfo,
+  type Lang,
   WedgeDecoder,
   barcodeIndex,
   cardAmountFor,
@@ -40,7 +43,7 @@ import {
 } from '@adpay/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { DevSettings, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { createDisplayChannel, displayFor } from '../core/display';
+import { createDisplayChannel, displayFor, type DisplayState } from '../core/display';
 import { PREVIEW_HEALTH, WebPreviewHardware, type Hardware } from '../core/hardware';
 import type { SessionState } from '../core/session';
 import { pendingItem } from '../core/new-items';
@@ -48,6 +51,7 @@ import { repeatBatch, ringBatch, usualBatch, usualLinesFrom, type Batch } from '
 import type { StaffState } from '../core/staff';
 import type { SyncStatus } from '../core/sync';
 import { API_URL, type Runtime } from '../runtime';
+import { Qr } from './Qr';
 import { QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
 import { CardPanel, type CardPhase } from './TenderUI';
@@ -95,6 +99,54 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const [modal, setModal] = useState<Modal>({ kind: 'none' });
   const [drawerFlash, setDrawerFlash] = useState(false);
   const display = useRef(createDisplayChannel()).current;
+
+  // Languages and the digital receipt (P18). The customer picks a language on their screen; the sale
+  // records it and the receipt prints in it. Each new customer starts in the store's default.
+  const i18n = catalog.i18n ?? DEFAULT_I18N;
+  const digital = (catalog.receipt?.digital_receipt ?? false) && !training;
+  const [customerLang, setCustomerLang] = useState<Lang>(i18n.default);
+  const ctx = useRef({ language: customerLang, i18n, digital });
+  ctx.current = { language: customerLang, i18n, digital };
+  const lastShown = useRef<DisplayState | null>(null);
+  const receiptUrl = (token: string) => `${API_URL}/r/${token}`;
+  const show = useCallback(
+    (s: FoldedSale | null, paid?: { amount: number; change: number }, card?: { phase: 'card' | 'approved' | 'declined'; amount: number }) => {
+      const c = ctx.current;
+      const state: DisplayState = {
+        ...displayFor(rt.identity.merchant_name, s, paid, card),
+        language: c.language,
+        languages: c.i18n.offered,
+        overrides: c.i18n.overrides,
+        receipt_url: paid && c.digital && s?.receipt_token ? `${API_URL}/r/${s.receipt_token}` : null,
+      };
+      lastShown.current = state;
+      display.publish(state);
+    },
+    [display, rt.identity.merchant_name],
+  );
+  const setLanguage = useCallback(
+    (lang: Lang) => {
+      ctx.current = { ...ctx.current, language: lang };
+      setCustomerLang(lang);
+      if (lastShown.current) {
+        lastShown.current = { ...lastShown.current, language: lang };
+        display.publish(lastShown.current);
+      }
+    },
+    [display],
+  );
+  useEffect(() => display.onCustomer((m) => ctx.current.i18n.offered.includes(m.language) && setLanguage(m.language)), [display, setLanguage]);
+  // A snapshot that stops offering the current language sends the screen back to the default.
+  useEffect(() => {
+    if (!i18n.offered.includes(customerLang)) setLanguage(i18n.default);
+  }, [i18n, customerLang, setLanguage]);
+  useEffect(() => ses.setCompletionContext({ language: customerLang, digital_receipt: digital }), [ses, customerLang, digital]);
+  /** The customer screen goes back to idle: the next customer starts in the default language. */
+  const showIdle = () => {
+    ctx.current = { ...ctx.current, language: ctx.current.i18n.default };
+    setCustomerLang(ctx.current.i18n.default);
+    show(null);
+  };
 
   /** True while printing a receipt automatically (after_sale: print): don't pop the preview over the change. */
   const quietPrint = useRef(false);
@@ -145,8 +197,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
   // Customer screen follows the ticket (unless it's showing "thank you").
   useEffect(() => {
-    if (modal.kind !== 'done') display.publish(displayFor(rt.identity.merchant_name, session.sale));
-  }, [session.sale, modal.kind, display, rt.identity.merchant_name]);
+    if (modal.kind !== 'done') show(session.sale);
+  }, [session.sale, modal.kind, show]);
 
   const sale = session.sale;
   // Feature flags for this merchant (P12b); an older snapshot without them means everything on.
@@ -318,6 +370,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       ...(receiptSettings
         ? { settings: receiptSettings, logo_url: receiptSettings.logo_url ? `${API_URL}${receiptSettings.logo_url}` : null }
         : {}),
+      // In the language the customer had at payment (on the sale), with the platform's corrections (P18).
+      overrides: i18n.overrides,
+      digital_url: s.receipt_token ? receiptUrl(s.receipt_token) : null,
     });
 
   // Remote actions that need this screen or the printer (P4): reprint any sale rung here, test page, restart.
@@ -380,20 +435,20 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       const current = session.sale!;
       const t = retry ?? (await ses.startCard(amount));
       setModal({ kind: 'card', phase: { kind: 'waiting', amount: t.amount } });
-      display.publish(displayFor(rt.identity.merchant_name, current, undefined, { phase: 'card', amount: t.amount }));
+      show(current, undefined, { phase: 'card', amount: t.amount });
       const r = await rt.payments.charge(current.sale_id, t.tender_id, t.amount);
       const res = await ses.finishCard(t.tender_id, t.amount, { ...r, status: r.status });
       rt.log.info('card', { status: r.status, sale: current.sale_id.slice(0, 8), amount_cents: t.amount });
       if (r.status === 'approved') {
-        display.publish(displayFor(rt.identity.merchant_name, res.sale, undefined, { phase: 'approved', amount: t.amount }));
+        show(res.sale, undefined, { phase: 'approved', amount: t.amount });
         if (res.completed) await completed(res.sale, res.sale.paid_cents, 0);
         else setModal({ kind: 'card', phase: { kind: 'ready' } }); // two cards: the rest
       } else if (r.status === 'declined') {
-        display.publish(displayFor(rt.identity.merchant_name, res.sale, undefined, { phase: 'declined', amount: t.amount }));
+        show(res.sale, undefined, { phase: 'declined', amount: t.amount });
         setModal({ kind: 'card', phase: { kind: 'declined', message: r.message } });
       } else {
         // The customer sees their cart again, never "system down"; the cashier sees what happened.
-        display.publish(displayFor(rt.identity.merchant_name, res.sale));
+        show(res.sale);
         setModal({ kind: 'card', phase: { kind: 'error', message: r.message, retry: t } });
       }
       rt.sync.kick();
@@ -402,7 +457,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
   /** Every paid sale ends here: customer screen, after-sale receipt choice, the done screen. */
   async function completed(done: FoldedSale, amount: number, change: number) {
-    display.publish(displayFor(rt.identity.merchant_name, done, { amount, change }));
+    show(done, { amount, change });
     // After-sale setting (P8): ask; always print; or never print unless asked — the zero-tap sale.
     const after = receiptSettings?.after_sale ?? 'ask';
     let printed: readonly ReceiptLine[] | null = null;
@@ -427,7 +482,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       if (print) await hardware.printReceipt(receiptFor(done, 'original'));
       else setModal({ kind: 'none' });
       await ses.recordReceipt(done.sale_id, print ? 'original' : 'none');
-      display.publish(displayFor(rt.identity.merchant_name, null));
+      showIdle();
       rt.sync.kick();
     });
   }
@@ -570,7 +625,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         </View>
 
         <View style={s.ticket}>
-          <Text style={s.ticketTitle}>{sale ? `Ticket ${sale.sale_id.slice(0, 4).toUpperCase()}` : 'New ticket'}</Text>
+          <Text style={s.ticketTitle}>
+            {sale ? `Ticket ${sale.sale_id.slice(0, 4).toUpperCase()}` : 'New ticket'}
+            {/* The customer chose a language on their screen (P18): the cashier knows, and the receipt follows. */}
+            {customerLang !== 'en' ? ` · Customer: ${languageInfo(customerLang).name}` : ''}
+          </Text>
           <ScrollView style={{ flex: 1 }}>
             {!sale || sale.lines.length === 0 ? (
               <Text style={s.mutedSmall}>Tap an item to start a sale.</Text>
@@ -916,11 +975,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onRetry={(pending) => void chargeCard(undefined, pending)}
             onPartial={() => setModal({ kind: 'card', phase: { kind: 'partial' } })}
             onCash={() => {
-              display.publish(displayFor(rt.identity.merchant_name, sale));
+              show(sale);
               setModal(training || rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true });
             }}
             onBack={() => {
-              display.publish(displayFor(rt.identity.merchant_name, sale));
+              show(sale);
               setModal({ kind: 'none' });
             }}
           />
@@ -947,6 +1006,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                     .join(' + ')}`
                 : `Total ${usd(modal.sale.cash.total_cents)} cash · drawer opened`}
             {modal.after === 'print' ? ' · receipt printed' : ''}
+            {modal.sale.language ? ` · receipt in ${languageInfo(modal.sale.language).name}` : ''}
           </Text>
           {modal.after === 'ask' ? (
             <View style={s.actions}>
@@ -962,7 +1022,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               key={modal.sale.sale_id}
               onNext={() => {
                 setModal({ kind: 'none' });
-                display.publish(displayFor(rt.identity.merchant_name, null));
+                showIdle();
               }}
               extra={
                 modal.after === 'none' ? (
@@ -972,7 +1032,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                       void run(async () => {
                         await hardware.printReceipt(receiptFor(modal.sale, 'reprint'));
                         await ses.recordReceipt(modal.sale.sale_id, 'reprint');
-                        display.publish(displayFor(rt.identity.merchant_name, null));
+                        showIdle();
                       })
                     }
                   >
@@ -997,9 +1057,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               l.style === 'logo' ? (
                 <Image key={i} source={{ uri: l.url }} style={s.paperLogo} resizeMode="contain" accessibilityLabel="Store logo" />
               ) : l.style === 'qr' ? (
-                // The printer module prints a real QR (ESC/POS native); the preview shows where and what.
+                // The printer module prints it with ESC/POS's native QR command; the preview draws the same code.
                 <View key={i} style={s.paperQr}>
-                  <Text style={s.paperQrText}>▣ QR</Text>
+                  <Qr value={l.data} size={132} label={l.text.trim()} />
                   <Text style={[s.paperLine, { fontSize: 10 }]} numberOfLines={2}>
                     {l.data}
                   </Text>
@@ -1488,7 +1548,6 @@ const s = StyleSheet.create({
   paperDouble: { fontSize: 14, fontWeight: '800' },
   paperLogo: { width: '100%', height: 64, marginBottom: 4 },
   paperQr: { alignItems: 'center', borderWidth: 1, borderColor: C.line, borderRadius: 6, padding: 6, marginVertical: 4 },
-  paperQrText: { fontSize: 20, fontWeight: '800', color: C.ink },
 });
 
 /** Name a usual: "Mike — coffee + Newports". Saved online; every register gets it with the next sync. */

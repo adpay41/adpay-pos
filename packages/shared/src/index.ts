@@ -13,6 +13,7 @@ export * from './drawer';
 export * from './refund';
 export * from './split';
 export * from './tender';
+export * from './i18n';
 export * from './receipt';
 export * from './receipt-settings';
 export * from './compliance';

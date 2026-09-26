@@ -26,6 +26,7 @@ import {
 } from '@adpay/shared';
 import type { Queryable } from '../db/db';
 import { notFound } from '../http/errors';
+import { i18nSnapshot } from './i18n';
 import { mediaUrl } from './media';
 
 interface LocationRow {
@@ -161,6 +162,7 @@ export async function getCatalogSnapshot(
     compliance: { ...compliance, state: loc.state, min_ages: minAges },
     flags: resolveFlags(loc.feature_flags),
     enabled_packs: loc.enabled_packs,
+    i18n: await i18nSnapshot(q, receiptSettingsOf(loc.receipt_settings)),
     cash_settings: { drop_over_cents: (AlertSettingsInput.safeParse(loc.alert_settings ?? {}).data ?? AlertSettingsInput.parse({})).drop_over_cents },
     receipt: (() => {
       const r = receiptSettingsOf(loc.receipt_settings);
