@@ -370,7 +370,7 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P25b Agents & residual split | #PR | PR open — agents / referral partners with codes and dated terms, stores assigned at onboarding or by hand, monthly statements from the residual report with bounties, CSV. ADR 0040. |
+| P25b Agents & residual split | #40 | PR open — agents / referral partners with codes and dated terms, stores assigned at onboarding or by hand, monthly statements from the residual report with bounties, CSV. ADR 0040. |
 | P25a Partner API & webhooks | #39 | Merged — per-store read-only API keys with scopes on /v1, signed webhooks queued with the sale and retried on schedule, admin Partners page, partner docs. ADR 0039. |
 | P24c Checklists | #38 | Merged — opening / closing checklists: lists in the snapshot, ticked at the register with photos as one event, store-day report in the merchant app. ADR 0038. |
 | P24b Rollouts & documents | #37 | Merged — staged feature rollouts (canary → 10% → all) with a kill switch over per-store switches, documents vault with renewals and a 30-day expiry alert. Build OTA ⏸ (MDM decision). ADR 0037. |
