@@ -13,6 +13,7 @@ import type { Db, Queryable } from '../db/db';
 import { notFound } from '../http/errors';
 import { upsertCustomersFromEvents } from './loyalty';
 import { movementsFromEvents } from './inventory';
+import { enqueueWebhooks } from './partners';
 
 export interface IngestResult {
   accepted: string[];
@@ -114,6 +115,8 @@ export async function ingestEvents(
     await upsertCustomersFromEvents(q, toInsert);
     // Deliveries, write-offs and counts from the register join the movements table (P22).
     await movementsFromEvents(q, toInsert);
+    // Partner webhooks (P25a): queued in the same transaction, posted by the maintenance job.
+    await enqueueWebhooks(q, toInsert);
     // Live sales feed (merchant ticker, admin): delivered to listeners on commit (P4 realtime hub).
     const completed = toInsert.filter((e) => e.type === 'sale.completed');
     // Names for the ticker (P11): which register, who rang it. One lookup per batch.

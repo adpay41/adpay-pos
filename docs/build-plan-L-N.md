@@ -216,7 +216,7 @@ section 5.
 | Global UPC library, deduped (3.4) | ⬜ | P2, P5 unknown-barcode items | P25 |
 | Receipt/label template editor (3.4) | ✅ | Label templates (stock, card price, barcode, category, small print) in the merchant app; receipt settings per location in the merchant app and admin since P8 (P21). | P21 |
 | Translations management (3.4) | ✅ | Admin → Translations: status per language (draft / offered / reviewed, with reviewer), coverage, per-string corrections with placeholder check, stores asking; reaches registers at next sync (P18a). | P18 |
-| API keys & webhooks for partners (3.4) | ⬜ | | P25 |
+| API keys & webhooks for partners (3.4) | ✅ | /partners: per-store read-only keys (sales / catalog / inventory scopes, hashed, shown once, revocable) on `/v1/*`; webhooks for sale completed / refunded / voided and EOD, queued with the sale, HMAC-signed, retried 6 times then failed, redeliver / rotate / turn off; partner docs in `docs/partner-api.md` (P25a, ADR 0039). DNS-rebinding guard (resolve-and-pin or egress proxy) goes with the AWS deploy. | P25 |
 | Cohort views (3.5) | ⬜ | P13 KPIs | P25 |
 | Investor/bank pack (3.5) | ⬜ | P13 | P25 |
 
@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P24c Checklists | #38 | PR open — opening / closing checklists: lists in the snapshot, ticked at the register with photos as one event, store-day report in the merchant app. ADR 0038. |
+| P25a Partner API & webhooks | #PR | PR open — per-store read-only API keys with scopes on /v1, signed webhooks queued with the sale and retried on schedule, admin Partners page, partner docs. ADR 0039. |
+| P24c Checklists | #38 | Merged — opening / closing checklists: lists in the snapshot, ticked at the register with photos as one event, store-day report in the merchant app. ADR 0038. |
 | P24b Rollouts & documents | #37 | Merged — staged feature rollouts (canary → 10% → all) with a kill switch over per-store switches, documents vault with renewals and a 30-day expiry alert. Build OTA ⏸ (MDM decision). ADR 0037. |
 | P24a Support & hardware | #36 | Merged — tickets with first-response SLA, append-only notes, canned fixes that queue remote actions, runbooks with fix buttons on alerts, hardware inventory with swap/RMA and history, merchant equipment tickets. ADR 0036. |
 | P23b Shrink | #35 | Merged — count variances (expected vs counted) and write-offs by reason, by category and item at cost, with cashier voids / refunds / no-sale; Stock tab Shrink card. ADR 0034. |

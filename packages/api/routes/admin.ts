@@ -1,7 +1,7 @@
 /**
  * Admin (AD Pay staff) routes. Cross-tenant by role; every write is audited.
  */
-import { FEATURE_FLAG_KEYS, FlagRolloutInput, type FeatureFlag, CannedFixKeySchema, HardwareInput, TICKET_STATUSES, TicketInput, LangSchema, LANGUAGE_STATUSES, MessageKeySchema, ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
+import { ApiKeyInput, WebhookEndpointInput, FEATURE_FLAG_KEYS, FlagRolloutInput, type FeatureFlag, CannedFixKeySchema, HardwareInput, TICKET_STATUSES, TicketInput, LangSchema, LANGUAGE_STATUSES, MessageKeySchema, ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asAdmin, requireAdmin } from '../http/auth-hooks';
@@ -28,6 +28,7 @@ import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPla
 import { recentSales, salesSummary } from '../services/reports';
 import { addHardware, addTicketNote, closeRma, createTicket, hardwareHistory, installHardware, listHardware, listTickets, swapHardware, ticketDetail } from '../services/support';
 import { rolloutOverview, setRollout } from '../services/rollouts';
+import { createApiKey, createEndpoint, disableEndpoint, listApiKeys, listEndpoints, recentDeliveries, redeliver, revokeApiKey, rotateEndpointSecret } from '../services/partners';
 import { adminDocumentFile, listDocuments } from '../services/documents';
 import { setLanguageStatus, setTranslation, translationsOverview, translationStrings } from '../services/i18n';
 
@@ -118,6 +119,42 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     const { flag } = z.object({ flag: z.enum(FEATURE_FLAG_KEYS as [FeatureFlag, ...FeatureFlag[]]) }).parse(request.params);
     return setRollout(db, asAdmin(request), flag, FlagRolloutInput.parse(request.body), request.logContext.trace_id);
   });
+  // Partner API keys and webhooks (P25a). A key is shown in full only in the create response.
+  const IdParam = (name: string) => z.object({ [name]: z.uuid() });
+  app.get('/admin/api-keys', async () => ({ keys: await listApiKeys(db) }));
+  app.post('/admin/api-keys', async (request, reply) => {
+    reply.status(201);
+    return createApiKey(db, asAdmin(request), ApiKeyInput.parse(request.body), request.logContext.trace_id);
+  });
+  app.post('/admin/api-keys/:keyId/revoke', async (request) => {
+    const { keyId } = IdParam('keyId').parse(request.params) as { keyId: string };
+    await revokeApiKey(db, asAdmin(request), keyId, request.logContext.trace_id);
+    return { ok: true };
+  });
+  app.get('/admin/webhooks', async () => ({ endpoints: await listEndpoints(db) }));
+  app.post('/admin/webhooks', async (request, reply) => {
+    reply.status(201);
+    return createEndpoint(db, asAdmin(request), WebhookEndpointInput.parse(request.body), deps.config.env !== 'production', request.logContext.trace_id);
+  });
+  app.get('/admin/webhooks/:endpointId/deliveries', async (request) => {
+    const { endpointId } = IdParam('endpointId').parse(request.params) as { endpointId: string };
+    return { deliveries: await recentDeliveries(db, endpointId) };
+  });
+  app.post('/admin/webhooks/:endpointId/disable', async (request) => {
+    const { endpointId } = IdParam('endpointId').parse(request.params) as { endpointId: string };
+    await disableEndpoint(db, asAdmin(request), endpointId, request.logContext.trace_id);
+    return { ok: true };
+  });
+  app.post('/admin/webhooks/:endpointId/rotate-secret', async (request) => {
+    const { endpointId } = IdParam('endpointId').parse(request.params) as { endpointId: string };
+    return rotateEndpointSecret(db, asAdmin(request), endpointId, request.logContext.trace_id);
+  });
+  app.post('/admin/webhook-deliveries/:deliveryId/redeliver', async (request) => {
+    const { deliveryId } = IdParam('deliveryId').parse(request.params) as { deliveryId: string };
+    await redeliver(db, asAdmin(request), deliveryId, request.logContext.trace_id);
+    return { ok: true };
+  });
+
   // A store's documents vault, read-only for support (P24b); opening a file is audited.
   app.get('/admin/merchants/:merchantId/documents', async (request) => ({ documents: await listDocuments(db, MerchantParams.parse(request.params).merchantId) }));
   app.get('/admin/documents/:documentId/file', async (request, reply) => {
