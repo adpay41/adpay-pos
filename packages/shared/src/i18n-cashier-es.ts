@@ -333,4 +333,5 @@ export const CASHIER_ES: Partial<Record<CashierKey, string>> = {
   'Rewards customer, phone ending {last4}': 'Cliente de recompensas, teléfono terminado en {last4}',
   'See customers and loyalty': 'Ver clientes y lealtad',
   'Text a promotion to customers': 'Enviar una promoción por texto a clientes',
+  'Store documents (licences, permits, insurance)': 'Documentos de la tienda (licencias, permisos, seguro)',
 };

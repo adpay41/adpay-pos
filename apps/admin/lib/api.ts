@@ -67,6 +67,19 @@ export async function upload<T>(path: string, body: Blob): Promise<T> {
   return data as T;
 }
 
+/** GET a file the API serves behind auth (a store document) and open it in a new tab. */
+export async function openFile(path: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.message ?? `HTTP ${res.status}`, res.headers.get('x-trace-id'));
+  }
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 /**
  * Shrink a chosen image to at most `edge` px in the browser before upload (square-cropped for
  * product photos; whole for logos), so uploads are tens of KB and the API's 1 MB cap never bites.

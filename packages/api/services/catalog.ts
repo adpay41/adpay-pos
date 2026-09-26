@@ -29,6 +29,7 @@ import { notFound } from '../http/errors';
 import { i18nSnapshot } from './i18n';
 import { promotionsForLocation } from './promotions';
 import { mediaUrl } from './media';
+import { currentRollouts } from './rollouts';
 
 interface LocationRow {
   location_id: string;
@@ -171,7 +172,7 @@ export async function getCatalogSnapshot(
     }),
     quick_keys: favorites.map((f) => f.item_id),
     compliance: { ...compliance, state: loc.state, min_ages: minAges },
-    flags: resolveFlags(loc.feature_flags),
+    flags: resolveFlags(loc.feature_flags, await currentRollouts(q), merchantId),
     enabled_packs: loc.enabled_packs,
     i18n: await i18nSnapshot(q, receiptSettingsOf(loc.receipt_settings)),
     promotions: await promotionsForLocation(q, merchantId, locationId, today),

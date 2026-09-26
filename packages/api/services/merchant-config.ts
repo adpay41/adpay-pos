@@ -21,6 +21,7 @@ import type { Db, Queryable } from '../db/db';
 import { notFound } from '../http/errors';
 import { audit } from './audit';
 import { bumpCatalogVersion } from './catalog-write';
+import { currentRollouts } from './rollouts';
 
 export interface MerchantConfig {
   enabled_packs: PackId[];
@@ -31,7 +32,7 @@ export interface MerchantConfig {
 export async function merchantConfig(q: Queryable, merchantId: string): Promise<MerchantConfig> {
   const { rows } = await q.query<{ enabled_packs: PackId[]; feature_flags: FeatureFlagOverrides }>('SELECT enabled_packs, feature_flags FROM merchants WHERE merchant_id = $1', [merchantId]);
   if (!rows[0]) throw notFound('Merchant not found');
-  return { enabled_packs: rows[0].enabled_packs, flags: resolveFlags(rows[0].feature_flags), overrides: rows[0].feature_flags };
+  return { enabled_packs: rows[0].enabled_packs, flags: resolveFlags(rows[0].feature_flags, await currentRollouts(q), merchantId), overrides: rows[0].feature_flags };
 }
 
 export async function setFeatureFlags(db: Db, actor: AdminPrincipal, merchantId: string, overrides: FeatureFlagOverrides, traceId: string): Promise<MerchantConfig> {

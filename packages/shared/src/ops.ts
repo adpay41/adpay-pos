@@ -156,6 +156,8 @@ export const ALERT_RULES = {
   big_ticket: { label: 'Big-ticket sale', severity: 'info', merchant: true },
   slow_hour: { label: 'Unusually slow hour', severity: 'info', merchant: true },
   late_first_sale: { label: 'First sale later than usual (store not open?)', severity: 'warning', merchant: true },
+  // P24b (Bible 2.8)
+  document_expiring: { label: 'A licence or permit is expiring', severity: 'warning', merchant: true },
 } as const;
 export type AlertRule = keyof typeof ALERT_RULES;
 

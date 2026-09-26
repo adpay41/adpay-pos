@@ -10,6 +10,7 @@ import { createMessageSender } from '../messaging/sender';
 import { sendReceipt } from '../services/messaging';
 import { cashierPerformance, dailyJournal } from '../services/performance';
 import { rollup } from '../services/rollup';
+import { listDocuments, pgDocumentStore, removeDocument, uploadDocument, validateDocument } from '../services/documents';
 import { addTicketNote, createTicket, listHardware, listTickets, ticketDetail } from '../services/support';
 import { profitReport } from '../services/price-tools';
 import { customerList, customerStatus, loyaltyConfig, optOut, sendPromo, setLoyaltySettings } from '../services/loyalty';
@@ -22,8 +23,8 @@ import { timesheet } from '../services/timeclock';
 import { zReports } from '../services/eod';
 import { complianceLog, salesTaxReport } from '../services/compliance-reports';
 import { merchantConfig, postSupportMessage, supportThread } from '../services/merchant-config';
-import { MerchantTicketInput, CustomerRefSchema, journalCsv, LoyaltySettingsInput, SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
-import { forbidden } from '../http/errors';
+import { DOCUMENT_MAX_BYTES, DOCUMENT_TYPES, DocumentMetaInput, MerchantTicketInput, CustomerRefSchema, journalCsv, LoyaltySettingsInput, SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
+import { badRequest, forbidden, notFound } from '../http/errors';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
@@ -171,6 +172,39 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
     return addTicketNote(db, asMerchantUser(request), ticketId, { body }, request.logContext.trace_id);
   });
   app.get('/merchant/hardware', async (request) => ({ units: await listHardware(db, asMerchantUser(request).merchant_id) }));
+
+  // Documents vault (P24b): the file is the raw request body, what it is goes in the query string.
+  app.register(async (s) => {
+    s.addContentTypeParser([...DOCUMENT_TYPES], { parseAs: 'buffer', bodyLimit: DOCUMENT_MAX_BYTES }, (_req, body, done) => done(null, body));
+    const docs = { preHandler: requirePermission('documents.manage') };
+    s.get('/merchant/documents', docs, async (request) => ({ documents: await listDocuments(db, asMerchantUser(request).merchant_id) }));
+    s.post('/merchant/documents', docs, async (request, reply) => {
+      const q = request.query as Record<string, string | undefined>;
+      const meta = DocumentMetaInput.parse({
+        kind: q.kind,
+        title: q.title,
+        location_id: q.location_id || null,
+        expires_on: q.expires_on || null,
+        replaces: q.replaces || null,
+      });
+      if (!Buffer.isBuffer(request.body)) throw badRequest('Send the file as the request body (PDF, JPEG or PNG)');
+      const type = validateDocument(request.body, request.headers['content-type']);
+      reply.status(201);
+      return uploadDocument(db, asMerchantUser(request), meta, request.body, type, request.logContext.trace_id);
+    });
+    s.get('/merchant/documents/:documentId/file', docs, async (request, reply) => {
+      const { documentId } = z.object({ documentId: z.uuid() }).parse(request.params);
+      const doc = await pgDocumentStore.get(db, asMerchantUser(request).merchant_id, documentId);
+      if (!doc) throw notFound('Document not found');
+      reply.header('content-type', doc.content_type).header('cache-control', 'private, no-store');
+      return reply.send(doc.bytes);
+    });
+    s.post('/merchant/documents/:documentId/remove', docs, async (request) => {
+      const { documentId } = z.object({ documentId: z.uuid() }).parse(request.params);
+      await removeDocument(db, asMerchantUser(request), documentId, request.logContext.trace_id);
+      return { ok: true };
+    });
+  });
 
   // Loyalty program and customers (P19a).
   const customers = { preHandler: requirePermission('customers.view') };
