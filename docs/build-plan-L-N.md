@@ -369,7 +369,7 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P18a Languages & digital receipt | #PR | PR open — 8-language customer screen + receipt (catalogs in shared, draft/offered/reviewed per language), customer picks, sale records it, receipt follows; digital receipt QR → public `/r/<token>` page; admin Translations; customer-screen larger text/high contrast + screen-reader labels. ADR 0027. |
+| P18a Languages & digital receipt | #25 | PR open — 8-language customer screen + receipt (catalogs in shared, draft/offered/reviewed per language), customer picks, sale records it, receipt follows; digital receipt QR → public `/r/<token>` page; admin Translations; customer-screen larger text/high contrast + screen-reader labels. ADR 0027. |
 | P16b ID scan, tax report, compliance log | #22 | Merged — AAMVA ID scan at the age check (derived facts only; failed scan blocks manual confirm), sales-tax report by month/rate with refunds' tax and quarterly CSV, age-check compliance log CSV, admin tax-tables view; fixes training-mode batch/held/tickets leaks. ADR 0026. |
 | P17 Lottery | #23 (closed) | **Dropped at the founder's request** (2026-09-26). The code stays on `p17/lottery`, unmerged. Its non-lottery commits (demo PINs, `npm run share`, tier-L test plan) landed separately. |
 | P16a End of day & training | #21 | merged — end of day / Z-report (spec v1): everything since the previous Z, drawer counted first, printed, eod.closed synced; server rebuilds each Z with the same function and flags mismatches; EOD-not-closed alert; merchant app Z list; training mode (in-memory, never synced, cash only, receipts say TRAINING). ADR 0025. |
