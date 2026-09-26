@@ -49,6 +49,15 @@ The merchant app → **Stock** tab has:
 
 The catalog snapshot carries each item's stock settings, for the register in P22b.
 
-## P22b (register)
-Receiving a delivery by scan, write-offs at the register behind a PIN, low-stock badges on the tiles,
-and sell-by alerts on the cashier's idle screen.
+## At the register (P22b)
+- **Receive**: scan each case or item. A case barcode counts its pack size; a name search covers items
+  without a barcode. The panel takes an invoice number, and an expiry date for perishables. It writes
+  one `inventory.received` event per line with a shared receipt id, so it works offline.
+  Permission: `inventory.receive` (cashiers have it by default).
+- **Write off**: an item, a quantity and a reason, as `inventory.written_off`. Permission:
+  `inventory.write_off` (managers), so a cashier needs a manager's PIN.
+- **Low-stock badges**: `GET /device/stock` gives the store's levels. The register refreshes them
+  every 5 minutes and counts its own completed sales down in between (a carton counts in cartons). A
+  tile shows "3 left" at or below the low point, or "Out". Offline, the last levels stay: it's a
+  glance, and the server's fold is the truth.
+- **Sell soon**: lots near their date show on the cashier's screen between customers.

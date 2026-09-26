@@ -11,6 +11,7 @@ import { PREVIEW_HEALTH } from './core/hardware';
 import { DrawerManager } from './core/drawer';
 import { TimeClock } from './core/timeclock';
 import { LoyaltyClient } from './core/loyalty';
+import { StockView } from './core/stock';
 import { EndOfDay } from './core/eod';
 import { NewItemOutbox } from './core/new-items';
 import { DeviceLog, OpsAgent } from './core/ops';
@@ -82,6 +83,8 @@ export interface Runtime {
   clock: TimeClock;
   /** Loyalty by phone number (P19a). */
   loyalty: LoyaltyClient;
+  /** Stock levels for tile badges and sell-soon alerts (P22b). */
+  stock: StockView;
   /** Today so far vs yesterday by this time, for the ribbon; null when offline (P15). */
   pulse: () => Promise<{ today_cents: number; yesterday_cents: number; vs_yesterday_tenths: number | null } | null>;
   /** Upload a JPEG (count-sheet photo, P15); returns its media id. Online only. */
@@ -205,6 +208,13 @@ export async function boot(token: string): Promise<Runtime> {
     },
     () => currentCatalog.loyalty,
   );
+  // Stock (P22b): refreshed now and every 5 minutes; this register's sales count it down in between.
+  const stock = new StockView(() => call('/device/stock', token), () => currentCatalog.items);
+  void stock.refresh();
+  setInterval(() => void stock.refresh(), 5 * 60_000);
+  session.subscribe((st) => {
+    if (st.lastCompleted) stock.noteSale(st.lastCompleted);
+  });
   sync.setBeforePush(async () => {
     await items.flush();
     await loyalty.flush();
@@ -286,5 +296,5 @@ export async function boot(token: string): Promise<Runtime> {
     },
   };
 
-  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, loyalty, pulse, uploadPhoto, eod, training, uuid: () => Crypto.randomUUID() };
+  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, loyalty, stock, pulse, uploadPhoto, eod, training, uuid: () => Crypto.randomUUID() };
 }

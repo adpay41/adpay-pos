@@ -36,6 +36,8 @@ export const PERMISSIONS = {
   'item.view_cost': { label: 'See cost and margin', where: 'register' },
   'item.create': { label: 'Add an unknown item at the register', where: 'register' },
   'loyalty.redeem': { label: 'Apply a loyalty reward', where: 'register' },
+  'inventory.receive': { label: 'Receive a delivery', where: 'register' },
+  'inventory.write_off': { label: 'Write off stock (waste, damage, theft)', where: 'register' },
   'catalog.edit': { label: 'Edit items and prices', where: 'apps' },
   'reports.view': { label: 'See sales reports', where: 'apps' },
   'staff.manage': { label: 'Manage staff and PINs', where: 'apps' },
@@ -49,7 +51,7 @@ export const PermissionSchema = z.enum(PERMISSION_KEYS as [Permission, ...Permis
 /** Defaults. Owners always hold every permission; a merchant can adjust manager and cashier. */
 export const DEFAULT_PERMISSIONS: Record<Exclude<Role, 'owner'>, readonly Permission[]> = {
   manager: PERMISSION_KEYS.filter((p) => p !== 'staff.manage'),
-  cashier: ['ticket.void', 'cash.drop', 'item.create', 'loyalty.redeem'],
+  cashier: ['ticket.void', 'cash.drop', 'item.create', 'loyalty.redeem', 'inventory.receive'],
   // Fixed, not adjustable: the CPA sees the numbers and nothing else.
   accountant: ['reports.view'],
 };

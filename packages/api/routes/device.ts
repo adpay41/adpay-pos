@@ -12,6 +12,7 @@ import type { AppDeps } from '../server';
 import { createMessageSender } from '../messaging/sender';
 import { customerStatus, loyaltyConfig, recordOptIn } from '../services/loyalty';
 import { textReceiptFromRegister } from '../services/messaging';
+import { stockLevels } from '../services/inventory';
 import { getCatalogSnapshot } from '../services/catalog';
 import { catalogVersion, createItemFromDevice, uploadMedia } from '../services/catalog-write';
 import { ingestEvents } from '../services/events';
@@ -73,6 +74,13 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
   app.post('/device/usuals/:usualId/remove', async (request) => {
     const { usualId } = z.object({ usualId: z.uuid() }).parse(request.params);
     return removeUsual(db, asDevice(request), usualId, request.logContext.trace_id);
+  });
+
+  // Stock at this store (P22b): the tile badges and sell-soon banner; the register refreshes it every few minutes.
+  app.get('/device/stock', async (request) => {
+    const d = asDevice(request);
+    const s = await stockLevels(db, d.merchant_id, d.location_id);
+    return { items: s.items.map((i) => ({ item_id: i.item_id, on_hand: i.on_hand, reorder_point: i.reorder_point })), expiring: s.expiring };
   });
 
   // Loyalty (P19a, ADR 0029): the customer's standing, their opt-in to texts, and "text me my receipt".
