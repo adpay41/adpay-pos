@@ -10,6 +10,7 @@ import {
   DEFAULT_RECEIPT_SETTINGS,
   effectiveMinAge,
   resolveFlags,
+  checklistsOf,
   type PackId,
   localDate,
   minAgesFor,
@@ -40,6 +41,7 @@ interface LocationRow {
   receipt_settings: unknown;
   compliance: unknown;
   feature_flags: unknown;
+  checklists: unknown;
   alert_settings: unknown;
   enabled_packs: PackId[];
   state: string | null;
@@ -95,7 +97,7 @@ export async function getCatalogSnapshot(
 ): Promise<CatalogSnapshot> {
   const { rows: locs } = await q.query<LocationRow>(
     `SELECT l.location_id, l.merchant_id, l.tax_rate_ppm, l.dual_price_rate_ppm, m.catalog_version, l.receipt_settings,
-            l.compliance, l.state, l.timezone, m.feature_flags, m.enabled_packs, m.alert_settings
+            l.compliance, l.state, l.timezone, m.feature_flags, m.enabled_packs, m.alert_settings, m.checklists
        FROM locations l JOIN merchants m ON m.merchant_id = l.merchant_id
       WHERE l.location_id = $1 AND l.merchant_id = $2`,
     [locationId, merchantId],
@@ -176,6 +178,7 @@ export async function getCatalogSnapshot(
     enabled_packs: loc.enabled_packs,
     i18n: await i18nSnapshot(q, receiptSettingsOf(loc.receipt_settings)),
     promotions: await promotionsForLocation(q, merchantId, locationId, today),
+    checklists: checklistsOf(loc.checklists),
     cash_settings: { drop_over_cents: (AlertSettingsInput.safeParse(loc.alert_settings ?? {}).data ?? AlertSettingsInput.parse({})).drop_over_cents },
     receipt: (() => {
       const r = receiptSettingsOf(loc.receipt_settings);

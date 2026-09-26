@@ -23,6 +23,7 @@ export * from './inventory';
 export * from './ordering';
 export * from './support';
 export * from './documents';
+export * from './checklists';
 export * from './receipt';
 export * from './receipt-settings';
 export * from './compliance';

@@ -11,6 +11,7 @@ import { sendReceipt } from '../services/messaging';
 import { cashierPerformance, dailyJournal } from '../services/performance';
 import { rollup } from '../services/rollup';
 import { listDocuments, pgDocumentStore, removeDocument, uploadDocument, validateDocument } from '../services/documents';
+import { checklistReport, getChecklists, setChecklists } from '../services/checklists';
 import { addTicketNote, createTicket, listHardware, listTickets, ticketDetail } from '../services/support';
 import { profitReport } from '../services/price-tools';
 import { customerList, customerStatus, loyaltyConfig, optOut, sendPromo, setLoyaltySettings } from '../services/loyalty';
@@ -23,7 +24,7 @@ import { timesheet } from '../services/timeclock';
 import { zReports } from '../services/eod';
 import { complianceLog, salesTaxReport } from '../services/compliance-reports';
 import { merchantConfig, postSupportMessage, supportThread } from '../services/merchant-config';
-import { DOCUMENT_MAX_BYTES, DOCUMENT_TYPES, DocumentMetaInput, MerchantTicketInput, CustomerRefSchema, journalCsv, LoyaltySettingsInput, SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
+import { ChecklistsInput, DOCUMENT_MAX_BYTES, DOCUMENT_TYPES, DocumentMetaInput, MerchantTicketInput, CustomerRefSchema, journalCsv, LoyaltySettingsInput, SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
 import { badRequest, forbidden, notFound } from '../http/errors';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -139,6 +140,15 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
   app.get('/merchant/timesheet', reports, async (request) => {
     const r = Range.parse(request.query);
     return timesheet(db, asMerchantUser(request).merchant_id, r.from, r.to);
+  });
+  // Opening and closing checklists (P24c): the lists (config) and what was ticked (events).
+  app.get('/merchant/checklists', async (request) => getChecklists(db, asMerchantUser(request).merchant_id));
+  app.put('/merchant/checklists', { preHandler: requirePermission('staff.manage') }, async (request) =>
+    setChecklists(db, asMerchantUser(request), ChecklistsInput.parse(request.body), request.logContext.trace_id),
+  );
+  app.get('/merchant/checklists/report', reports, async (request) => {
+    const r = Range.parse(request.query);
+    return checklistReport(db, asMerchantUser(request).merchant_id, r.from, r.to);
   });
   app.get('/merchant/timesheet.csv', reports, async (request, reply) => {
     const r = Range.parse(request.query);
