@@ -49,17 +49,25 @@ export async function promotionsForLocation(q: Queryable, merchantId: string, lo
 
 /** For the builder: every promotion, newest first, with what it has given in the last 30 days. */
 export async function listPromotions(q: Queryable, merchantId: string) {
-  const { rows } = await q.query<Row & { uses: number; given_cents: number }>(
-    `${SELECT.replace('FROM promotions', `,
-       (SELECT count(DISTINCT e.sale_id)::int FROM sale_events e
-         WHERE e.merchant_id = promotions.merchant_id AND e.type = 'sale.line_discounted' AND e.payload->>'promo_id' = promotions.promo_id::text
-           AND e.occurred_at > now() - interval '30 days') AS uses,
-       (SELECT coalesce(sum((e.payload->>'cash_discount_cents')::bigint), 0)::bigint FROM sale_events e
-         WHERE e.merchant_id = promotions.merchant_id AND e.type = 'sale.line_discounted' AND e.payload->>'promo_id' = promotions.promo_id::text
-           AND e.occurred_at > now() - interval '30 days') AS given_cents
-       FROM promotions`)} WHERE merchant_id = $1 ORDER BY active DESC, created_at DESC`,
+  // What a deal gave: completed, unvoided sales only, and per line the discount as it stood last
+  // (the register reprices on every change, so earlier discount events on a line are superseded).
+  const { rows: given } = await q.query<{ promo_id: string; uses: number; given_cents: string | number }>(
+    `WITH last AS (
+       SELECT DISTINCT ON (e.sale_id, e.payload->>'line_id') e.sale_id, e.payload->>'promo_id' AS promo_id, (e.payload->>'cash_discount_cents')::bigint AS off
+         FROM sale_events e
+        WHERE e.merchant_id = $1 AND e.type = 'sale.line_discounted' AND e.occurred_at > now() - interval '30 days'
+        ORDER BY e.sale_id, e.payload->>'line_id', e.device_seq DESC)
+     SELECT l.promo_id, count(DISTINCT l.sale_id)::int AS uses, coalesce(sum(l.off), 0)::bigint AS given_cents
+       FROM last l
+      WHERE l.promo_id IS NOT NULL
+        AND EXISTS (SELECT 1 FROM sale_events c WHERE c.sale_id = l.sale_id AND c.type = 'sale.completed')
+        AND NOT EXISTS (SELECT 1 FROM sale_events v WHERE v.sale_id = l.sale_id AND v.type = 'sale.voided')
+      GROUP BY l.promo_id`,
     [merchantId],
   );
+  const byPromo = new Map(given.map((g) => [g.promo_id, g]));
+  const { rows: base } = await q.query<Row>(`${SELECT} WHERE merchant_id = $1 ORDER BY active DESC, created_at DESC`, [merchantId]);
+  const rows = base.map((r) => ({ ...r, uses: byPromo.get(r.promo_id)?.uses ?? 0, given_cents: Number(byPromo.get(r.promo_id)?.given_cents ?? 0) }));
   return rows.flatMap((r) => {
     const p = toPromotion(r);
     return p ? [{ ...p, uses_30d: r.uses, given_30d_cents: Number(r.given_cents) }] : [];

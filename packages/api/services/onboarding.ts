@@ -132,7 +132,7 @@ export async function pairRegister(
   db: Db,
   setupCode: string,
   ttlDays: number,
-): Promise<{ device_token: string; identity: DeviceIdentity }> {
+): Promise<{ device_token: string; identity: DeviceIdentity; seq_floor: number; last_z_number: number }> {
   return db.tx(async (q) => {
     const { rows } = await q.query<{ register_id: string; org_id: string; merchant_id: string; location_id: string }>(
       `UPDATE register_setup_codes SET used_at = now()
@@ -156,7 +156,20 @@ export async function pairRegister(
     ]);
     // The first register paired is the store going live (P12a onboarding pipeline).
     await q.query(`UPDATE merchant_onboarding SET status = 'live', updated_at = now() WHERE merchant_id = $1 AND status <> 'live'`, [code.merchant_id]);
-    return { device_token: token, identity: await deviceIdentity(q, code.register_id) };
+    // The register may have history from an earlier device or browser. The new one numbers its
+    // events after the highest the server already has, so per-register order stays one sequence.
+    const { rows: seq } = await q.query<{ s: string | null }>('SELECT max(device_seq) AS s FROM sale_events WHERE register_id = $1', [code.register_id]);
+    // …and its Z-reports carry on from the register's last one, not from #1 again.
+    const { rows: z } = await q.query<{ n: number | null }>(
+      "SELECT max((payload->>'z_number')::int) AS n FROM sale_events WHERE register_id = $1 AND type = 'eod.closed'",
+      [code.register_id],
+    );
+    return {
+      device_token: token,
+      identity: await deviceIdentity(q, code.register_id),
+      seq_floor: seq[0]?.s === null || seq[0]?.s === undefined ? -1 : Number(seq[0].s),
+      last_z_number: z[0]?.n ?? 0,
+    };
   });
 }
 

@@ -89,7 +89,8 @@ type Modal =
   | { kind: 'receipt'; lines: readonly ReceiptLine[]; title: string }
   | { kind: 'device' }
   | { kind: 'override'; permission: Permission; saleId: string | null; then: () => Promise<unknown> }
-  | { kind: 'error'; message: string }
+  /** `done`: a confirmation (received, written off, checklist saved), not a refusal. */
+  | { kind: 'error'; message: string; done?: boolean }
   | { kind: 'batch_age'; batch: Batch; label: string }
   | { kind: 'save_usual' }
   | { kind: 'eod'; z: ZReport | null; lines: string[] | null; done: boolean }
@@ -1251,7 +1252,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             index={index}
             registerScan={registerReceiveScan}
             onDone={(message) => {
-              setModal(message ? { kind: 'error', message } : { kind: 'none' });
+              setModal(message ? { kind: 'error', message, done: true } : { kind: 'none' });
               void rt.stock.refresh();
             }}
           />
@@ -1260,7 +1261,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       {modal.kind === 'checklist' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
-          <ChecklistPanel rt={rt} catalog={catalog} uploadPhoto={cardOk ? rt.uploadPhoto : null} onDone={(message) => setModal(message ? { kind: 'error', message } : { kind: 'none' })} />
+          <ChecklistPanel rt={rt} catalog={catalog} uploadPhoto={cardOk ? rt.uploadPhoto : null} onDone={(message) => setModal(message ? { kind: 'error', message, done: true } : { kind: 'none' })} />
         </Overlay>
       )}
 
@@ -1270,7 +1271,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             rt={rt}
             catalog={shown}
             onDone={(message) => {
-              setModal(message ? { kind: 'error', message } : { kind: 'none' });
+              setModal(message ? { kind: 'error', message, done: true } : { kind: 'none' });
               void rt.stock.refresh();
             }}
           />
@@ -1486,7 +1487,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       {modal.kind === 'error' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
-          <Text style={s.modalTitle}>{t('Can\'t do that')}</Text>
+          <Text style={s.modalTitle}>{modal.done ? t('Done') : t('Can\'t do that')}</Text>
           <Text style={s.modalBody}>{modal.message}</Text>
           <Pressable style={s.primary} onPress={() => setModal({ kind: 'none' })}>
             <Text style={s.primaryText}>{t('OK')}</Text>
@@ -1699,7 +1700,8 @@ const s = StyleSheet.create({
   mutedSmall: { color: C.muted, fontSize: 12 },
   disabled: { opacity: 0.4 },
 
-  topbar: { backgroundColor: C.black, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, height: 52, gap: 16 },
+  // Above the sale area, so the language menu that drops from it isn't hidden behind the ticket.
+  topbar: { backgroundColor: C.black, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, height: 52, gap: 16, zIndex: 30 },
   topBrand: { color: '#fff', fontSize: 18, fontWeight: '800' },
   topWhere: { color: '#ddd', flex: 1 },
   topLink: { color: '#ddd' },

@@ -7,6 +7,9 @@
  */
 import { LOG_RING_SIZE, type DeviceLogLine, type RegisterEvent } from '@adpay/shared';
 
+/** Meta key: the highest device_seq the server already had for this register when it was paired. */
+export const SEQ_FLOOR_KEY = 'seq_floor';
+
 export type AckOutcome = 'accepted' | 'duplicate' | 'rejected';
 
 export interface StoreCounts {
@@ -16,7 +19,7 @@ export interface StoreCounts {
 }
 
 export interface EventStore {
-  /** Next device_seq: one more than the highest ever stored. */
+  /** Next device_seq: one more than the highest ever stored, or than `SEQ_FLOOR_KEY` (set at pairing), whichever is higher. */
   nextSeq(): Promise<number>;
   append(event: RegisterEvent): Promise<void>;
   eventsForSale(saleId: string): Promise<RegisterEvent[]>;
@@ -43,7 +46,7 @@ export class MemoryEventStore implements EventStore {
   private logSeq = 0;
 
   async nextSeq() {
-    return this.events.reduce((m, e) => Math.max(m, e.device_seq), -1) + 1;
+    return Math.max(this.events.reduce((m, e) => Math.max(m, e.device_seq), -1), Number(this.meta.get(SEQ_FLOOR_KEY) ?? -1)) + 1;
   }
   async append(event: RegisterEvent) {
     if (this.events.some((e) => e.event_id === event.event_id)) throw new Error(`duplicate event ${event.event_id}`);
