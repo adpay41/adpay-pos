@@ -369,7 +369,7 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P18b Cashier language & send receipt | #PR | PR open — every register screen after pairing translatable (282 strings keyed by English, extracted and typed), picker on sign-in and in the header, remembered per cashier; Spanish complete; admin Translations covers cashier strings; `MessageSender` + merchant-app Send receipt (log sender records, delivers nothing). ADR 0028. |
+| P18b Cashier language & send receipt | #26 | PR open — every register screen after pairing translatable (282 strings keyed by English, extracted and typed), picker on sign-in and in the header, remembered per cashier; Spanish complete; admin Translations covers cashier strings; `MessageSender` + merchant-app Send receipt (log sender records, delivers nothing). ADR 0028. |
 | P18a Languages & digital receipt | #25 | Merged — 8-language customer screen + receipt (catalogs in shared, draft/offered/reviewed per language), customer picks, sale records it, receipt follows; digital receipt QR → public `/r/<token>` page; admin Translations; customer-screen larger text/high contrast + screen-reader labels. ADR 0027. |
 | P16b ID scan, tax report, compliance log | #22 | Merged — AAMVA ID scan at the age check (derived facts only; failed scan blocks manual confirm), sales-tax report by month/rate with refunds' tax and quarterly CSV, age-check compliance log CSV, admin tax-tables view; fixes training-mode batch/held/tickets leaks. ADR 0026. |
 | P17 Lottery | #23 (closed) | **Dropped at the founder's request** (2026-09-26). The code stays on `p17/lottery`, unmerged. Its non-lottery commits (demo PINs, `npm run share`, tier-L test plan) landed separately. |
