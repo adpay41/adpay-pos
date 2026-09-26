@@ -8,6 +8,8 @@ import { asMerchantUser, requireMerchantUser, requirePermission } from '../http/
 import type { AppDeps } from '../server';
 import { createMessageSender } from '../messaging/sender';
 import { sendReceipt } from '../services/messaging';
+import { cashierPerformance, dailyJournal } from '../services/performance';
+import { rollup } from '../services/rollup';
 import { customerList, customerStatus, loyaltyConfig, optOut, sendPromo, setLoyaltySettings } from '../services/loyalty';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
 import { getSaleTimeline } from '../services/events';
@@ -18,7 +20,7 @@ import { timesheet } from '../services/timeclock';
 import { zReports } from '../services/eod';
 import { complianceLog, salesTaxReport } from '../services/compliance-reports';
 import { merchantConfig, postSupportMessage, supportThread } from '../services/merchant-config';
-import { CustomerRefSchema, LoyaltySettingsInput, SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
+import { CustomerRefSchema, journalCsv, LoyaltySettingsInput, SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
 import { forbidden } from '../http/errors';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -105,6 +107,25 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
   app.get('/merchant/zreports', reports, async (request) => {
     const r = Range.parse(request.query);
     return { reports: await zReports(db, asMerchantUser(request).merchant_id, r.from, r.to) };
+  });
+
+  // Cashier performance, the accountant's daily journal, and the multi-store roll-up (P19b).
+  app.get('/merchant/reports/cashiers', reports, async (request) => {
+    const r = Range.parse(request.query);
+    return cashierPerformance(db, asMerchantUser(request).merchant_id, r.from, r.to);
+  });
+  app.get('/merchant/reports/journal', reports, async (request) => {
+    const r = Quarter.parse(request.query);
+    return { from: r.from, to: r.to, days: await dailyJournal(db, asMerchantUser(request).merchant_id, r.from, r.to) };
+  });
+  app.get('/merchant/reports/journal.csv', reports, async (request, reply) => {
+    const r = Quarter.parse(request.query);
+    const days = await dailyJournal(db, asMerchantUser(request).merchant_id, r.from, r.to);
+    return reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="journal-${r.from}-to-${r.to}.csv"`).send(journalCsv(days));
+  });
+  app.get('/merchant/rollup', async (request) => {
+    const { range } = z.object({ range: z.enum(['today', 'week', 'month']).default('today') }).parse(request.query);
+    return rollup(db, asMerchantUser(request).user_id, range);
   });
 
   app.get('/merchant/timesheet', reports, async (request) => {

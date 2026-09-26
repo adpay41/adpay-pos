@@ -296,6 +296,101 @@ async function findings(q: Queryable, now: Date): Promise<Finding[]> {
       ...t,
     });
   }
+
+  // P19b (Bible 2.6): big-ticket sale; unusually slow hour; first sale of the day later than usual.
+  const money = (x: number) => `$${(Number(x) / 100).toFixed(2)}`;
+  const big = await q.query<{ org_id: string; merchant_id: string; location_id: string; register_id: string; register_name: string; sale_id: string; total: number; by_name: string | null }>(
+    `SELECT ${reg}, e.sale_id, (e.payload->>'total_cents')::bigint AS total, u.name AS by_name
+       FROM sale_events e JOIN registers r ON r.register_id = e.register_id LEFT JOIN users u ON u.user_id = e.actor_user_id
+      WHERE e.type = 'sale.completed' AND (e.payload->>'total_cents')::bigint >= $2
+        AND e.received_at > $1::timestamptz - interval '1 day'`,
+    [now.toISOString(), 1_000],
+  );
+  for (const r of big.rows.filter((x) => Number(x.total) >= settingsFor(x.merchant_id).big_ticket_cents)) {
+    const { sale_id, total, by_name, ...t } = r;
+    out.push({
+      rule: 'big_ticket',
+      dedupe_key: `big_ticket:${sale_id}`,
+      title: `${r.register_name}: ${money(total)} sale${by_name ? ` by ${by_name}` : ''}`,
+      details: { sale_id, total_cents: Number(total), by: by_name },
+      ...t,
+    });
+  }
+
+  // The last full hour, per store, against the same hour on the last four same weekdays. Only stores
+  // with a real baseline (sales in that hour on 3 of those 4 days, averaging $50+) are judged.
+  const hours = await q.query<{ org_id: string; merchant_id: string; location_id: string; location_name: string; day: string; hr: number; now_total: number; base_sum: number; base_days: number }>(
+    `WITH loc AS (
+       SELECT l.org_id, l.merchant_id, l.location_id, l.name AS location_name, l.timezone,
+              date_trunc('hour', $1::timestamptz AT TIME ZONE l.timezone) - interval '1 hour' AS h
+         FROM locations l),
+     hourly AS (
+       SELECT e.location_id, e.business_date AS day, extract(hour FROM e.occurred_at AT TIME ZONE l.timezone)::int AS hr,
+              sum((e.payload->>'total_cents')::bigint) AS total
+         FROM sale_events e JOIN locations l ON l.location_id = e.location_id
+        WHERE e.type = 'sale.completed' AND e.business_date >= ($1::timestamptz AT TIME ZONE l.timezone)::date - 29
+        GROUP BY 1, 2, 3)
+     SELECT loc.org_id, loc.merchant_id, loc.location_id, loc.location_name, to_char(loc.h, 'YYYY-MM-DD') AS day, extract(hour FROM loc.h)::int AS hr,
+            coalesce((SELECT hh.total FROM hourly hh WHERE hh.location_id = loc.location_id AND hh.day = loc.h::date AND hh.hr = extract(hour FROM loc.h)), 0)::bigint AS now_total,
+            coalesce((SELECT sum(hh.total) FROM hourly hh WHERE hh.location_id = loc.location_id AND hh.hr = extract(hour FROM loc.h)
+                        AND hh.day IN (loc.h::date - 7, loc.h::date - 14, loc.h::date - 21, loc.h::date - 28)), 0)::bigint AS base_sum,
+            (SELECT count(*) FROM hourly hh WHERE hh.location_id = loc.location_id AND hh.hr = extract(hour FROM loc.h)
+               AND hh.day IN (loc.h::date - 7, loc.h::date - 14, loc.h::date - 21, loc.h::date - 28))::int AS base_days
+       FROM loc`,
+    [now.toISOString()],
+  );
+  for (const r of hours.rows) {
+    const usual = Math.round(Number(r.base_sum) / 4);
+    if (r.base_days < 3 || usual < 5_000) continue;
+    if (Number(r.now_total) * 100 >= usual * settingsFor(r.merchant_id).slow_hour_pct) continue;
+    const label = (h: number) => `${((h + 11) % 12) + 1}${h < 12 ? 'am' : 'pm'}`;
+    out.push({
+      rule: 'slow_hour',
+      dedupe_key: `slow_hour:${r.location_id}:${r.day}:${r.hr}`,
+      title: `${r.location_name}: ${label(r.hr)}–${label((r.hr + 1) % 24)} took ${money(Number(r.now_total))}, usually ${money(usual)}`,
+      details: { day: r.day, hour: r.hr, total_cents: Number(r.now_total), usual_cents: usual },
+      org_id: r.org_id,
+      merchant_id: r.merchant_id,
+      location_id: r.location_id,
+      register_id: null,
+    });
+  }
+
+  // No sale yet today, well past the store's usual first sale (median of the last 14 days, 5+ days).
+  const opens = await q.query<{ org_id: string; merchant_id: string; location_id: string; location_name: string; today: string; usual_min: number; now_min: number; days: number; sold_today: boolean }>(
+    `WITH loc AS (
+       SELECT l.org_id, l.merchant_id, l.location_id, l.name AS location_name, l.timezone,
+              ($1::timestamptz AT TIME ZONE l.timezone) AS local_now
+         FROM locations l),
+     firsts AS (
+       SELECT e.location_id, e.business_date, min(e.occurred_at AT TIME ZONE l.timezone) AS first_at
+         FROM sale_events e JOIN locations l ON l.location_id = e.location_id
+        WHERE e.type = 'sale.completed' AND e.business_date >= ($1::timestamptz AT TIME ZONE l.timezone)::date - 14
+        GROUP BY 1, 2)
+     SELECT loc.org_id, loc.merchant_id, loc.location_id, loc.location_name, to_char(loc.local_now, 'YYYY-MM-DD') AS today,
+            (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(hour FROM f.first_at) * 60 + extract(minute FROM f.first_at))
+               FROM firsts f WHERE f.location_id = loc.location_id AND f.business_date < loc.local_now::date)::int AS usual_min,
+            (extract(hour FROM loc.local_now) * 60 + extract(minute FROM loc.local_now))::int AS now_min,
+            (SELECT count(*) FROM firsts f WHERE f.location_id = loc.location_id AND f.business_date < loc.local_now::date)::int AS days,
+            EXISTS (SELECT 1 FROM firsts f WHERE f.location_id = loc.location_id AND f.business_date = loc.local_now::date) AS sold_today
+       FROM loc`,
+    [now.toISOString()],
+  );
+  for (const r of opens.rows) {
+    if (r.days < 5 || r.sold_today || r.usual_min === null) continue;
+    if (r.now_min < r.usual_min + settingsFor(r.merchant_id).late_open_minutes) continue;
+    const hhmm = (m: number) => `${((Math.floor(m / 60) + 11) % 12) + 1}:${String(m % 60).padStart(2, '0')}${m < 720 ? 'am' : 'pm'}`;
+    out.push({
+      rule: 'late_first_sale',
+      dedupe_key: `late_first_sale:${r.location_id}:${r.today}`,
+      title: `${r.location_name}: no sale yet today (usually by ${hhmm(r.usual_min)})`,
+      details: { business_date: r.today, usual_first_sale_minute: r.usual_min },
+      org_id: r.org_id,
+      merchant_id: r.merchant_id,
+      location_id: r.location_id,
+      register_id: null,
+    });
+  }
   return out;
 }
 

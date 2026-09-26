@@ -166,11 +166,11 @@ section 5.
 | Item | Status | Depends on / blocked by | Phase |
 | --- | --- | --- | --- |
 | Cash in drawer now, per register; "drop needed" (2.1) | ✅ | Merchant app Cash → In the drawers now (P15). | P15 |
-| Multi-store roll-up (2.1) | ⬜ | P11 | P19 |
+| Multi-store roll-up (2.1) | ✅ | Sales tab "All your stores": every store the person may see reports for, tickets/gross/avg/card share vs the period before (P19b, ADR 0030). | P19 |
 | Fees, explained (2.2) | ⛔ | Processor fee data | P-PAY |
 | Dispute center (2.2) | ⛔ | Processor dispute API | P-PAY |
 | Sales tax report, exportable, quarterly pack (2.2) | ✅ | By month and rate, refunds' tax, net; quarterly CSV from the merchant app (P16b). | P16 |
-| Accountant access (read-only) (2.2) | ⬜ | P3 roles | P19 |
+| Accountant access (read-only) (2.2) | 🔶 | `accountant` role: reports only, app by phone, never a register PIN; daily journal CSV (QuickBooks/Xero import) beside the tax and compliance exports (P19b). **Deferred:** direct QuickBooks Online / Xero sync (their developer apps + OAuth). | P19 |
 | QuickBooks/Xero sync (2.2) | ⛔ | Intuit/Xero developer app accounts | P-3P |
 | Profit: margin by item/category once costs are in (2.2) | ⬜ | Cost field (P2), reports | P20 |
 | Bulk price change (2.3) | ⬜ | P2 | P20 |
@@ -183,9 +183,9 @@ section 5.
 | Receive by scan, discrepancy report (2.4) | ⬜ | P22 | P22 |
 | Shrink dashboard (2.4) | ⬜ | P6, P7, P22 | P23 |
 | Hours and payroll export (2.5) | ✅ | Merchant app Hours tab: per person per day, overtime, CSV export (P15). | P15 |
-| Cashier performance (2.5) | ⬜ | P3, P6, P7 | P19 |
+| Cashier performance (2.5) | ✅ | Hours tab: per cashier sales, $/hour on the clock, voids, refunds, no-sale opens, drawer over/short, age checks (by ID scan; sold without a check) (P19b). | P19 |
 | Alerts: EOD not closed; cash short > $Y (2.6) | ✅ | eod_missing after 1 a.m. store time (P16a); drawer short > $Y (P6, threshold P11). | P16 |
-| Alerts: big ticket; slow hour; late first sale (2.6) | ⬜ | P4 rules engine | P19 |
+| Alerts: big ticket; slow hour; late first sale (2.6) | ✅ | Three rules with merchant thresholds and mute (P19b). Delivery beyond the consoles is the log `Notifier` (push/SMS deferred with P-3P). | P19 |
 | Alerts: chargeback; deposit low (2.6) | ⛔ | Processor | P-PAY |
 | Daily WhatsApp summary (2.6) | ⛔ | Meta WhatsApp Business account + approved template | P-3P (content built in P19) |
 | Loyalty program setup (2.7) | ✅ | Merchant app → Customers: punch card or points, qualifying category, free item or $ off, ask for texts (P19a). | P19 |
@@ -369,7 +369,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P19a Loyalty & customers | #27 | PR open — loyalty by phone (keyed hash on the sale, never the number; punch card or points folded from sales; reward applied by the cashier, online), opt-in to texts with the exact consent, customer list, promo texts once a week with STOP, "text me my receipt" on the customer screen; all texts through `MessageSender` (log). ADR 0029. |
+| P19b Roll-up, accountant, performance, alerts | #28 | PR open — multi-store roll-up, accountant role (read-only, no PIN) + daily journal CSV, cashier performance, big-ticket / slow-hour / late-first-sale alerts. ADR 0030. |
+| P19a Loyalty & customers | #27 | Merged — loyalty by phone (keyed hash on the sale, never the number; punch card or points folded from sales; reward applied by the cashier, online), opt-in to texts with the exact consent, customer list, promo texts once a week with STOP, "text me my receipt" on the customer screen; all texts through `MessageSender` (log). ADR 0029. |
 | P18b Cashier language & send receipt | #26 | Merged — every register screen after pairing translatable (282 strings keyed by English, extracted and typed), picker on sign-in and in the header, remembered per cashier; Spanish complete; admin Translations covers cashier strings; `MessageSender` + merchant-app Send receipt (log sender records, delivers nothing). ADR 0028. |
 | P18a Languages & digital receipt | #25 | Merged — 8-language customer screen + receipt (catalogs in shared, draft/offered/reviewed per language), customer picks, sale records it, receipt follows; digital receipt QR → public `/r/<token>` page; admin Translations; customer-screen larger text/high contrast + screen-reader labels. ADR 0027. |
 | P16b ID scan, tax report, compliance log | #22 | Merged — AAMVA ID scan at the age check (derived facts only; failed scan blocks manual confirm), sales-tax report by month/rate with refunds' tax and quarterly CSV, age-check compliance log CSV, admin tax-tables view; fixes training-mode batch/held/tickets leaks. ADR 0026. |

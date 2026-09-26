@@ -152,6 +152,10 @@ export const ALERT_RULES = {
   large_refund: { label: 'Large refund or void', severity: 'warning', merchant: true },
   drawer_over: { label: 'Too much cash in a drawer (drop needed)', severity: 'warning', merchant: true },
   eod_missing: { label: 'End of day not closed', severity: 'warning', merchant: true },
+  // P19b (Bible 2.6)
+  big_ticket: { label: 'Big-ticket sale', severity: 'info', merchant: true },
+  slow_hour: { label: 'Unusually slow hour', severity: 'info', merchant: true },
+  late_first_sale: { label: 'First sale later than usual (store not open?)', severity: 'warning', merchant: true },
 } as const;
 export type AlertRule = keyof typeof ALERT_RULES;
 
@@ -175,6 +179,12 @@ export const AlertSettingsInput = z.strictObject({
   drop_over_cents: z.int().min(5_000).max(10_000_000).default(60_000),
   /** This many "no sale" opens on one register in a day raises "Drawer opened without a sale". */
   no_sale_spike: z.int().min(2).max(100).default(5),
+  /** A sale at or above this raises "Big-ticket sale" (P19b). */
+  big_ticket_cents: z.int().min(1_000).max(10_000_000).default(20_000),
+  /** An hour below this share of the same hour on the last four same weekdays is "slow" (P19b). */
+  slow_hour_pct: z.int().min(5).max(90).default(40),
+  /** No sale this many minutes past the store's usual first sale raises "First sale later than usual". */
+  late_open_minutes: z.int().min(15).max(240).default(45),
 });
 export type AlertSettings = z.infer<typeof AlertSettingsInput>;
 export const DEFAULT_ALERT_SETTINGS: AlertSettings = AlertSettingsInput.parse({});

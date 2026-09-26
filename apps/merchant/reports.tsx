@@ -3,7 +3,7 @@
  * pack: by month, by rate, refunds, net) and the age-check log an inspector asks for, both
  * exportable as CSV for the accountant.
  */
-import { complianceCsv, localDate, ppmToPercent, salesTaxCsv, type ComplianceEntry, type SalesTaxReport } from '@adpay/shared';
+import { complianceCsv, localDate, ppmToPercent, salesTaxCsv, type ComplianceEntry, type SalesTaxReport, journalCsv, type JournalDay } from '@adpay/shared';
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { api } from './api';
@@ -54,6 +54,12 @@ export function TaxCompliance({ token }: { token: string }) {
     };
   }, [q.from, q.to, token]);
 
+  /** The daily journal for the quarter (P19b): what the bookkeeper imports into QuickBooks or Xero. */
+  async function exportJournal() {
+    const r = await api<{ days: JournalDay[] }>(`/merchant/reports/journal?from=${q.from}&to=${q.to}`, token);
+    await exportText(`journal-${q.from}-to-${q.to}.csv`, journalCsv(r.days));
+  }
+
   async function exportCompliance() {
     const r = await api<{ entries: ComplianceEntry[] }>(`/merchant/reports/compliance?from=${q.from}&to=${q.to}`, token);
     await exportText(`age-checks-${q.from}-to-${q.to}.csv`, complianceCsv(r.entries));
@@ -96,8 +102,13 @@ export function TaxCompliance({ token }: { token: string }) {
             <Pressable style={s.button} onPress={() => void exportCompliance().catch((e) => setError((e as Error).message))}>
               <Text style={s.buttonText}>Export age-check log (CSV)</Text>
             </Pressable>
+            <Pressable style={s.button} onPress={() => void exportJournal().catch((e) => setError((e as Error).message))}>
+              <Text style={s.buttonText}>Export daily journal (CSV)</Text>
+            </Pressable>
           </View>
-          <Text style={[s.muted, { marginTop: 6 }]}>Figures for your accountant to file from; they check the rates and any adjustments.</Text>
+          <Text style={[s.muted, { marginTop: 6 }]}>
+            Figures for your accountant to file from; they check the rates and any adjustments. The daily journal imports into QuickBooks or Xero as a CSV.
+          </Text>
         </>
       ) : null}
     </View>

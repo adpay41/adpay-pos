@@ -27,7 +27,7 @@ export interface Me {
   permissions: Permission[];
 }
 
-const ROLE_LABEL: Record<Role, string> = { owner: 'Owner', manager: 'Manager', cashier: 'Cashier' };
+const ROLE_LABEL: Record<Role, string> = { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', accountant: 'Accountant (read-only)' };
 const PUSHED = 'Registers update within 15 seconds.';
 
 export function StaffTab({ token, me }: { token: string; me: Me }) {
@@ -114,7 +114,7 @@ export function StaffTab({ token, me }: { token: string; me: Me }) {
                     {m.app_access ? ' · app access' : ''}
                   </Text>
                 </View>
-                <Text style={m.has_pin ? s.pinOk : s.pinMissing}>{m.has_pin ? 'PIN set' : 'No PIN'}</Text>
+                {m.role === 'accountant' ? null : <Text style={m.has_pin ? s.pinOk : s.pinMissing}>{m.has_pin ? 'PIN set' : 'No PIN'}</Text>}
               </Pressable>
             ))}
           </View>
@@ -167,7 +167,7 @@ function StaffEditor({
   async function saveNew() {
     if (pin && pinProblem(pin)) return setError(pinProblem(pin));
     await run(
-      () => api('/merchant/staff', token, { name: name.trim(), role, phone: phone.trim() || null, pin: pin || null }),
+      () => api('/merchant/staff', token, { name: name.trim(), role, phone: phone.trim() || null, pin: role === 'accountant' ? null : pin || null }),
       `${name.trim()} added${pin ? ' with a PIN' : ''}.`,
     );
   }
@@ -203,15 +203,23 @@ function StaffEditor({
         ))}
       </View>
       <Text style={s.mutedSmall}>
-        {role === 'owner' ? 'Everything, including staff.' : `Can: ${permissionsFor(role).map((p) => PERMISSIONS[p].label.toLowerCase()).join(', ')} (adjust under Permissions).`}
+        {role === 'owner'
+          ? 'Everything, including staff.'
+          : role === 'accountant'
+            ? 'For your CPA: sales, tax, cash and end-of-day reports and their exports, read-only. Signs in to this app with their phone; never at a register.'
+            : `Can: ${permissionsFor(role).map((p) => PERMISSIONS[p].label.toLowerCase()).join(', ')} (adjust under Permissions).`}
       </Text>
 
       {!member ? (
         <>
-          <Text style={s.label}>Mobile number (optional)</Text>
-          <TextInput style={s.input} value={phone} onChangeText={setPhone} placeholder="Only if they’ll use this app" keyboardType="phone-pad" />
-          <Text style={s.label}>Register PIN (4–6 digits)</Text>
-          <TextInput style={s.input} value={pin} onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 6))} placeholder="They can set it later" keyboardType="number-pad" secureTextEntry />
+          <Text style={s.label}>{role === 'accountant' ? 'Mobile number (they sign in with it)' : 'Mobile number (optional)'}</Text>
+          <TextInput style={s.input} value={phone} onChangeText={setPhone} placeholder={role === 'accountant' ? '(201) 555-0100' : 'Only if they’ll use this app'} keyboardType="phone-pad" />
+          {role === 'accountant' ? null : (
+            <>
+              <Text style={s.label}>Register PIN (4–6 digits)</Text>
+              <TextInput style={s.input} value={pin} onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 6))} placeholder="They can set it later" keyboardType="number-pad" secureTextEntry />
+            </>
+          )}
           {error ? <Text style={s.error}>{error}</Text> : null}
           <Pressable style={[s.button, (busy || !name.trim()) && { opacity: 0.5 }]} disabled={busy || !name.trim()} onPress={() => void saveNew()}>
             <Text style={s.buttonText}>{busy ? 'Saving…' : 'Add'}</Text>
@@ -223,11 +231,13 @@ function StaffEditor({
           <Pressable style={[s.button, busy && { opacity: 0.5 }]} disabled={busy} onPress={() => void saveEdit()}>
             <Text style={s.buttonText}>{busy ? 'Saving…' : 'Save'}</Text>
           </Pressable>
+          {member.role === 'accountant' ? null : (
           <View style={s.card}>
             <Text style={s.lineName}>Register PIN</Text>
             <Text style={s.mutedSmall}>{member.has_pin ? `Set ${member.pin_set_at ? new Date(member.pin_set_at).toLocaleDateString() : ''}. Setting a new one replaces it.` : 'Not set yet — they can’t sign in at the register.'}</Text>
             <PinSetter token={token} userId={member.user_id} label={member.has_pin ? 'Change PIN' : 'Set PIN'} onSaved={onSaved} />
           </View>
+          )}
           {member.user_id !== me.user_id ? (
             <Pressable
               style={s.ghost}

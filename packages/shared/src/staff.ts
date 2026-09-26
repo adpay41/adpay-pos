@@ -15,7 +15,8 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js';
 import { z } from 'zod';
 
-export const ROLES = ['owner', 'manager', 'cashier'] as const;
+/** `accountant` (P19b): read-only reports in the merchant app for the store's CPA; never at a register. */
+export const ROLES = ['owner', 'manager', 'cashier', 'accountant'] as const;
 export type Role = (typeof ROLES)[number];
 export const RoleSchema = z.enum(ROLES);
 
@@ -49,6 +50,8 @@ export const PermissionSchema = z.enum(PERMISSION_KEYS as [Permission, ...Permis
 export const DEFAULT_PERMISSIONS: Record<Exclude<Role, 'owner'>, readonly Permission[]> = {
   manager: PERMISSION_KEYS.filter((p) => p !== 'staff.manage'),
   cashier: ['ticket.void', 'cash.drop', 'item.create', 'loyalty.redeem'],
+  // Fixed, not adjustable: the CPA sees the numbers and nothing else.
+  accountant: ['reports.view'],
 };
 
 /** Per-merchant overrides over the defaults: `{ cashier: { 'sale.refund': true } }`. */
@@ -60,6 +63,7 @@ export type PermissionOverrides = z.infer<typeof PermissionOverridesSchema>;
 
 export function permissionsFor(role: Role, overrides: PermissionOverrides = {}): Permission[] {
   if (role === 'owner') return [...PERMISSION_KEYS];
+  if (role === 'accountant') return [...DEFAULT_PERMISSIONS.accountant];
   const set = new Set<Permission>(DEFAULT_PERMISSIONS[role]);
   for (const [p, allowed] of Object.entries(overrides[role] ?? {}) as [Permission, boolean][]) {
     if (allowed) set.add(p);
@@ -160,7 +164,9 @@ export const StaffCreateInput = z.strictObject({
   /** Optional: only people who use the merchant app need a phone. */
   phone: Phone.nullable().default(null),
   pin: PinSchema.nullable().default(null),
-});
+})
+  // An accountant signs in to the merchant app by phone and never uses a register.
+  .refine((v) => v.role !== 'accountant' || (v.phone !== null && v.pin === null), { message: 'An accountant needs a phone number and no PIN', path: ['role'] });
 export type StaffCreate = z.infer<typeof StaffCreateInput>;
 
 export const StaffUpdateInput = z

@@ -11,7 +11,8 @@ import { tk, useT } from './i18n';
 import { LanguageButton } from './LanguageUI';
 import { C } from './theme';
 
-const ROLE_LABEL = { owner: tk('Owner'), manager: tk('Manager'), cashier: tk('Cashier') } as const;
+// Accountants never reach the register (they have no PIN); the label is here so every role has one.
+const ROLE_LABEL = { owner: tk('Owner'), manager: tk('Manager'), cashier: tk('Cashier'), accountant: tk('Accountant') } as const;
 const ENTER = 'Enter';
 
 function initials(name: string) {

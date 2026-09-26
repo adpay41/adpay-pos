@@ -11,6 +11,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { api, tokenStore } from './api';
 import { SendReceipt } from './sendReceipt';
 import { CustomersTab } from './customers';
+import { RollupCard } from './team';
 import { AlertsTab } from './alerts';
 import { CashTab } from './cash';
 import { CatalogTab } from './catalog';
@@ -272,6 +273,7 @@ function SalesTab({ token }: { token: string }) {
         ))}
       </View>
       {error ? <Text style={s.error}>{error}</Text> : null}
+      <RollupCard token={token} range={range} />
       {range === 'today' && compare.data ? <CompareCard data={compare.data} /> : null}
       {range === 'today' ? <LiveTicker rows={ticker} live={live} /> : null}
       {!data ? (
