@@ -99,6 +99,8 @@ export const OnboardingInput = z.strictObject({
   pricing: PricingPlanInput,
   install_date: IsoDate.nullable().default(null),
   hardware_note: z.string().trim().max(500).nullable().default(null),
+  /** The agent or referral partner who brought the store (P25b), by their code. */
+  referral_code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{4,12}$/).nullable().default(null),
 });
 export type Onboarding = z.infer<typeof OnboardingInput>;
 

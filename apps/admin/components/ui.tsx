@@ -49,6 +49,7 @@ const NAV = [
   { href: '/hardware', label: 'Hardware' },
   { href: '/rollouts', label: 'Rollouts' },
   { href: '/partners', label: 'Partners' },
+  { href: '/agents', label: 'Agents' },
   { href: '/sales', label: 'Sales' },
   { href: '/money', label: 'Money' },
   { href: '/tax', label: 'Tax' },

@@ -202,7 +202,7 @@ section 5.
 | Catalog templates: c-store 2,000 UPCs (3.1) | ⛔ | Mechanism ✅ (P14): c-store starter template (~80 items, shared with the demo seed), preview + apply. **The 2,000-UPC dataset needs a licence.** | P14 |
 | Catalog import from NRS/Clover/Square exports (3.1) | ⛔ | Generic CSV ✅ (P14): column names recognised, preview, match by barcode then name, price history. Per-system parsers need **sample export files**. | P14 (CSV generic first) |
 | E-sign merchant agreement (3.1) | ⛔ | E-sign vendor account, or a legal review of a click-accept flow; the **agreement text** from counsel | P-3P |
-| Referral / agent tracking, residual split (3.1) | ⬜ | P12 pricing plans; L50 | P25 |
+| Referral / agent tracking, residual split (3.1) | ✅ | /agents: agents and referral partners with a referral code (taken in the onboarding wizard) and dated terms (share of margin or revenue, bounty per store going live); stores assigned by dated rows; monthly statements computed from the residual report, CSV to pay. Paying agents is outside the system; margin splits wait on the typed processor cost until Finix data (P25b, ADR 0040). | P25 |
 | Support tickets with SLA timers, canned fixes (3.2) | ✅ | /tickets: first-response SLA counting down (urgent 4 h, normal 24 h), append-only notes, internal notes, canned fixes that queue the remote action on the ticket's register (P24a, ADR 0036). | P24 |
 | Staged rollouts of features: canary → 10% → all; kill switch (3.2) | ✅ | /rollouts: each flag's platform stage over the per-store switches (fixed per-store bucket, so 10% → all never flips a store off), kill switch beats every store switch, reason + history + audit; every register refreshes over /ws (P24b, ADR 0037). | P24 |
 | Staged rollouts of register **builds** (OTA) (3.2) | ⏸ | Deferred pending the MDM decision (Esper vs own OTA). To finish: pick one; then a build channel per stage reusing the same canary / 10% / all stages and bucket from `flags.ts`, and "roll back build" as a remote action. | P-HW / MDM |
@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P25a Partner API & webhooks | #39 | PR open — per-store read-only API keys with scopes on /v1, signed webhooks queued with the sale and retried on schedule, admin Partners page, partner docs. ADR 0039. |
+| P25b Agents & residual split | #PR | PR open — agents / referral partners with codes and dated terms, stores assigned at onboarding or by hand, monthly statements from the residual report with bounties, CSV. ADR 0040. |
+| P25a Partner API & webhooks | #39 | Merged — per-store read-only API keys with scopes on /v1, signed webhooks queued with the sale and retried on schedule, admin Partners page, partner docs. ADR 0039. |
 | P24c Checklists | #38 | Merged — opening / closing checklists: lists in the snapshot, ticked at the register with photos as one event, store-day report in the merchant app. ADR 0038. |
 | P24b Rollouts & documents | #37 | Merged — staged feature rollouts (canary → 10% → all) with a kill switch over per-store switches, documents vault with renewals and a 30-day expiry alert. Build OTA ⏸ (MDM decision). ADR 0037. |
 | P24a Support & hardware | #36 | Merged — tickets with first-response SLA, append-only notes, canned fixes that queue remote actions, runbooks with fix buttons on alerts, hardware inventory with swap/RMA and history, merchant equipment tickets. ADR 0036. |

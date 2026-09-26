@@ -1,7 +1,7 @@
 /**
  * Admin (AD Pay staff) routes. Cross-tenant by role; every write is audited.
  */
-import { ApiKeyInput, WebhookEndpointInput, FEATURE_FLAG_KEYS, FlagRolloutInput, type FeatureFlag, CannedFixKeySchema, HardwareInput, TICKET_STATUSES, TicketInput, LangSchema, LANGUAGE_STATUSES, MessageKeySchema, ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
+import { AgentInput, AgentTermsInput, MerchantAgentInput, agentStatementsCsv, ApiKeyInput, WebhookEndpointInput, FEATURE_FLAG_KEYS, FlagRolloutInput, type FeatureFlag, CannedFixKeySchema, HardwareInput, TICKET_STATUSES, TicketInput, LangSchema, LANGUAGE_STATUSES, MessageKeySchema, ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asAdmin, requireAdmin } from '../http/auth-hooks';
@@ -28,6 +28,7 @@ import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPla
 import { recentSales, salesSummary } from '../services/reports';
 import { addHardware, addTicketNote, closeRma, createTicket, hardwareHistory, installHardware, listHardware, listTickets, swapHardware, ticketDetail } from '../services/support';
 import { rolloutOverview, setRollout } from '../services/rollouts';
+import { addTerms, agentStatements, assignAgent, createAgent, listAgents, merchantAgentHistory, setAgentActive } from '../services/agents';
 import { createApiKey, createEndpoint, disableEndpoint, listApiKeys, listEndpoints, recentDeliveries, redeliver, revokeApiKey, rotateEndpointSecret } from '../services/partners';
 import { adminDocumentFile, listDocuments } from '../services/documents';
 import { setLanguageStatus, setTranslation, translationsOverview, translationStrings } from '../services/i18n';
@@ -119,6 +120,44 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     const { flag } = z.object({ flag: z.enum(FEATURE_FLAG_KEYS as [FeatureFlag, ...FeatureFlag[]]) }).parse(request.params);
     return setRollout(db, asAdmin(request), flag, FlagRolloutInput.parse(request.body), request.logContext.trace_id);
   });
+  // Referral partners and agents, their terms, the stores they brought, their monthly statements (P25b).
+  const Month = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) });
+  app.get('/admin/agents', async () => ({ agents: await listAgents(db) }));
+  app.post('/admin/agents', async (request, reply) => {
+    const b = z.strictObject({ agent: AgentInput, terms: AgentTermsInput }).parse(request.body);
+    reply.status(201);
+    return createAgent(db, asAdmin(request), b.agent, b.terms, request.logContext.trace_id);
+  });
+  app.post('/admin/agents/:agentId/terms', async (request) => {
+    const { agentId } = z.object({ agentId: z.uuid() }).parse(request.params);
+    await addTerms(db, asAdmin(request), agentId, AgentTermsInput.parse(request.body), request.logContext.trace_id);
+    return { ok: true };
+  });
+  app.post('/admin/agents/:agentId/active', async (request) => {
+    const { agentId } = z.object({ agentId: z.uuid() }).parse(request.params);
+    const { active } = z.strictObject({ active: z.boolean() }).parse(request.body);
+    await setAgentActive(db, asAdmin(request), agentId, active, request.logContext.trace_id);
+    return { ok: true };
+  });
+  app.get('/admin/agents/statements', async (request) => {
+    const { month } = Month.parse(request.query);
+    return { month, statements: await agentStatements(db, month) };
+  });
+  app.get('/admin/agents/statements.csv', async (request, reply) => {
+    const { month } = Month.parse(request.query);
+    return reply
+      .header('content-type', 'text/csv; charset=utf-8')
+      .header('content-disposition', `attachment; filename="agent-statements-${month}.csv"`)
+      .send(agentStatementsCsv(await agentStatements(db, month)));
+  });
+  app.get('/admin/merchants/:merchantId/agent', async (request) => ({ history: await merchantAgentHistory(db, MerchantParams.parse(request.params).merchantId) }));
+  app.post('/admin/merchants/:merchantId/agent', async (request) => {
+    const { merchantId } = MerchantParams.parse(request.params);
+    const input = MerchantAgentInput.parse(request.body);
+    await db.tx((q) => assignAgent(q, asAdmin(request), merchantId, input, request.logContext.trace_id));
+    return { history: await merchantAgentHistory(db, merchantId) };
+  });
+
   // Partner API keys and webhooks (P25a). A key is shown in full only in the create response.
   const IdParam = (name: string) => z.object({ [name]: z.uuid() });
   app.get('/admin/api-keys', async () => ({ keys: await listApiKeys(db) }));
