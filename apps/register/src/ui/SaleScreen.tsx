@@ -58,6 +58,7 @@ import { API_URL, type Runtime } from '../runtime';
 import { LanguageButton } from './LanguageUI';
 import { Qr } from './Qr';
 import { ReceivePanel, WriteOffPanel } from './ReceiveUI';
+import { ChecklistPanel } from './ChecklistUI';
 import { QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
 import { CardPanel, type CardPhase } from './TenderUI';
@@ -94,7 +95,8 @@ type Modal =
   | { kind: 'eod'; z: ZReport | null; lines: string[] | null; done: boolean }
   | { kind: 'remove_usual'; usual: CashierUsual }
   | { kind: 'receive' }
-  | { kind: 'write_off' };
+  | { kind: 'write_off' }
+  | { kind: 'checklist' };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
   const t = useT();
@@ -976,6 +978,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   <Pressable style={s.ghost} onPress={() => guarded('inventory.write_off', null, async () => setModal({ kind: 'write_off' }))}>
                     <Text>{t('Write off')}</Text>
                   </Pressable>
+                  <Pressable style={s.ghost} onPress={() => setModal({ kind: 'checklist' })}>
+                    <Text>{t('Checklist')}</Text>
+                  </Pressable>
                 </>
               ) : null}
               {!training ? (
@@ -1250,6 +1255,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               void rt.stock.refresh();
             }}
           />
+        </Overlay>
+      )}
+
+      {modal.kind === 'checklist' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <ChecklistPanel rt={rt} catalog={catalog} uploadPhoto={cardOk ? rt.uploadPhoto : null} onDone={(message) => setModal(message ? { kind: 'error', message } : { kind: 'none' })} />
         </Overlay>
       )}
 

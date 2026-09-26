@@ -190,7 +190,7 @@ section 5.
 | Daily WhatsApp summary (2.6) | ⛔ | Meta WhatsApp Business account + approved template | P-3P (content built in P19) |
 | Loyalty program setup (2.7) | ✅ | Merchant app → Customers: punch card or points, qualifying category, free item or $ off, ask for texts (P19a). | P19 |
 | Customer list; text a promo to top 100 with TCPA opt-in (2.7) | 🔶 | Customer list (last four, visits, spend, texts); opt-in on the customer screen with the exact consent stored, number kept only when opted in and matching the hash; promo to top 100 opted-in, once a week, STOP added, through `MessageSender` (P19a). **Deferred:** SMS delivery and inbound STOP (Twilio account + webhook) and counsel review of the consent wording / TCPA posture. | P19 / P-3P |
-| Open/close checklists with photos (2.8) | ⬜ | Photo storage (P2) | P24 |
+| Open/close checklists with photos (2.8) | ✅ | Owner writes the lists (merchant app → Hours; starter lists by default), they reach the register in the snapshot; the cashier ticks them off with photos where asked (online; offline the photo shows as missing) as one `checklist.completed` event; Hours shows each store-day opened / closed, by whom, done / total, photos (P24c, ADR 0038). | P24 |
 | Equipment and hardware tickets (2.8) | ✅ | Merchant app Help → Problems & equipment: report a problem, follow and reply to the thread, installed equipment with serial and warranty (P24a, ADR 0036). | P24 |
 | Documents vault with expiry reminders (2.8) | ✅ | Merchant app Help → Documents: PDF/JPEG/PNG (checked by their bytes, 5 MB) by kind and store, expiry date, renewal replaces the old one (kept in history), `document_expiring` alert 30 days ahead and on expiry, runbook; support sees them read-only on the merchant page (opening is audited). Bytes in Postgres behind `DocumentStore` (S3 with the AWS deploy) (P24b, ADR 0037). | P24 |
 | Marketplace: order hardware, paper; enroll in programs (2.8) | ⛔ | Fulfilment/payment for orders (a payment account for AD Pay's own billing) | P-3P |
@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P24b Rollouts & documents | #37 | PR open — staged feature rollouts (canary → 10% → all) with a kill switch over per-store switches, documents vault with renewals and a 30-day expiry alert. Build OTA ⏸ (MDM decision). ADR 0037. |
+| P24c Checklists | #38 | PR open — opening / closing checklists: lists in the snapshot, ticked at the register with photos as one event, store-day report in the merchant app. ADR 0038. |
+| P24b Rollouts & documents | #37 | Merged — staged feature rollouts (canary → 10% → all) with a kill switch over per-store switches, documents vault with renewals and a 30-day expiry alert. Build OTA ⏸ (MDM decision). ADR 0037. |
 | P24a Support & hardware | #36 | Merged — tickets with first-response SLA, append-only notes, canned fixes that queue remote actions, runbooks with fix buttons on alerts, hardware inventory with swap/RMA and history, merchant equipment tickets. ADR 0036. |
 | P23b Shrink | #35 | Merged — count variances (expected vs counted) and write-offs by reason, by category and item at cost, with cashier voids / refunds / no-sale; Stock tab Shrink card. ADR 0034. |
 | P23a Ordering | #34 | Merged — vendors, reorder suggestions by weekday until the delivery after next in whole cases, purchase orders sent through `MessageSender`, received at the register against the order, ordered vs received. ADR 0035. |

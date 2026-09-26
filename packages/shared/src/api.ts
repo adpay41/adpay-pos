@@ -8,6 +8,7 @@ import type { LoyaltySettings } from './loyalty';
 import type { Promotion } from './promotions';
 import type { ComplianceSnapshot, Restriction } from './compliance';
 import type { CashierUsual } from './catalog-templates';
+import type { Checklists } from './checklists';
 import type { FeatureFlags } from './flags';
 import type { PackId } from './packs';
 import type { ReceiptSettings } from './receipt-settings';
@@ -115,6 +116,8 @@ export interface CatalogSnapshot {
   usuals?: CashierUsual[];
   /** Cash handling at the register (P15): ask for a drop above this. Absent in older snapshots. */
   cash_settings?: { drop_over_cents: number };
+  /** Opening and closing checklists (P24c). Optional: older snapshots don't carry them. */
+  checklists?: Checklists;
   /** Languages this location offers and the platform's string overrides (P18). Absent in older snapshots: English only. */
   i18n?: I18nSnapshot;
   /** The loyalty program and this merchant's salt for the customer ref (P19a). Register snapshot only. */

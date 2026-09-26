@@ -143,6 +143,13 @@ export class SaleSession {
     });
   }
 
+  /** An opening or closing checklist, as ticked (P24c). Stands alone, like inventory events. */
+  recordChecklist(payload: EventPayload<'checklist.completed'>): Promise<void> {
+    return this.serial(async () => {
+      await this.emit('checklist.completed', payload, null);
+    });
+  }
+
   recordStaff<T extends StaffEventType>(type: T, payload: EventPayload<T>, saleId: string | null = null): Promise<void> {
     return this.serial(async () => {
       await this.emit(type, payload, saleId);

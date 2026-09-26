@@ -107,6 +107,7 @@ purpose: support is one person for the first 200 stores.
 | [0035](docs/decisions/0035-ordering.md) | Vendors with delivery days; suggestion = weekday forecast until the delivery after next + low point − shelf − on order, in cases; POs sent via `MessageSender`; received against at the register (po_id on the movement), ordered vs received read, never stored |
 | [0036](docs/decisions/0036-support-hardware.md) | Tickets with first-response SLA and append-only notes; canned fixes queue the remote action; a typed runbook per alert rule with its fix button; hardware by serial with one-step swap to RMA and an append-only history |
 | [0037](docs/decisions/0037-rollouts-documents.md) | Flag stage over per-store switches (kill switch > store switch > stage > default; fixed per-store bucket for 10%), every change bumps all catalogs; documents immutable with renewals archiving the old, 30-day `document_expiring` alert |
+| [0038](docs/decisions/0038-checklists.md) | Checklists: lists are merchant config in the snapshot (starter lists by default); ticking is one `checklist.completed` event with every item as it stood; photos via /device/media (online); report read from events |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

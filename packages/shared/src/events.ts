@@ -170,6 +170,25 @@ const InventoryWrittenOff = z.strictObject({
 });
 const InventoryCounted = z.strictObject({ item_id: Uuid, qty: z.int().min(0).max(1_000_000) });
 
+/** An opening or closing checklist ticked off at the register (P24c, ADR 0038), as it was ticked. */
+const ChecklistCompleted = z.strictObject({
+  checklist_id: Uuid,
+  kind: z.enum(['open', 'close']),
+  items: z
+    .array(
+      z.strictObject({
+        item_id: z.string().regex(/^[a-z0-9-]{1,40}$/),
+        label: z.string().min(1).max(80),
+        photo_required: z.boolean(),
+        done: z.boolean(),
+        photo_media_id: Uuid.nullable(),
+      }),
+    )
+    .min(1)
+    .max(20),
+  note: z.string().max(300).nullable(),
+});
+
 const SaleVoided = z.strictObject({
   reason: z.string().max(200),
   by_user_id: Uuid.nullable(),
@@ -324,6 +343,7 @@ export const EventPayloads = {
   'inventory.received': InventoryReceived,
   'inventory.written_off': InventoryWrittenOff,
   'inventory.counted': InventoryCounted,
+  'checklist.completed': ChecklistCompleted,
 } as const;
 
 export type EventType = keyof typeof EventPayloads;
@@ -346,6 +366,7 @@ const SALELESS: ReadonlySet<EventType> = new Set([
   'inventory.received',
   'inventory.written_off',
   'inventory.counted',
+  'checklist.completed',
 ]);
 
 const EnvelopeBase = z.strictObject({
