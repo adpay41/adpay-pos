@@ -8,6 +8,8 @@
  */
 import {
   BulkPriceInput,
+  InventoryMovementInput,
+  ItemStockSettingsInput,
   LabelTemplateInput,
   LANGUAGES,
   PromotionInput,
@@ -30,6 +32,7 @@ import { languageStatuses } from '../services/i18n';
 import { listPromotions, savePromotion, setPromotionActive } from '../services/promotions';
 import { bulkPriceChange } from '../services/price-tools';
 import { labelTemplates, printPriceLabels, printShelfTags, saveLabelTemplate, tagQueue } from '../services/labels';
+import { recordMovement, setStockSettings, stockLevels } from '../services/inventory';
 import { z } from 'zod';
 import { asAdmin, asMerchantUser, requireAdmin, requireMerchantUser } from '../http/auth-hooks';
 import { badRequest, forbidden } from '../http/errors';
@@ -158,6 +161,23 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId } = scope.resolve(r, false);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return (await getCatalogSnapshot(db, merchantId, locationId)).receipt;
+    });
+
+    // Inventory (P22): stock per store, counts / receipts / write-offs, per-item stock settings.
+    s.get(`${p}/inventory`, async (r) => {
+      const { merchantId } = scope.resolve(r, false);
+      const { location_id } = z.object({ location_id: z.uuid() }).parse(r.query);
+      return stockLevels(db, merchantId, location_id);
+    });
+    s.post(`${p}/inventory/movements`, async (r, reply) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      reply.status(201);
+      return recordMovement(db, actor, merchantId, InventoryMovementInput.parse(r.body), trace(r));
+    });
+    s.put(`${p}/items/:itemId/stock`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { itemId } = ItemParams.parse(r.params);
+      return setStockSettings(db, actor, merchantId, itemId, ItemStockSettingsInput.parse(r.body), trace(r));
     });
 
     // Shelf tags, the tag queue, price labels and label templates (P21): PDFs for any printer.

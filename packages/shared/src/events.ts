@@ -151,6 +151,23 @@ const LoyaltyRedeemed = z.strictObject({
   discount_cents: z.int().min(0).max(10_000),
 });
 
+/** Inventory at the register (P22, ADR 0034): a delivery scanned in, a write-off, a shelf count. */
+const InventoryReceived = z.strictObject({
+  /** One delivery: every line scanned in the same "receive" session shares it. */
+  receipt_id: Uuid,
+  item_id: Uuid,
+  qty: z.int().min(1).max(100_000),
+  invoice_ref: z.string().max(60).nullable(),
+  expires_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+});
+const InventoryWrittenOff = z.strictObject({
+  item_id: Uuid,
+  qty: z.int().min(1).max(100_000),
+  reason: z.enum(['waste', 'spoilage', 'theft', 'damaged', 'expired']),
+  note: z.string().max(200).nullable(),
+});
+const InventoryCounted = z.strictObject({ item_id: Uuid, qty: z.int().min(0).max(1_000_000) });
+
 const SaleVoided = z.strictObject({
   reason: z.string().max(200),
   by_user_id: Uuid.nullable(),
@@ -302,6 +319,9 @@ export const EventPayloads = {
   'staff.signed_out': StaffSignedOut,
   'staff.pin_failed': StaffPinFailed,
   'override.granted': OverrideGranted,
+  'inventory.received': InventoryReceived,
+  'inventory.written_off': InventoryWrittenOff,
+  'inventory.counted': InventoryCounted,
 } as const;
 
 export type EventType = keyof typeof EventPayloads;
@@ -321,6 +341,9 @@ const SALELESS: ReadonlySet<EventType> = new Set([
   'staff.signed_out',
   'staff.pin_failed',
   'override.granted',
+  'inventory.received',
+  'inventory.written_off',
+  'inventory.counted',
 ]);
 
 const EnvelopeBase = z.strictObject({

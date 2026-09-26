@@ -12,6 +12,7 @@ import type { DevicePrincipal } from '../auth/principal';
 import type { Db, Queryable } from '../db/db';
 import { notFound } from '../http/errors';
 import { upsertCustomersFromEvents } from './loyalty';
+import { movementsFromEvents } from './inventory';
 
 export interface IngestResult {
   accepted: string[];
@@ -111,6 +112,8 @@ export async function ingestEvents(
     );
     // The customer list follows the sales that name a customer (P19a).
     await upsertCustomersFromEvents(q, toInsert);
+    // Deliveries, write-offs and counts from the register join the movements table (P22).
+    await movementsFromEvents(q, toInsert);
     // Live sales feed (merchant ticker, admin): delivered to listeners on commit (P4 realtime hub).
     const completed = toInsert.filter((e) => e.type === 'sale.completed');
     // Names for the ticker (P11): which register, who rang it. One lookup per batch.
