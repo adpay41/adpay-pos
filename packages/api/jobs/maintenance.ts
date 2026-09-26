@@ -2,7 +2,8 @@
  * Background jobs on Redis + BullMQ. Redis is a job queue only, never a source of truth.
  *  - keep `sale_events` monthly partitions created ahead of the month boundary (ADR 0001);
  *  - evaluate the alert rules every minute (P4);
- *  - prune heartbeat history older than 7 days (P4).
+ *  - prune heartbeat history older than 7 days (P4);
+ *  - post partner webhooks that are due, every 15 s (P25a).
  */
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
@@ -10,6 +11,7 @@ import type pino from 'pino';
 import type { Db } from '../db/db';
 import { evaluateAlerts, logNotifier } from '../services/alerts';
 import { pruneHeartbeats } from '../services/ops';
+import { deliverWebhooks, httpTransport } from '../services/partners';
 
 const QUEUE = 'maintenance';
 
@@ -51,6 +53,7 @@ export async function startJobs(db: Db, redisUrl: string, log: pino.Logger): Pro
   await queue.upsertJobScheduler('ensure-partitions', { every: 6 * 60 * 60 * 1000 }, { name: 'ensure-partitions' });
   await queue.upsertJobScheduler('evaluate-alerts', { every: 60_000 }, { name: 'evaluate-alerts', opts: { removeOnComplete: 50, removeOnFail: 50 } });
   await queue.upsertJobScheduler('prune-heartbeats', { every: 24 * 60 * 60 * 1000 }, { name: 'prune-heartbeats' });
+  await queue.upsertJobScheduler('deliver-webhooks', { every: 15_000 }, { name: 'deliver-webhooks', opts: { removeOnComplete: 50, removeOnFail: 50 } });
   const notifier = logNotifier((obj, msg) => log.info(obj, msg));
 
   const worker = new Worker(
@@ -62,6 +65,9 @@ export async function startJobs(db: Db, redisUrl: string, log: pino.Logger): Pro
       } else if (job.name === 'evaluate-alerts') {
         const r = await evaluateAlerts(db, notifier, new Date(), `job-${job.id}`);
         if (r.opened.length || r.resolved) log.info({ job: job.name, opened: r.opened.length, resolved: r.resolved }, 'alerts evaluated');
+      } else if (job.name === 'deliver-webhooks') {
+        const r = await deliverWebhooks(db, httpTransport);
+        if (r.delivered || r.retrying || r.failed) log.info({ job: job.name, ...r }, 'webhooks posted');
       } else if (job.name === 'prune-heartbeats') {
         log.info({ job: job.name, deleted: await pruneHeartbeats(db) }, 'heartbeat history pruned');
       }
