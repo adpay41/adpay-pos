@@ -26,8 +26,8 @@ function files(dir: string): string[] {
 export function collectKeys(): string[] {
   const keys = new Set<string>();
   const call = /\bt(?:k)?\(\s*'((?:[^'\\]|\\.)*)'/g;
-  // The customer screen speaks the customer's language through the customer catalog (ADR 0027).
-  const cashierFiles = [...files(join(APP, 'src')), join(APP, 'App.tsx')].filter((f) => !f.endsWith('CustomerScreen.tsx'));
+  // The customer screen (and its phone pad) speak the customer's language, through the customer catalog (ADR 0027).
+  const cashierFiles = [...files(join(APP, 'src')), join(APP, 'App.tsx')].filter((f) => !/(CustomerScreen|PhonePad)\.tsx$/.test(f));
   for (const f of cashierFiles) {
     const src = readFileSync(f, 'utf8');
     for (const m of src.matchAll(call)) keys.add(m[1]!.replace(/\\(.)/g, '$1'));

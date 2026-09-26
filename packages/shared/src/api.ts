@@ -4,6 +4,7 @@
  */
 import type { TileColor } from './catalog';
 import type { I18nSnapshot } from './i18n';
+import type { LoyaltySettings } from './loyalty';
 import type { ComplianceSnapshot, Restriction } from './compliance';
 import type { CashierUsual } from './catalog-templates';
 import type { FeatureFlags } from './flags';
@@ -109,6 +110,8 @@ export interface CatalogSnapshot {
   cash_settings?: { drop_over_cents: number };
   /** Languages this location offers and the platform's string overrides (P18). Absent in older snapshots: English only. */
   i18n?: I18nSnapshot;
+  /** The loyalty program and this merchant's salt for the customer ref (P19a). Register snapshot only. */
+  loyalty?: { settings: LoyaltySettings; salt: string };
 }
 
 export interface DeviceIdentity {

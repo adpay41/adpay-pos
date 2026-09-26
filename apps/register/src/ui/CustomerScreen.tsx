@@ -10,6 +10,7 @@ import { isRtl, languageInfo, translator, type Lang } from '@adpay/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { createDisplayChannel, type DisplayState } from '../core/display';
+import { PhonePad } from './PhonePad';
 import { Qr } from './Qr';
 import { C, usd } from './theme';
 
@@ -18,6 +19,8 @@ export function CustomerScreen() {
   const [state, setState] = useState<DisplayState | null>(null);
   const [picking, setPicking] = useState(false);
   const [big, setBig] = useState(false);
+  // The number pad (P19a): for rewards on the cart, or "text me my receipt" after paying.
+  const [entry, setEntry] = useState<'loyalty' | 'receipt' | null>(null);
   useEffect(() => channel.subscribe(setState), [channel]);
   // Larger text is the customer's own choice: it ends with their sale.
   const phase = state?.phase ?? 'idle';
@@ -25,6 +28,7 @@ export function CustomerScreen() {
     if (phase === 'idle') {
       setBig(false);
       setPicking(false);
+      setEntry(null);
     }
   }, [phase]);
 
@@ -46,6 +50,25 @@ export function CustomerScreen() {
       </Pressable>
     </View>
   );
+
+  if (entry && state) {
+    return (
+      <View style={[s.root, dir]}>
+        <PhonePad
+          t={t}
+          big={big}
+          title={entry === 'loyalty' ? t('earn_rewards') : t('text_me_receipt')}
+          askConsent={entry === 'loyalty' && !!state.loyalty?.ask_texts}
+          storeName={state.merchant_name}
+          onCancel={() => setEntry(null)}
+          onDone={(phone, optIn) => {
+            channel.send({ kind: 'customer_phone', purpose: entry, phone, marketing_opt_in: entry === 'loyalty' && optIn });
+            setEntry(null);
+          }}
+        />
+      </View>
+    );
+  }
 
   if (picking) {
     return (
@@ -105,6 +128,16 @@ export function CustomerScreen() {
           <View style={s.qrBox}>
             <Qr value={state.receipt_url} size={big ? 300 : 240} label={t('scan_receipt')} />
             <Text style={s.qrText}>{t('scan_receipt')}</Text>
+            {/* …or by text (P19a). Until texting is connected, the screen says so rather than pretend. */}
+            {state.receipt_text === null ? (
+              <Pressable style={s.chip} onPress={() => setEntry('receipt')} accessibilityRole="button">
+                <Text style={s.chipText}>{t('text_me_receipt')}</Text>
+              </Pressable>
+            ) : (
+              <Text style={s.muted} accessibilityLiveRegion="polite">
+                {state.receipt_text === 'sent' ? t('receipt_texted') : state.receipt_text === 'not_delivered' ? t('receipt_not_texted') : t('receipt_text_failed')}
+              </Text>
+            )}
           </View>
         ) : null}
       </View>
@@ -162,6 +195,30 @@ export function CustomerScreen() {
           </View>
         ))}
       </ScrollView>
+      {state.loyalty ? (
+        <View style={s.loyalty} accessibilityLiveRegion="polite">
+          {state.loyalty.last4 === null ? (
+            <Pressable style={s.loyaltyButton} onPress={() => setEntry('loyalty')} accessibilityRole="button">
+              <Text style={s.loyaltyButtonText}>★ {t('earn_rewards')}</Text>
+            </Pressable>
+          ) : (
+            <Text style={s.loyaltyText}>
+              {t('phone_ending', { last4: state.loyalty.last4 })} ·{' '}
+              {state.loyalty.redeemed
+                ? t('reward_applied')
+                : state.loyalty.status
+                  ? state.loyalty.status.rewards_available > 0
+                    ? t('reward_ready')
+                    : state.loyalty.status.kind === 'visits'
+                      ? t('visits_progress', { count: state.loyalty.status.balance, needed: state.loyalty.status.needed, to_next: state.loyalty.status.to_next })
+                      : t('points_progress', { count: state.loyalty.status.balance, to_next: state.loyalty.status.to_next })
+                  : state.loyalty.offline
+                    ? t('loyalty_offline')
+                    : '…'}
+            </Text>
+          )}
+        </View>
+      ) : null}
       <View style={s.totals}>
         <View style={s.totalBox} accessible accessibilityLabel={`${t('pay_cash')}: ${usd(state.cash_total_cents)}, ${t('incl_tax', { amount: usd(state.tax_cash_cents) })}`}>
           <Text style={s.totalLabel}>{t('pay_cash')}</Text>
@@ -222,6 +279,10 @@ function makeStyles(big: boolean) {
     totalBox: { flex: 1, backgroundColor: big ? '#fff' : C.ground, borderWidth: big ? 2 : 0, borderColor: '#000', borderRadius: 12, padding: 16 },
     totalLabel: { fontSize: f(16), color: soft, fontWeight: '700' },
     totalValue: { fontSize: f(40), fontWeight: '800', color: C.black, fontVariant: ['tabular-nums'] },
+    loyalty: { paddingHorizontal: 20, paddingVertical: 10, borderTopWidth: big ? 2 : 1, borderTopColor: line, alignItems: 'center' },
+    loyaltyButton: { borderWidth: 2, borderColor: C.black, borderRadius: 24, paddingHorizontal: 18, paddingVertical: 10 },
+    loyaltyButtonText: { fontSize: f(18), fontWeight: '800', color: C.ink },
+    loyaltyText: { fontSize: f(18), fontWeight: '700', color: C.ink, textAlign: 'center' },
     pickTitle: { fontSize: f(30), fontWeight: '800', color: C.ink },
     pickGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 760 },
     pickBtn: { minWidth: 200, paddingVertical: 18, paddingHorizontal: 20, borderRadius: 12, borderWidth: 2, borderColor: C.black, backgroundColor: '#fff', alignItems: 'center' },

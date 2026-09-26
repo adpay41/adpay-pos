@@ -293,4 +293,15 @@ export const CASHIER_ES: Partial<Record<CashierKey, string>> = {
   'Who’s working?': '¿Quién trabaja?',
   'Wrong item': 'Artículo equivocado',
   'Z-report #{number} taken': 'Reporte Z n.º {number} hecho',
+  // Loyalty (P19a)
+  '{balance} points': '{balance} puntos',
+  '{balance}/{needed} visits': '{balance}/{needed} visitas',
+  'Apply a loyalty reward': 'Aplicar una recompensa de lealtad',
+  'Apply reward': 'Aplicar recompensa',
+  'offline: this visit counts, rewards need a connection': 'sin conexión: esta visita cuenta, las recompensas necesitan conexión',
+  'reward applied': 'recompensa aplicada',
+  'Rewards ···{last4}': 'Recompensas ···{last4}',
+  'Rewards customer, phone ending {last4}': 'Cliente de recompensas, teléfono terminado en {last4}',
+  'See customers and loyalty': 'Ver clientes y lealtad',
+  'Text a promotion to customers': 'Enviar una promoción por texto a clientes',
 };

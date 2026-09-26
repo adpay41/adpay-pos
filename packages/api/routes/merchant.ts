@@ -8,6 +8,7 @@ import { asMerchantUser, requireMerchantUser, requirePermission } from '../http/
 import type { AppDeps } from '../server';
 import { createMessageSender } from '../messaging/sender';
 import { sendReceipt } from '../services/messaging';
+import { customerList, customerStatus, loyaltyConfig, optOut, sendPromo, setLoyaltySettings } from '../services/loyalty';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
 import { getSaleTimeline } from '../services/events';
 import { tenancyTree } from '../services/onboarding';
@@ -17,7 +18,7 @@ import { timesheet } from '../services/timeclock';
 import { zReports } from '../services/eod';
 import { complianceLog, salesTaxReport } from '../services/compliance-reports';
 import { merchantConfig, postSupportMessage, supportThread } from '../services/merchant-config';
-import { SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
+import { CustomerRefSchema, LoyaltySettingsInput, SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
 import { forbidden } from '../http/errors';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -122,6 +123,32 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
     const { saleId } = z.object({ saleId: z.uuid() }).parse(request.params);
     const body = z.strictObject({ channel: z.enum(['sms', 'email']), to: z.string().trim().min(3).max(200) }).parse(request.body);
     return sendReceipt(db, sender, asMerchantUser(request), saleId, body, deps.config.publicBaseUrl, request.logContext.trace_id);
+  });
+
+  // Loyalty program and customers (P19a).
+  const customers = { preHandler: requirePermission('customers.view') };
+  app.get('/merchant/loyalty', async (request) => (await loyaltyConfig(db, asMerchantUser(request).merchant_id)).settings);
+  app.put('/merchant/loyalty', { preHandler: requirePermission('catalog.edit') }, async (request) => {
+    const me = asMerchantUser(request);
+    return setLoyaltySettings(db, me, me.merchant_id, LoyaltySettingsInput.parse(request.body), request.logContext.trace_id);
+  });
+  app.get('/merchant/customers', customers, async (request) => {
+    const me = asMerchantUser(request);
+    const { settings } = await loyaltyConfig(db, me.merchant_id);
+    return { customers: await customerList(db, me.merchant_id), loyalty: settings };
+  });
+  app.get('/merchant/customers/:ref', customers, async (request) => {
+    const { ref } = z.object({ ref: CustomerRefSchema }).parse(request.params);
+    return customerStatus(db, asMerchantUser(request).merchant_id, ref);
+  });
+  app.post('/merchant/customers/:ref/opt-out', customers, async (request) => {
+    const { ref } = z.object({ ref: CustomerRefSchema }).parse(request.params);
+    await optOut(db, asMerchantUser(request), ref, request.logContext.trace_id);
+    return { ok: true };
+  });
+  app.post('/merchant/customers/promo', { preHandler: requirePermission('customers.message') }, async (request) => {
+    const body = z.strictObject({ message: z.string().trim().min(3).max(240), top: z.int().min(1).max(1000).default(100) }).parse(request.body);
+    return sendPromo(db, sender, asMerchantUser(request), body, request.logContext.trace_id);
   });
 
   app.get('/merchant/sales/:saleId', reports, async (request) => {

@@ -383,6 +383,7 @@ async function main() {
 
     // Demo staff with register PINs (DEMO_STAFF): the same routine that repairs an older database.
     await ensureDemoStaff(db);
+    await ensureDemoLoyalty(db);
 
     // Registers with history are "already paired" devices in the field.
     for (const r of [jc1, jc2, ast1, bay1]) {
@@ -494,7 +495,23 @@ async function armDemoSetupCode(db: Db, registerId: string, code: string) {
   });
 }
 
+/**
+ * The demo store runs a punch card (P19a): every 5th visit with a drink, the cheapest drink free up
+ * to $3. Set only while the merchant hasn't configured loyalty, so a demo change in the app sticks.
+ */
+async function ensureDemoLoyalty(db: Db): Promise<void> {
+  const { rows } = await db.query<{ merchant_id: string; category_id: string | null }>(
+    `SELECT m.merchant_id, (SELECT c.category_id FROM categories c WHERE c.merchant_id = m.merchant_id AND c.name = 'Drinks' LIMIT 1) AS category_id
+       FROM merchants m WHERE m.name = 'Journal Square Deli & Grocery' AND m.loyalty_settings = '{}'::jsonb`,
+  );
+  for (const r of rows) {
+    const settings = { enabled: true, kind: 'visits', visits_needed: 5, points_per_dollar: 1, points_needed: 100, qualifying_category_id: r.category_id, min_ticket_cents: 0, reward: { kind: 'free_item', max_cents: 300 }, ask_for_texts: true };
+    await db.query('UPDATE merchants SET loyalty_settings = $2, catalog_version = catalog_version + 1 WHERE merchant_id = $1', [r.merchant_id, JSON.stringify(settings)]);
+  }
+}
+
 async function printLogins(db: Db) {
+  await ensureDemoLoyalty(db);
   const pins = await ensureDemoStaff(db);
   const { rows } = await db.query<{ register_id: string; label: string }>(
     `SELECT r.register_id, m.name || ' · ' || l.name || ' · ' || r.name AS label

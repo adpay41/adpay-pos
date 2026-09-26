@@ -10,6 +10,7 @@ import { Platform } from 'react-native';
 import { PREVIEW_HEALTH } from './core/hardware';
 import { DrawerManager } from './core/drawer';
 import { TimeClock } from './core/timeclock';
+import { LoyaltyClient } from './core/loyalty';
 import { EndOfDay } from './core/eod';
 import { NewItemOutbox } from './core/new-items';
 import { DeviceLog, OpsAgent } from './core/ops';
@@ -79,6 +80,8 @@ export interface Runtime {
   training: SaleSession;
   /** Time clock (P15). */
   clock: TimeClock;
+  /** Loyalty by phone number (P19a). */
+  loyalty: LoyaltyClient;
   /** Today so far vs yesterday by this time, for the ribbon; null when offline (P15). */
   pulse: () => Promise<{ today_cents: number; yesterday_cents: number; vs_yesterday_tenths: number | null } | null>;
   /** Upload a JPEG (count-sheet photo, P15); returns its media id. Online only. */
@@ -189,7 +192,20 @@ export async function boot(token: string): Promise<Runtime> {
     log.warn('new item refused by the server', { name: cmd.name, upc: cmd.upc, reason: why.slice(0, 200) }),
   );
   await items.load();
-  sync.setBeforePush(() => items.flush());
+  // Loyalty (P19a): the customer's number becomes a keyed hash here; opt-ins wait in an outbox when offline.
+  const loyalty = new LoyaltyClient(
+    store,
+    {
+      status: (ref) => call(`/device/loyalty/${ref}`, token),
+      optIn: (body) => call('/device/customers/opt-in', token, body),
+      textReceipt: (body) => call('/device/receipts/text', token, body),
+    },
+    () => currentCatalog.loyalty,
+  );
+  sync.setBeforePush(async () => {
+    await items.flush();
+    await loyalty.flush();
+  });
 
   sync.onCatalog((c) => {
     void staff.update(c.staff);
@@ -267,5 +283,5 @@ export async function boot(token: string): Promise<Runtime> {
     },
   };
 
-  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, pulse, uploadPhoto, eod, training, uuid: () => Crypto.randomUUID() };
+  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, loyalty, pulse, uploadPhoto, eod, training, uuid: () => Crypto.randomUUID() };
 }

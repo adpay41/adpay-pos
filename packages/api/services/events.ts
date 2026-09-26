@@ -11,6 +11,7 @@ import { RegisterEventSchema, foldSale, type FoldedSale, type RegisterEvent } fr
 import type { DevicePrincipal } from '../auth/principal';
 import type { Db, Queryable } from '../db/db';
 import { notFound } from '../http/errors';
+import { upsertCustomersFromEvents } from './loyalty';
 
 export interface IngestResult {
   accepted: string[];
@@ -108,6 +109,8 @@ export async function ingestEvents(
          JOIN locations l ON l.location_id = x.location_id`,
       [JSON.stringify(toInsert), receivedAt.toISOString()],
     );
+    // The customer list follows the sales that name a customer (P19a).
+    await upsertCustomersFromEvents(q, toInsert);
     // Live sales feed (merchant ticker, admin): delivered to listeners on commit (P4 realtime hub).
     const completed = toInsert.filter((e) => e.type === 'sale.completed');
     // Names for the ticker (P11): which register, who rang it. One lookup per batch.
