@@ -370,7 +370,7 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P24c Checklists | #PR | PR open — opening / closing checklists: lists in the snapshot, ticked at the register with photos as one event, store-day report in the merchant app. ADR 0038. |
+| P24c Checklists | #38 | PR open — opening / closing checklists: lists in the snapshot, ticked at the register with photos as one event, store-day report in the merchant app. ADR 0038. |
 | P24b Rollouts & documents | #37 | Merged — staged feature rollouts (canary → 10% → all) with a kill switch over per-store switches, documents vault with renewals and a 30-day expiry alert. Build OTA ⏸ (MDM decision). ADR 0037. |
 | P24a Support & hardware | #36 | Merged — tickets with first-response SLA, append-only notes, canned fixes that queue remote actions, runbooks with fix buttons on alerts, hardware inventory with swap/RMA and history, merchant equipment tickets. ADR 0036. |
 | P23b Shrink | #35 | Merged — count variances (expected vs counted) and write-offs by reason, by category and item at cost, with cashier voids / refunds / no-sale; Stock tab Shrink card. ADR 0034. |
