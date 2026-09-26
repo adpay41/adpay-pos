@@ -344,4 +344,6 @@ export const CASHIER_ES: Partial<Record<CashierKey, string>> = {
   Photo: 'Foto',
   'Photo when online': 'Foto cuando haya conexión',
   'Save checklist': 'Guardar lista',
+  '{stores} other stores sell this, usually for {price}.': 'Otras {stores} tiendas venden esto, normalmente a {price}.',
+  'Other stores call it “{name}”.': 'Otras tiendas lo llaman “{name}”.',
 };

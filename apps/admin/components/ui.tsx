@@ -50,6 +50,8 @@ const NAV = [
   { href: '/rollouts', label: 'Rollouts' },
   { href: '/partners', label: 'Partners' },
   { href: '/agents', label: 'Agents' },
+  { href: '/investor', label: 'Investor pack' },
+  { href: '/upc-library', label: 'UPC library' },
   { href: '/sales', label: 'Sales' },
   { href: '/money', label: 'Money' },
   { href: '/tax', label: 'Tax' },

@@ -3,8 +3,8 @@
  * unknown-barcode form, and the price-check card. Money is typed on a cents keypad (2-0-0 → $2.00)
  * and never goes through a float.
  */
-import { cents, deriveCardPrice, parseUsdToCents, sub, type CatalogCategory, type CatalogItem, type Cents } from '@adpay/shared';
-import { useState } from 'react';
+import { cents, deriveCardPrice, parseUsdToCents, sub, type CatalogCategory, type CatalogItem, type Cents, type UpcSuggestion } from '@adpay/shared';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useT } from './i18n';
 import { C, usd } from './theme';
@@ -74,12 +74,15 @@ export function UnknownItemForm({
   code,
   categories,
   dualRatePpm,
+  lookup,
   onCreate,
   onCancel,
 }: {
   code: string;
   categories: CatalogCategory[];
   dualRatePpm: number;
+  /** The global UPC library (P25c): fills the name and category if other stores have it. Online only. */
+  lookup?: (code: string) => Promise<UpcSuggestion | null>;
   onCreate: (v: { name: string; cash: Cents; category_id: string | null }) => void;
   onCancel: () => void;
 }) {
@@ -88,6 +91,21 @@ export function UnknownItemForm({
   const [price, setPrice] = useState('');
   const [category, setCategory] = useState<string | null>(categories[0]?.category_id ?? null);
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<UpcSuggestion | null>(null);
+  useEffect(() => {
+    let live = true;
+    void lookup?.(code).then((sug) => {
+      if (!live || !sug) return;
+      setHint(sug);
+      // Only fill what the cashier hasn't typed yet; the price stays theirs to set.
+      setName((n) => n || sug.name);
+      const cat = sug.category ? categories.find((c) => c.name.toLowerCase() === sug.category!.toLowerCase()) : undefined;
+      if (cat) setCategory(cat.category_id);
+    });
+    return () => {
+      live = false;
+    };
+  }, [code, lookup, categories]);
   const cash: Cents | null = (() => {
     try {
       return price.trim() ? parseUsdToCents(price) : null;
@@ -111,6 +129,13 @@ export function UnknownItemForm({
         {afterCode}
       </Text>
       <TextInput style={s.input} value={name} onChangeText={setName} placeholder={t('What is it? e.g. Goya Adobo 8oz')} autoFocus maxLength={120} />
+      {hint ? (
+        <Text style={s.muted}>
+          {hint.typical_cash_cents !== null
+            ? t('{stores} other stores sell this, usually for {price}.', { stores: hint.stores, price: usd(cents(hint.typical_cash_cents)) })
+            : t('Other stores call it “{name}”.', { name: hint.name })}
+        </Text>
+      ) : null}
       <View style={s.row}>
         <TextInput style={[s.input, { flex: 1 }]} value={price} onChangeText={setPrice} placeholder={t('Cash price, e.g. 3.49')} keyboardType="decimal-pad" onSubmitEditing={submit} />
         <View style={{ justifyContent: 'center' }}>

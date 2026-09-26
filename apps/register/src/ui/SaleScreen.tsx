@@ -1380,6 +1380,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             code={modal.code}
             categories={catalog.categories.filter((c) => c.active !== false)}
             dualRatePpm={catalog.dual_price_rate_ppm}
+            lookup={cardOk ? rt.upcLookup : undefined}
             onCancel={() => setModal({ kind: 'none' })}
             onCreate={(v) => void run(() => createUnknown(modal.code, v))}
           />

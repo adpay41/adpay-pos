@@ -20,6 +20,7 @@ import {
   type CatalogItem,
   type CatalogSnapshot,
   type TileColor,
+  type UpcSuggestion,
 } from '@adpay/shared';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -213,6 +214,26 @@ function ItemEditor({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
+  // The global UPC library (P25c): a new item's barcode that other stores carry fills the name and
+  // category (never the price) and says what it usually sells for.
+  const [hint, setHint] = useState<UpcSuggestion | null>(null);
+  useEffect(() => {
+    if (item || !/^\d{8,14}$/.test(f.upc.trim())) return setHint(null);
+    let live = true;
+    api<{ suggestion: UpcSuggestion | null }>(`/merchant/upc/${f.upc.trim()}`, token).then(
+      ({ suggestion }) => {
+        if (!live) return;
+        setHint(suggestion);
+        if (!suggestion) return;
+        const cat = suggestion.category ? catalog.categories.find((c) => c.name.toLowerCase() === suggestion.category!.toLowerCase()) : undefined;
+        setF((p) => ({ ...p, name: p.name || suggestion.name, category_id: cat ? cat.category_id : p.category_id }));
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [f.upc, item, token, catalog.categories]);
 
   const cashCents = f.cash.trim() ? attempt(() => parseUsdToCents(f.cash)) : null;
   const autoCard = cashCents !== null ? resolveDualPrice({ cash_price_cents: cashCents, card_price_cents: null }, location.dual_price_rate_ppm).card : null;
@@ -357,6 +378,12 @@ function ItemEditor({
 
       <Field label="Barcode (UPC)">
         <TextInput style={s.input} value={f.upc} onChangeText={(t) => set('upc', t)} keyboardType="number-pad" placeholder="Scan or type" />
+        {hint ? (
+          <Text style={s.mutedSmall}>
+            {hint.stores} store{hint.stores === 1 ? '' : 's'} on AD Pay call it “{hint.name}”
+            {hint.typical_cash_cents !== null ? `, usually ${usd(hint.typical_cash_cents)}` : ''}.
+          </Text>
+        ) : null}
       </Field>
 
       <Field label="Tile color on the register">

@@ -3,7 +3,7 @@
  * Everything the register needs to sell is local; the network only ever adds freshness.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { CatalogSnapshot, DeviceIdentity, DeviceItemResult, HeartbeatResponse } from '@adpay/shared';
+import type { CatalogSnapshot, DeviceIdentity, DeviceItemResult, HeartbeatResponse, UpcSuggestion } from '@adpay/shared';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
@@ -91,6 +91,8 @@ export interface Runtime {
   pulse: () => Promise<{ today_cents: number; yesterday_cents: number; vs_yesterday_tenths: number | null } | null>;
   /** Upload a JPEG (count-sheet photo, P15); returns its media id. Online only. */
   uploadPhoto: (blob: Blob) => Promise<string>;
+  /** What other stores call a barcode this store doesn't have (P25c). Online only; null offline or unknown. */
+  upcLookup: (code: string) => Promise<UpcSuggestion | null>;
   usuals: {
     save(input: { user_id: string; label: string; lines: { item_id: string; qty: number }[] }): Promise<void>;
     remove(usualId: string): Promise<void>;
@@ -301,6 +303,14 @@ export async function boot(token: string): Promise<Runtime> {
     return data.media_id;
   };
 
+  const upcLookup = async (code: string) => {
+    try {
+      return (await call<{ suggestion: UpcSuggestion | null }>(`/device/upc/${encodeURIComponent(code)}`, token)).suggestion;
+    } catch {
+      return null;
+    }
+  };
+
   // "The usual" (P14): saved and removed online; they arrive back with the next snapshot.
   const usuals: Runtime['usuals'] = {
     async save(input) {
@@ -313,5 +323,5 @@ export async function boot(token: string): Promise<Runtime> {
     },
   };
 
-  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, loyalty, stock, openOrders, pulse, uploadPhoto, eod, training, uuid: () => Crypto.randomUUID() };
+  return { store, identity, catalog, session, sync, staff, ops, log, items, drawer, payments, usuals, clock, loyalty, stock, openOrders, pulse, uploadPhoto, upcLookup, eod, training, uuid: () => Crypto.randomUUID() };
 }

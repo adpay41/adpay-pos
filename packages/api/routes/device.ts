@@ -21,6 +21,7 @@ import { deviceIdentity } from '../services/onboarding';
 import { cardRefund, terminalCharge } from '../services/payments';
 import { registerStaff } from '../services/staff';
 import { removeUsual, saveUsual, usualsFor } from '../services/usuals';
+import { upcLookup } from '../services/upc-library';
 
 export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
@@ -37,6 +38,13 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
   });
 
   /** The hourly target ribbon (P15, Bible 1.10): today so far vs yesterday by this time, this store. */
+  /** Unknown barcode at the register (P25c): what other stores call it; online only, a suggestion. */
+  app.get('/device/upc/:code', async (request) => {
+    asDevice(request);
+    const { code } = z.object({ code: z.string().min(1).max(20) }).parse(request.params);
+    return { suggestion: await upcLookup(db, code) };
+  });
+
   app.get('/device/pulse', async (request) => {
     const d = asDevice(request);
     const c = await salesCompare(db, d.merchant_id, d.location_id);

@@ -213,12 +213,12 @@ section 5.
 | Risk monitoring (3.3) | ⛔ | Processor transaction data (keyed-card, MCC) | P-PAY |
 | Scan-data program admin (3.3) | ⛔ | Scan-data contracts | P-3P |
 | Tax tables by jurisdiction with effective dates; age rules by state (3.4) | 🟡 | /admin/tax: every store's rate today, scheduled changes, charges, age overrides, drift by state (P16b). Shared jurisdiction library: data source needed. | P16 |
-| Global UPC library, deduped (3.4) | ⬜ | P2, P5 unknown-barcode items | P25 |
+| Global UPC library, deduped (3.4) | ✅ | /upc-library: every real GTIN in any store's catalog, deduped on the barcode key, most-used name, "names disagree" list; store-made codes never shared; typical price only from 3+ stores; fills the register's unknown-barcode form and the merchant app's new item (name, category — never the price) (P25c, ADR 0041). Seeding from a licensed dataset stays ⛔ (UPC licence). | P25 |
 | Receipt/label template editor (3.4) | ✅ | Label templates (stock, card price, barcode, category, small print) in the merchant app; receipt settings per location in the merchant app and admin since P8 (P21). | P21 |
 | Translations management (3.4) | ✅ | Admin → Translations: status per language (draft / offered / reviewed, with reviewer), coverage, per-string corrections with placeholder check, stores asking; reaches registers at next sync (P18a). | P18 |
 | API keys & webhooks for partners (3.4) | ✅ | /partners: per-store read-only keys (sales / catalog / inventory scopes, hashed, shown once, revocable) on `/v1/*`; webhooks for sale completed / refunded / voided and EOD, queued with the sale, HMAC-signed, retried 6 times then failed, redeliver / rotate / turn off; partner docs in `docs/partner-api.md` (P25a, ADR 0039). DNS-rebinding guard (resolve-and-pin or egress proxy) goes with the AWS deploy. | P25 |
-| Cohort views (3.5) | ⬜ | P13 KPIs | P25 |
-| Investor/bank pack (3.5) | ⬜ | P13 | P25 |
+| Cohort views (3.5) | ✅ | Stores by first-sale month, share still selling each month after, sales per month; average retention at months 1 / 3 / 6 (P25c, ADR 0041). | P25 |
+| Investor/bank pack (3.5) | ✅ | /investor: one printable page (browser → PDF) — stores, sales, card volume, revenue (subscription vs processing), margin where cost is entered, cohorts, retention, method notes — 12 months from the ledger; monthly table as CSV (P25c, ADR 0041). | P25 |
 
 ### End customer (N)
 Receipt by text, their language, loyalty by phone: covered above (P18, P19).
@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P25b Agents & residual split | #40 | PR open — agents / referral partners with codes and dated terms, stores assigned at onboarding or by hand, monthly statements from the residual report with bounties, CSV. ADR 0040. |
+| P25c UPC library, cohorts, investor pack | #PR | PR open — global UPC library deduped across stores (register + merchant app suggestions), cohorts by first-sale month, printable investor / bank pack with CSV. ADR 0041. |
+| P25b Agents & residual split | #40 | Merged — agents / referral partners with codes and dated terms, stores assigned at onboarding or by hand, monthly statements from the residual report with bounties, CSV. ADR 0040. |
 | P25a Partner API & webhooks | #39 | Merged — per-store read-only API keys with scopes on /v1, signed webhooks queued with the sale and retried on schedule, admin Partners page, partner docs. ADR 0039. |
 | P24c Checklists | #38 | Merged — opening / closing checklists: lists in the snapshot, ticked at the register with photos as one event, store-day report in the merchant app. ADR 0038. |
 | P24b Rollouts & documents | #37 | Merged — staged feature rollouts (canary → 10% → all) with a kill switch over per-store switches, documents vault with renewals and a 30-day expiry alert. Build OTA ⏸ (MDM decision). ADR 0037. |
