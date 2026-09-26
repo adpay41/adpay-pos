@@ -155,7 +155,7 @@ section 5.
 | Training mode (1.8) | ✅ | Separate in-memory session: cash only, no drawer, receipts say TRAINING, never synced (P16a, ADR 0025). | P16 |
 | Receive delivery by scan (1.9) | ⬜ | Inventory model (P22), P5 | P22 |
 | Low-stock badge (1.9) | ⬜ | P22 | P22 |
-| Case-break inventory conversion (1.9) | ⬜ | P22 | P22 |
+| Case-break inventory conversion (1.9) | ✅ | An item counts in another item's units (carton = 10 packs): its sales and deliveries move the base item's stock (P22a, ADR 0034). | P22 |
 | Expiry dates, sell-by alerts on idle (1.9) | ⬜ | P22 | P22 |
 | Waste/spoilage/theft write-offs with reason, PIN (1.9) | ⬜ | P3, P22 | P22 |
 | Hourly target ribbon (1.10) | ✅ | Register top bar: today so far vs yesterday by now, from /device/pulse (P15). | P15 |
@@ -177,7 +177,7 @@ section 5.
 | Price history and who changed what (2.3) | ✅ | Under each item in the merchant app: date, price, cost, who (P20b). | P20 |
 | Promotions builder: 2 for $5, mix & match, BOGO, happy hour (2.3) | ✅ | Merchant app → Deals: N for $X (mix & match), buy X get Y, % off with hours; dates, weekdays, per store. The register reprices on every change as line discounts carrying the promotion id; receipt names the deal and says what was saved (P20a). | P20 |
 | Shelf label print queue (2.3) | ✅ | Items → Tags: every tag whose price moved since it was printed (and recent price changes never tagged); "Print N tags" (P21). | P21 |
-| Stock levels, low stock, dead stock (2.4) | ⬜ | P22 | P22 |
+| Stock levels, low stock, dead stock (2.4) | ✅ | Merchant app → Stock: per store, folded from counts, deliveries, write-offs and sales; Low / Not selling (60 days) filters; sell-soon lots (P22a). | P22 |
 | Reorder suggestions (2.4) | ⬜ | P22 + history | P23 |
 | Vendor list; one-tap order text/email (2.4) | 🟡-able | Vendor records buildable; sending needs SMS/email provider ⛔ | P23 |
 | Receive by scan, discrepancy report (2.4) | ⬜ | P22 | P22 |
@@ -369,7 +369,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P21 Labels | #31 | PR open — shelf tags as PDF (Avery sheet / thermal), both prices + barcode (UPC-A / EAN-13 / Code 128, in-store UPC assigned), reprint queue, deli price labels rung at the printed price, label templates. ADR 0033. |
+| P22a Inventory model | #32 | PR open — stock folded from append-only movements (counts, receipts, write-offs) and sales, case-break by stock ratio, low / dead / expiring, merchant app Stock tab, register inventory events ingested. ADR 0034. |
+| P21 Labels | #31 | Merged — shelf tags as PDF (Avery sheet / thermal), both prices + barcode (UPC-A / EAN-13 / Code 128, in-store UPC assigned), reprint queue, deli price labels rung at the printed price, label templates. ADR 0033. |
 | P20b Bulk prices, history, profit | #30 | Merged — bulk price change (preview, below-cost warning, one write with history), price history in the item editor, profit by category/item at the cost in force when sold. ADR 0032. |
 | P20a Promotions | #29 | Merged — promotions builder (N for $X mix & match, buy X get Y, happy hour; dates, days, hours, per store), register repricing as promo line discounts, receipt deal names + "You saved", customer-screen deals of the day. ADR 0031. |
 | P19b Roll-up, accountant, performance, alerts | #28 | Merged — multi-store roll-up, accountant role (read-only, no PIN) + daily journal CSV, cashier performance, big-ticket / slow-hour / late-first-sale alerts. ADR 0030. |

@@ -68,6 +68,12 @@ export interface CatalogItem {
   sell_unit: 'each' | 'pack';
   pack_qty: number;
   active: boolean;
+  /** Inventory (P22): tracked, low at or below, case-break into another item, perishable. Absent in older snapshots. */
+  track_stock?: boolean;
+  reorder_point?: number | null;
+  stock_of?: string | null;
+  stock_ratio?: number;
+  perishable?: boolean;
 }
 
 export interface PriceHistoryEntry {

@@ -385,6 +385,7 @@ async function main() {
     await ensureDemoStaff(db);
     await ensureDemoLoyalty(db);
     await ensureDemoPromotion(db);
+    await ensureDemoInventory(db);
 
     // Registers with history are "already paired" devices in the field.
     for (const r of [jc1, jc2, ast1, bay1]) {
@@ -529,9 +530,55 @@ async function ensureDemoPromotion(db: Db): Promise<void> {
   }
 }
 
+/**
+ * Demo stock (P22) at Journal Square, Jersey City: cigarettes (a carton is 10 packs), energy drinks,
+ * milk (perishable, one lot dated tomorrow). Counted just now, so the demo starts from real-looking levels.
+ */
+async function ensureDemoInventory(db: Db): Promise<void> {
+  const { rows: loc } = await db.query<{ org_id: string; merchant_id: string; location_id: string }>(
+    `SELECT l.org_id, l.merchant_id, l.location_id FROM locations l JOIN merchants m ON m.merchant_id = l.merchant_id
+      WHERE m.name = 'Journal Square Deli & Grocery' AND l.name = 'Jersey City'
+        AND NOT EXISTS (SELECT 1 FROM inventory_movements v WHERE v.merchant_id = m.merchant_id)`,
+  );
+  const l = loc[0];
+  if (!l) return;
+  const item = async (name: string) => (await db.query<{ item_id: string }>('SELECT item_id FROM items WHERE merchant_id = $1 AND name = $2', [l.merchant_id, name])).rows[0]?.item_id;
+  const setup: [string, number, number][] = [
+    ['Marlboro Red — Pack', 20, 60],
+    ['Newport Menthol — Pack', 20, 45],
+    ['Red Bull 8.4 oz', 12, 30],
+    ['Monster Energy 16 oz', 12, 10],
+    ['Whole Milk — Gallon', 6, 6],
+  ];
+  const counted = new Date(Date.now() - 5 * 60_000).toISOString();
+  for (const [name, reorder, count] of setup) {
+    const id = await item(name);
+    if (!id) continue;
+    await db.query('UPDATE items SET track_stock = true, reorder_point = $2, perishable = $3 WHERE item_id = $1', [id, reorder, name.startsWith('Whole Milk')]);
+    await db.query(
+      `INSERT INTO inventory_movements (movement_id, org_id, merchant_id, location_id, item_id, kind, qty, source, occurred_at, trace_id)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, 'count', $5, 'app', $6, 'seed')`,
+      [l.org_id, l.merchant_id, l.location_id, id, count, counted],
+    );
+  }
+  const carton = await item('Marlboro Red — Carton');
+  const pack = await item('Marlboro Red — Pack');
+  if (carton && pack) await db.query('UPDATE items SET track_stock = true, stock_of = $2, stock_ratio = 10 WHERE item_id = $1', [carton, pack]);
+  const milk = await item('Whole Milk — Gallon');
+  if (milk) {
+    await db.query(
+      `INSERT INTO inventory_movements (movement_id, org_id, merchant_id, location_id, item_id, kind, qty, expires_on, invoice_ref, source, occurred_at, trace_id)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, 'receive', 12, current_date + 1, 'DAIRY-0925', 'app', now() - interval '1 minute', 'seed')`,
+      [l.org_id, l.merchant_id, l.location_id, milk],
+    );
+  }
+  await db.query('UPDATE merchants SET catalog_version = catalog_version + 1 WHERE merchant_id = $1', [l.merchant_id]);
+}
+
 async function printLogins(db: Db) {
   await ensureDemoLoyalty(db);
   await ensureDemoPromotion(db);
+  await ensureDemoInventory(db);
   const pins = await ensureDemoStaff(db);
   const { rows } = await db.query<{ register_id: string; label: string }>(
     `SELECT r.register_id, m.name || ' · ' || l.name || ' · ' || r.name AS label

@@ -59,6 +59,11 @@ export function receiptSettingsOf(raw: unknown): ReceiptSettings {
 
 interface ItemRow {
   item_id: string;
+  track_stock: boolean;
+  reorder_point: number | null;
+  stock_of: string | null;
+  stock_ratio: number;
+  perishable: boolean;
   category_id: string | null;
   name: string;
   sku: string | null;
@@ -104,7 +109,7 @@ export async function getCatalogSnapshot(
   );
   const { rows: items } = await q.query<ItemRow>(
     `SELECT i.item_id, i.category_id, i.name, i.sku, i.upc, i.plu, i.cash_price_cents, i.card_price_cents,
-            i.cost_cents, i.open_price, i.sell_unit, i.pack_qty, i.active, c.taxable, c.min_age, c.tax_class, c.restriction, i.color, i.image_id, i.sort,
+            i.cost_cents, i.open_price, i.sell_unit, i.pack_qty, i.active, i.track_stock, i.reorder_point, i.stock_of, i.stock_ratio, i.perishable, c.taxable, c.min_age, c.tax_class, c.restriction, i.color, i.image_id, i.sort,
             (SELECT jsonb_agg(jsonb_build_object('barcode', b.barcode, 'pack_qty', b.pack_qty) ORDER BY b.barcode)
                FROM item_barcodes b WHERE b.item_id = i.item_id) AS barcodes
        FROM items i LEFT JOIN categories c ON c.category_id = i.category_id
@@ -157,6 +162,11 @@ export async function getCatalogSnapshot(
         color: i.color,
         image_url: i.image_id ? mediaUrl(i.image_id) : null,
         sort: i.sort,
+        track_stock: i.track_stock,
+        reorder_point: i.reorder_point,
+        stock_of: i.stock_of,
+        stock_ratio: i.stock_ratio,
+        perishable: i.perishable,
       };
     }),
     quick_keys: favorites.map((f) => f.item_id),
