@@ -26,6 +26,7 @@ import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, 
 import { api, apiUrl } from './api';
 import { captureAndUpload, type PhotoSource } from './photo';
 import { ReceiptEditor } from './receipt';
+import { BulkPrice, PriceHistory } from './pricing-tools';
 import { C, dollars, usd } from './theme';
 
 interface LocationSummary {
@@ -37,7 +38,7 @@ interface LocationSummary {
 }
 
 type Screen = { kind: 'list' } | { kind: 'edit'; item: CatalogItem | null };
-type Section = 'items' | 'favorites' | 'categories' | 'pricing' | 'receipt';
+type Section = 'items' | 'favorites' | 'categories' | 'pricing' | 'bulk' | 'receipt';
 
 const PUSHED = 'Registers update within 15 seconds.';
 
@@ -103,7 +104,7 @@ export function CatalogTab({ token }: { token: string }) {
         />
       ) : null}
       <View style={s.segment}>
-        {(['items', 'favorites', 'categories', 'pricing', 'receipt'] as const).map((k) => (
+        {(['items', 'favorites', 'categories', 'pricing', 'bulk', 'receipt'] as const).map((k) => (
           <Pressable key={k} onPress={() => setSection(k)} style={[s.segmentItem, section === k && s.segmentActive]}>
             <Text style={[s.segmentText, section === k && { color: '#fff' }]}>{k[0]!.toUpperCase() + k.slice(1)}</Text>
           </Pressable>
@@ -115,6 +116,7 @@ export function CatalogTab({ token }: { token: string }) {
       {section === 'favorites' && <Favorites token={token} catalog={catalog} location={loc} onSaved={saved} />}
       {section === 'categories' && <Categories token={token} catalog={catalog} onSaved={saved} />}
       {section === 'pricing' && <Pricing token={token} catalog={catalog} location={loc} onSaved={saved} />}
+      {section === 'bulk' && <BulkPrice token={token} catalog={catalog} onSaved={saved} />}
       {section === 'receipt' && <ReceiptEditor token={token} catalog={catalog} location={loc} onSaved={saved} />}
     </ScrollView>
   );
@@ -386,6 +388,8 @@ function ItemEditor({
       <Pressable style={[s.button, !!busy && { opacity: 0.5 }]} disabled={!!busy} onPress={() => void save()}>
         <Text style={s.buttonText}>{busy ?? (item ? 'Save' : 'Add item')}</Text>
       </Pressable>
+      {/* Who changed what (P20b): every price and cost this item has had. */}
+      {item ? <PriceHistory token={token} itemId={item.item_id} /> : null}
     </ScrollView>
   );
 }
