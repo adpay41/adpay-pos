@@ -369,7 +369,7 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P20a Promotions | #PR | PR open — promotions builder (N for $X mix & match, buy X get Y, happy hour; dates, days, hours, per store), register repricing as promo line discounts, receipt deal names + "You saved", customer-screen deals of the day. ADR 0031. |
+| P20a Promotions | #29 | PR open — promotions builder (N for $X mix & match, buy X get Y, happy hour; dates, days, hours, per store), register repricing as promo line discounts, receipt deal names + "You saved", customer-screen deals of the day. ADR 0031. |
 | P19b Roll-up, accountant, performance, alerts | #28 | Merged — multi-store roll-up, accountant role (read-only, no PIN) + daily journal CSV, cashier performance, big-ticket / slow-hour / late-first-sale alerts. ADR 0030. |
 | P19a Loyalty & customers | #27 | Merged — loyalty by phone (keyed hash on the sale, never the number; punch card or points folded from sales; reward applied by the cashier, online), opt-in to texts with the exact consent, customer list, promo texts once a week with STOP, "text me my receipt" on the customer screen; all texts through `MessageSender` (log). ADR 0029. |
 | P18b Cashier language & send receipt | #26 | Merged — every register screen after pairing translatable (282 strings keyed by English, extracted and typed), picker on sign-in and in the header, remembered per cashier; Spanish complete; admin Translations covers cashier strings; `MessageSender` + merchant-app Send receipt (log sender records, delivers nothing). ADR 0028. |
