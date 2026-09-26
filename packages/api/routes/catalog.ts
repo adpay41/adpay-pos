@@ -7,6 +7,7 @@
  * tamper with. Writes need the `catalog.edit` permission (owners always; managers by default).
  */
 import {
+  LANGUAGES,
   CATALOG_TEMPLATES,
   CatalogOrderInput,
   CategoryCreateInput,
@@ -22,6 +23,7 @@ import {
   parseCatalogCsv,
 } from '@adpay/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { languageStatuses } from '../services/i18n';
 import { z } from 'zod';
 import { asAdmin, asMerchantUser, requireAdmin, requireMerchantUser } from '../http/auth-hooks';
 import { badRequest, forbidden } from '../http/errors';
@@ -150,6 +152,13 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId } = scope.resolve(r, false);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return (await getCatalogSnapshot(db, merchantId, locationId)).receipt;
+    });
+
+    // The languages a store can offer on its customer screen (P18): drafts are listed but can't be offered.
+    s.get(`${p}/languages`, async (r) => {
+      scope.resolve(r, false);
+      const statuses = await languageStatuses(db);
+      return { languages: LANGUAGES.map((l) => ({ ...l, status: statuses[l.code] })) };
     });
 
     s.put(`${p}/locations/:locationId/receipt`, async (r) => {

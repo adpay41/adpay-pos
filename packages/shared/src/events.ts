@@ -10,6 +10,7 @@
  * Money fields end in `_cents` and are integers; rates end in `_ppm` and are integers.
  */
 import { z } from 'zod';
+import { LangSchema } from './i18n';
 import { Uuid } from './tenancy';
 
 export const EVENT_SCHEMA_VERSION = 1;
@@ -123,6 +124,10 @@ const SaleCompleted = z.strictObject({
   subtotal_cents: CentsSchema,
   tax_cents: CentsSchema,
   total_cents: CentsSchema,
+  /** The customer screen's language at payment (P18): the receipt prints in it. Absent = English. */
+  language: LangSchema.optional(),
+  /** Random id for the digital receipt link (P18); unguessable, never derived from the sale id. */
+  receipt_token: Uuid.optional(),
 });
 
 const SaleVoided = z.strictObject({

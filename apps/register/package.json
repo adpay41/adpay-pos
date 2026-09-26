@@ -28,12 +28,14 @@
     "expo-image-picker": "~57.0.0",
     "expo-sqlite": "~57.0.3",
     "expo-status-bar": "~57.0.1",
+    "qrcode": "^1.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-web": "~0.21.0"
   },
   "devDependencies": {
+    "@types/qrcode": "^1.5.5",
     "@types/react": "~19.2.2",
     "typescript": "~5.9.3",
     "vitest": "^5.0.1"

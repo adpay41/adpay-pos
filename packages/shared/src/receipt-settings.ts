@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import { parseRegisterEvent } from './events';
+import { LangSchema } from './i18n';
 import { foldSale, type FoldedSale } from './fold';
 import { cents } from './money';
 import { deriveCardPrice } from './pricing';
@@ -20,7 +21,7 @@ export const ReceiptSettingsInput = z.strictObject({
   footer: z.string().trim().max(96).default('Thank you!'),
   /**
    * A QR code at the bottom. `link` = a URL the store chooses (review page, Instagram, website).
-   * A QR to a digital copy of the receipt needs public hosting (Bible N, build plan P18 ⛔).
+   * A QR to a digital copy of the receipt is `digital_receipt` below (P18).
    */
   qr: z
     .strictObject({ kind: z.literal('link'), url: z.url().max(300), caption: z.string().trim().max(48).default('Scan me') })
@@ -31,6 +32,15 @@ export const ReceiptSettingsInput = z.strictObject({
    * Bible's zero-tap sale: tap Exact and the register is ready for the next customer.
    */
   after_sale: z.enum(['ask', 'print', 'none']).default('ask'),
+  /**
+   * Languages the customer can pick on the customer screen (P18). English is always offered; a
+   * language an admin keeps as a draft is dropped from what the register gets.
+   */
+  languages: z.array(LangSchema).max(9).default(['en', 'es']),
+  /** Each sale starts in this language on the customer screen. */
+  default_language: LangSchema.default('en'),
+  /** A QR to a digital copy on the receipt and on the customer screen after paying (P18). */
+  digital_receipt: z.boolean().default(true),
 });
 export type ReceiptSettings = z.infer<typeof ReceiptSettingsInput>;
 
