@@ -22,6 +22,7 @@ import { randomUUID } from 'node:crypto';
 import type { AdminPrincipal } from '../auth/principal';
 import type { Db, Queryable } from '../db/db';
 import { badRequest, notFound } from '../http/errors';
+import { assignByReferralCode } from './agents';
 import { audit } from './audit';
 import { bumpCatalogVersion } from './catalog-write';
 import { createLocation, createMerchant, createOrg, createRegister, issueSetupCode } from './onboarding';
@@ -90,6 +91,7 @@ export async function onboardMerchant(db: Db, actor: AdminPrincipal, input: Onbo
        ON CONFLICT (merchant_id) DO UPDATE SET install_date = EXCLUDED.install_date, hardware_note = EXCLUDED.hardware_note, created_by = EXCLUDED.created_by`,
       [m.merchant_id, orgId, input.install_date, input.hardware_note, actor.user_id],
     );
+    if (input.referral_code) await assignByReferralCode(q, actor, m.merchant_id, input.referral_code, traceId);
     await bumpCatalogVersion(q, m.merchant_id);
     await audit(q, {
       actor,

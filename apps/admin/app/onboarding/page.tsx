@@ -167,6 +167,7 @@ function Wizard({ onCancel, onDone }: { onCancel: () => void; onDone: (r: Onboar
     registers: '1',
     installDate: '',
     hardware: '',
+    referral: '',
   });
   const set = (patch: Partial<typeof f>) => setF((p) => ({ ...p, ...patch }));
   const [error, setError] = useState<unknown>(null);
@@ -200,6 +201,7 @@ function Wizard({ onCancel, onDone }: { onCancel: () => void; onDone: (r: Onboar
           pricing,
           install_date: f.installDate || null,
           hardware_note: f.hardware.trim() || null,
+          referral_code: f.referral.trim() || null,
         }),
       };
     } catch (e) {
@@ -413,6 +415,10 @@ function Wizard({ onCancel, onDone }: { onCancel: () => void; onDone: (r: Onboar
           <label className="field span2">
             Hardware order <span className="muted">— ordered outside the system; note what and the tracking number</span>
             <textarea rows={2} value={f.hardware} onChange={(e) => set({ hardware: e.target.value })} maxLength={500} />
+          </label>
+          <label className="field">
+            Referral code <span className="muted">— the agent or partner who brought the store (Agents)</span>
+            <input value={f.referral} onChange={(e) => set({ referral: e.target.value.toUpperCase() })} maxLength={12} placeholder="optional" />
           </label>
           <div className="span2">
             <span className="pill warn">KYB: not started</span>{' '}
