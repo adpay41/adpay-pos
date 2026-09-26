@@ -1,5 +1,6 @@
 import { loadConfig } from './config';
 import { createPgDb } from './db/db';
+import { createMessageSender } from './messaging/sender';
 import { migrate } from './db/migrate';
 import { createBaseLogger, systemLogger } from './http/context';
 import { startJobs, type Jobs } from './jobs/maintenance';
@@ -23,7 +24,8 @@ if (config.redisUrl) {
 }
 
 const payments = createPaymentProvider(config.paymentProvider);
-const app = await buildApp({ db, config, payments, logger, jobsHealthy: jobs ? () => jobs.healthy() : undefined });
+const messages = createMessageSender(config.messageProvider, logger);
+const app = await buildApp({ db, config, payments, logger, messages, jobsHealthy: jobs ? () => jobs.healthy() : undefined });
 
 await app.listen({ port: config.port, host: '0.0.0.0' });
 log.info({ port: config.port, payment_provider: payments.name }, 'AD Pay API listening');

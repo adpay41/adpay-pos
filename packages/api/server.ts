@@ -15,6 +15,7 @@ import { deviceRoutes } from './routes/device';
 import { merchantRoutes } from './routes/merchant';
 import { opsRoutes } from './routes/ops';
 import { publicRoutes } from './routes/public';
+import type { MessageSender } from './messaging/sender';
 import { RealtimeHub } from './realtime/hub';
 import { staffRoutes } from './routes/staff';
 
@@ -23,6 +24,8 @@ export interface AppDeps {
   config: Config;
   payments: PaymentProvider;
   logger: pino.Logger;
+  /** Texts and emails (P18b). Absent = the local log sender, which delivers nothing. */
+  messages?: MessageSender;
   /** Reports Redis/job health; absent when running without Redis (tests). */
   jobsHealthy?: (() => Promise<boolean>) | undefined;
 }

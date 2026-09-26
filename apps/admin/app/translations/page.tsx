@@ -20,11 +20,14 @@ interface LanguageRow {
   review_note: string | null;
   translated: number;
   total: number;
+  cashier_translated: number;
+  cashier_total: number;
   overrides: number;
   locations_asking: number | null;
 }
 interface StringRow {
   key: string;
+  area: 'customer' | 'receipt' | 'cashier';
   english: string;
   built_in: string | null;
   override: string | null;
@@ -64,7 +67,8 @@ export default function TranslationsPage() {
             <tr>
               <th>Language</th>
               <th>Status</th>
-              <th className="num">Translated</th>
+              <th className="num">Customer &amp; receipt</th>
+              <th className="num">Register (cashier)</th>
               <th className="num">Corrections</th>
               <th className="num">Stores asking</th>
               <th />
@@ -88,6 +92,9 @@ export default function TranslationsPage() {
                 </td>
                 <td className="num">
                   {l.translated}/{l.total}
+                </td>
+                <td className="num">
+                  {l.cashier_translated}/{l.cashier_total}
                 </td>
                 <td className="num">{l.overrides || ''}</td>
                 <td className="num">{l.locations_asking ?? 'all'}</td>
@@ -124,13 +131,17 @@ export default function TranslationsPage() {
 function StringsEditor({ lang, onChanged }: { lang: Lang; onChanged: () => void }) {
   const s = useLoad(() => api<{ strings: StringRow[] }>(`/admin/translations/${lang}`), [lang]);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  // Customer screen and receipt first; the register's cashier strings are many, so they filter.
+  const [area, setArea] = useState<'customer' | 'cashier'>('customer');
+  const [onlyMissing, setOnlyMissing] = useState(false);
+  const rows = (s.data?.strings ?? []).filter((r) => (area === 'cashier' ? r.area === 'cashier' : r.area !== 'cashier') && (!onlyMissing || (!r.built_in && !r.override)));
   const [error, setError] = useState<unknown>(null);
   const dir = isRtl(lang) ? 'rtl' : 'ltr';
 
   async function save(key: string, text: string | null) {
     setError(null);
     try {
-      await api(`/admin/translations/${lang}/strings/${key}`, { method: 'PUT', body: { text } });
+      await api(`/admin/translations/${lang}/strings`, { method: 'PUT', body: { key, text } });
       setDraft((d) => {
         const { [key]: _gone, ...rest } = d;
         return rest;
@@ -147,6 +158,17 @@ function StringsEditor({ lang, onChanged }: { lang: Lang; onChanged: () => void 
       <p className="muted tiny">
         Keep every {'{placeholder}'} from the English: it’s where the amount or number goes. Receipt strings (r_…) print on 48-column paper, so keep them short.
       </p>
+      <div className="actions-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <button className={area === 'customer' ? 'primary' : undefined} onClick={() => setArea('customer')}>
+          Customer screen &amp; receipt
+        </button>
+        <button className={area === 'cashier' ? 'primary' : undefined} onClick={() => setArea('cashier')}>
+          Register (cashier)
+        </button>
+        <label className="check">
+          <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} /> Only untranslated
+        </label>
+      </div>
       <ErrorBox error={s.error ?? error} />
       <div className="table-wrap">
         <table>
@@ -159,11 +181,11 @@ function StringsEditor({ lang, onChanged }: { lang: Lang; onChanged: () => void 
             </tr>
           </thead>
           <tbody>
-            {s.data?.strings.map((r) => {
+            {rows.map((r) => {
               const value = draft[r.key] ?? r.override ?? '';
               return (
                 <tr key={r.key}>
-                  <td className="tiny muted">{r.key.startsWith('r_') ? 'Receipt' : 'Customer screen'}</td>
+                  <td className="tiny muted">{r.area === 'receipt' ? 'Receipt' : r.area === 'customer' ? 'Customer screen' : 'Register'}</td>
                   <td>{r.english}</td>
                   <td lang={lang} dir={dir}>
                     {r.override ?? r.built_in ?? <span className="muted">(English)</span>}

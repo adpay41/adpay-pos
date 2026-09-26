@@ -57,8 +57,9 @@ export const EN = {
   r_digital: 'Scan for a digital copy',
 } as const;
 
-export type MessageKey = keyof typeof EN;
-export type Messages = Partial<Record<MessageKey, string>>;
+/** Customer screen and receipt keys. The cashier's keys are in i18n-cashier.ts. */
+export type CustomerKey = keyof typeof EN;
+type Messages = Partial<Record<CustomerKey, string>>;
 
 const es: Messages = {
   welcome: 'Bienvenido',

@@ -7,9 +7,12 @@ import { PERMISSIONS, type Permission, type RegisterStaffMember } from '@adpay/s
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { PinError, type StaffGate } from '../core/staff';
+import { tk, useT } from './i18n';
+import { LanguageButton } from './LanguageUI';
 import { C } from './theme';
 
-const ROLE_LABEL = { owner: 'Owner', manager: 'Manager', cashier: 'Cashier' } as const;
+const ROLE_LABEL = { owner: tk('Owner'), manager: tk('Manager'), cashier: tk('Cashier') } as const;
+const ENTER = 'Enter';
 
 function initials(name: string) {
   return name
@@ -21,19 +24,20 @@ function initials(name: string) {
 }
 
 function PeopleGrid({ people, onPick, lockedFor }: { people: RegisterStaffMember[]; onPick: (m: RegisterStaffMember) => void; lockedFor: (id: string) => number }) {
+  const t = useT();
   return (
     <View style={s.people}>
       {people.map((m) => {
         const locked = lockedFor(m.user_id) > 0;
         return (
-          <Pressable key={m.user_id} onPress={() => onPick(m)} style={[s.person, locked && { opacity: 0.45 }]} accessibilityRole="button" accessibilityLabel={`${m.name}, ${ROLE_LABEL[m.role]}`}>
+          <Pressable key={m.user_id} onPress={() => onPick(m)} style={[s.person, locked && { opacity: 0.45 }]} accessibilityRole="button" accessibilityLabel={`${m.name}, ${t(ROLE_LABEL[m.role])}`}>
             <View style={s.avatar}>
               <Text style={s.avatarText}>{initials(m.name)}</Text>
             </View>
             <Text style={s.personName} numberOfLines={1}>
               {m.name}
             </Text>
-            <Text style={s.personRole}>{locked ? 'locked' : ROLE_LABEL[m.role]}</Text>
+            <Text style={s.personRole}>{locked ? t('locked') : t(ROLE_LABEL[m.role])}</Text>
           </Pressable>
         );
       })}
@@ -43,6 +47,7 @@ function PeopleGrid({ people, onPick, lockedFor }: { people: RegisterStaffMember
 
 /** Masked PIN entry with a 0–9 keypad. Calls `onSubmit` with the digits; shows its error. */
 export function PinPad({ title, subtitle, onSubmit, onBack }: { title: string; subtitle?: string; onSubmit: (pin: string) => Promise<void>; onBack: () => void }) {
+  const t = useT();
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,7 +61,7 @@ export function PinPad({ title, subtitle, onSubmit, onBack }: { title: string; s
     try {
       await onSubmit(pin);
     } catch (e) {
-      setError(e instanceof PinError || e instanceof Error ? e.message : 'Try again');
+      setError(e instanceof PinError || e instanceof Error ? e.message : t('Try again'));
       setPin('');
     } finally {
       setBusy(false);
@@ -66,26 +71,26 @@ export function PinPad({ title, subtitle, onSubmit, onBack }: { title: string; s
     <View style={s.padWrap}>
       <Text style={s.padTitle}>{title}</Text>
       {subtitle ? <Text style={s.muted}>{subtitle}</Text> : null}
-      <View style={s.dots} accessibilityLabel={`${pin.length} digits entered`}>
+      <View style={s.dots} accessibilityLabel={t('{count} digits entered', { count: pin.length })}>
         {Array.from({ length: Math.max(4, pin.length) }, (_, i) => (
           <View key={i} style={[s.dot, i < pin.length && s.dotOn]} />
         ))}
       </View>
       {error ? <Text style={s.error}>{error}</Text> : <Text style={s.errorSpace}> </Text>}
       <View style={s.keys}>
-        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'Enter'].map((k) => (
+        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', ENTER].map((k) => (
           <Pressable
             key={k}
-            onPress={() => (k === 'Enter' ? void enter() : press(k))}
-            style={[s.key, k === 'Enter' && s.enter, k === 'Enter' && (pin.length < 4 || busy) && { opacity: 0.4 }]}
-            accessibilityLabel={k === '⌫' ? 'Delete' : k}
+            onPress={() => (k === ENTER ? void enter() : press(k))}
+            style={[s.key, k === ENTER && s.enter, k === ENTER && (pin.length < 4 || busy) && { opacity: 0.4 }]}
+            accessibilityLabel={k === '⌫' ? t('Delete') : k === ENTER ? t('Enter') : k}
           >
-            <Text style={[s.keyText, k === 'Enter' && { color: '#fff', fontSize: 18 }]}>{k}</Text>
+            <Text style={[s.keyText, k === ENTER && { color: '#fff', fontSize: 18 }]}>{k === ENTER ? t('Enter') : k}</Text>
           </Pressable>
         ))}
       </View>
       <Pressable onPress={onBack} style={s.back}>
-        <Text style={s.muted}>‹ Back</Text>
+        <Text style={s.muted}>{t('‹ Back')}</Text>
       </Pressable>
     </View>
   );
@@ -93,6 +98,7 @@ export function PinPad({ title, subtitle, onSubmit, onBack }: { title: string; s
 
 /** Full-screen "who's working?" shown whenever nobody is signed in. */
 export function SignInScreen({ gate, storeName }: { gate: StaffGate; storeName: string }) {
+  const t = useT();
   const [who, setWho] = useState<RegisterStaffMember | null>(null);
   return (
     <View style={s.screen}>
@@ -100,9 +106,11 @@ export function SignInScreen({ gate, storeName }: { gate: StaffGate; storeName: 
         <Text style={s.mark}> AD </Text> Pay
       </Text>
       <Text style={s.store}>{storeName}</Text>
+      {/* Each cashier's language (P18b): pick before signing in; it's remembered for them on this register. */}
+      <LanguageButton />
       {!who ? (
         <>
-          <Text style={s.h1}>Who’s working?</Text>
+          <Text style={s.h1}>{t('Who’s working?')}</Text>
           <PeopleGrid
             people={gate.members()}
             lockedFor={(id) => gate.lockedFor(id)}
@@ -110,7 +118,7 @@ export function SignInScreen({ gate, storeName }: { gate: StaffGate; storeName: 
           />
         </>
       ) : (
-        <PinPad title={`Hi ${who.name.split(' ')[0]} — enter your PIN`} onBack={() => setWho(null)} onSubmit={async (pin) => void (await gate.signIn(who.user_id, pin))} />
+        <PinPad title={t('Hi {name} — enter your PIN', { name: who.name.split(' ')[0]! })} onBack={() => setWho(null)} onSubmit={async (pin) => void (await gate.signIn(who.user_id, pin))} />
       )}
     </View>
   );
@@ -133,33 +141,34 @@ export function OverridePrompt({
   onApproved: () => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const approvers = gate.approvers(permission);
   const [who, setWho] = useState<RegisterStaffMember | null>(approvers.length === 1 ? approvers[0]! : null);
   const label = PERMISSIONS[permission].label;
   if (approvers.length === 0) {
     return (
       <View style={{ gap: 10 }}>
-        <Text style={s.padTitle}>Needs approval: {label}</Text>
-        <Text style={s.muted}>Nobody set up on this register can approve this. The owner can change who may do it in the merchant app (Staff → Permissions).</Text>
+        <Text style={s.padTitle}>{t('Needs approval: {permission}', { permission: t(label) })}</Text>
+        <Text style={s.muted}>{t('Nobody set up on this register can approve this. The owner can change who may do it in the merchant app (Staff → Permissions).')}</Text>
         <Pressable onPress={onCancel} style={s.back}>
-          <Text style={s.muted}>OK</Text>
+          <Text style={s.muted}>{t('OK')}</Text>
         </Pressable>
       </View>
     );
   }
   return !who ? (
     <View style={{ gap: 10 }}>
-      <Text style={s.padTitle}>Manager approval: {label}</Text>
-      <Text style={s.muted}>Who’s approving?</Text>
+      <Text style={s.padTitle}>{t('Manager approval: {permission}', { permission: t(label) })}</Text>
+      <Text style={s.muted}>{t('Who’s approving?')}</Text>
       <PeopleGrid people={approvers} lockedFor={(id) => gate.lockedFor(id)} onPick={setWho} />
       <Pressable onPress={onCancel} style={s.back}>
-        <Text style={s.muted}>Cancel</Text>
+        <Text style={s.muted}>{t('Cancel')}</Text>
       </Pressable>
     </View>
   ) : (
     <PinPad
-      title={`${who.name}: approve “${label}”`}
-      subtitle="Enter your PIN"
+      title={t('{name}: approve “{permission}”', { name: who.name, permission: t(label) })}
+      subtitle={t('Enter your PIN')}
       onBack={() => (approvers.length === 1 ? onCancel() : setWho(null))}
       onSubmit={async (pin) => {
         await gate.override(permission, who.user_id, pin, saleId);

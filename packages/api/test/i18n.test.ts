@@ -3,7 +3,7 @@
  * management (status with reviewer, overrides with placeholder check, catalog bump), and the public
  * digital receipt page by token. Real Postgres in CI.
  */
-import { MESSAGE_KEYS, type CatalogSnapshot } from '@adpay/shared';
+import { CUSTOMER_KEYS, type CatalogSnapshot } from '@adpay/shared';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -50,7 +50,7 @@ describe('languages in the snapshot', () => {
     const before = (await snapshot()).catalog_version;
     const res = await app.inject({ method: 'PUT', url: '/admin/translations/gu/status', headers: auth(admin), payload: { status: 'reviewed', note: 'Checked by a fluent speaker' } });
     expect(res.statusCode).toBe(200);
-    expect(res.json().languages.find((l: { code: string }) => l.code === 'gu')).toMatchObject({ status: 'reviewed', reviewed_by: 'Test Admin', translated: MESSAGE_KEYS.length, total: MESSAGE_KEYS.length, locations_asking: 1 });
+    expect(res.json().languages.find((l: { code: string }) => l.code === 'gu')).toMatchObject({ status: 'reviewed', reviewed_by: 'Test Admin', translated: CUSTOMER_KEYS.length, total: CUSTOMER_KEYS.length, locations_asking: 1 });
     const snap = await snapshot();
     expect(snap.catalog_version).toBeGreaterThan(before);
     expect(snap.i18n).toMatchObject({ offered: ['en', 'es', 'zh', 'gu'], default: 'gu' });
@@ -63,16 +63,26 @@ describe('languages in the snapshot', () => {
 
 describe('translation overrides', () => {
   it('an override reaches registers that offer the language; placeholders must survive', async () => {
-    const bad = await app.inject({ method: 'PUT', url: '/admin/translations/es/strings/r_each', headers: auth(admin), payload: { text: '@ cada uno' } });
+    const bad = await app.inject({ method: 'PUT', url: '/admin/translations/es/strings', headers: auth(admin), payload: { key: 'r_each', text: '@ cada uno' } });
     expect(bad.statusCode).toBe(400);
     expect(bad.json().message).toContain('{price}');
 
-    const ok = await app.inject({ method: 'PUT', url: '/admin/translations/es/strings/thanks', headers: auth(admin), payload: { text: '¡Mil gracias!' } });
+    const ok = await app.inject({ method: 'PUT', url: '/admin/translations/es/strings', headers: auth(admin), payload: { key: 'thanks', text: '¡Mil gracias!' } });
     expect(ok.json().strings.find((s: { key: string }) => s.key === 'thanks')).toMatchObject({ english: 'Thank you!', built_in: '¡Gracias!', override: '¡Mil gracias!' });
     expect((await snapshot()).i18n?.overrides).toEqual({ es: { thanks: '¡Mil gracias!' } });
 
-    await app.inject({ method: 'PUT', url: '/admin/translations/es/strings/thanks', headers: auth(admin), payload: { text: null } });
+    await app.inject({ method: 'PUT', url: '/admin/translations/es/strings', headers: auth(admin), payload: { key: 'thanks', text: null } });
     expect((await snapshot()).i18n?.overrides).toEqual({});
+  });
+
+  it('a cashier string (its English is the key) can be corrected; an unknown key is refused', async () => {
+    const put = (payload: object) => app.inject({ method: 'PUT', url: '/admin/translations/ko/strings', headers: auth(admin), payload });
+    const ok = await put({ key: 'Void ticket', text: '티켓 취소' });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().strings.find((s: { key: string }) => s.key === 'Void ticket')).toMatchObject({ area: 'cashier', english: 'Void ticket', built_in: null, override: '티켓 취소' });
+    expect((await snapshot()).i18n).toMatchObject({ cashier: ['en', 'es', 'zh', 'ko', 'ar', 'hi', 'gu'], overrides: { ko: { 'Void ticket': '티켓 취소' } } });
+    expect((await put({ key: 'Not a string we have', text: 'x' })).statusCode).toBe(400);
+    await put({ key: 'Void ticket', text: null });
   });
 
   it('is admin-only', async () => {

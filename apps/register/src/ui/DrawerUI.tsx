@@ -4,7 +4,7 @@
  * and the blind close. The cashier enters the count before seeing what was expected. Over/short is
  * shown after, never in red (amber for short, black for over).
  */
-import { CASH_MOVEMENT_KINDS, DENOMINATIONS, cents, denominationTotal, formatUsd, type CashMovementKind, type Cents, type DrawerSession, type Permission } from '@adpay/shared';
+import { CASH_MOVEMENT_KINDS, DENOMINATIONS, cents, denominationTotal, formatUsd, type CashierKey, type CashMovementKind, type Cents, type DrawerSession, type Permission } from '@adpay/shared';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { DrawerManager } from '../core/drawer';
@@ -12,12 +12,21 @@ import type { StaffGate } from '../core/staff';
 import { takeCountPhoto } from './countPhoto';
 import { NumberPad } from './SpeedUI';
 import { OverridePrompt } from './StaffUI';
+import { storedText, tk, useT } from './i18n';
 import { C, usd } from './theme';
 
-const REASONS: Record<CashMovementKind, string[]> = {
-  drop: ['Safe drop'],
-  paid_out: ['Vendor delivery', 'Store supplies', 'Lottery payout', 'Other'],
-  paid_in: ['Change from bank', 'Owner added cash', 'Other'],
+// Stored in the drawer.cash_movement event in English; translated only where shown.
+const REASONS: Record<CashMovementKind, CashierKey[]> = {
+  drop: [tk('Safe drop')],
+  paid_out: [tk('Vendor delivery'), tk('Store supplies'), tk('Lottery payout'), tk('Other')],
+  paid_in: [tk('Change from bank'), tk('Owner added cash'), tk('Other')],
+};
+// The cashier-facing names of CASH_MOVEMENT_KINDS (same English as its label / hint).
+const KIND_LABEL: Record<CashMovementKind, CashierKey> = { drop: tk('Safe drop'), paid_out: tk('Paid out'), paid_in: tk('Paid in') };
+const KIND_HINT: Record<CashMovementKind, CashierKey> = {
+  drop: tk('Cash from the drawer into the safe'),
+  paid_out: tk('Cash paid from the drawer, e.g. a vendor delivery'),
+  paid_in: tk('Cash put into the drawer, e.g. change from the bank'),
 };
 const PERMISSION: Record<CashMovementKind, Permission> = { drop: 'cash.drop', paid_out: 'cash.paid_out', paid_in: 'cash.paid_out' };
 
@@ -58,9 +67,10 @@ export function DrawerPanel({
   onStarted?: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [step, setStep] = useState<Step>(startWithFloat ? { kind: 'float' } : startWithCounterfeit ? { kind: 'counterfeit' } : { kind: 'home' });
   const [error, setError] = useState<string | null>(null);
-  const name = (id: string | null) => staff.members().find((m) => m.user_id === id)?.name ?? 'someone';
+  const name = (id: string | null) => staff.members().find((m) => m.user_id === id)?.name ?? t('someone');
   // Only people who may see sales figures see what the drawer should hold; everyone else counts blind.
   const seesExpected = staff.can('reports.view');
 
@@ -94,11 +104,11 @@ export function DrawerPanel({
   if (step.kind === 'float') {
     return (
       <NumberPad
-        title="Count the starting cash"
-        subtitle="What’s in the drawer before the first sale (the float)."
+        title={t('Count the starting cash')}
+        subtitle={t('What’s in the drawer before the first sale (the float).')}
         money
         max={10_000_00}
-        confirmLabel={(c) => `Start drawer with ${usd(c)}`}
+        confirmLabel={(c) => t('Start drawer with {amount}', { amount: usd(c) })}
         onCancel={startWithFloat ? onClose : () => setStep({ kind: 'home' })}
         onConfirm={(c) =>
           void run(async () => {
@@ -111,14 +121,13 @@ export function DrawerPanel({
     );
   }
   if (step.kind === 'amount') {
-    const k = CASH_MOVEMENT_KINDS[step.move];
     return (
       <NumberPad
-        title={k.label}
-        subtitle={k.hint}
+        title={t(KIND_LABEL[step.move])}
+        subtitle={t(KIND_HINT[step.move])}
         money
         max={10_000_00}
-        confirmLabel={(c) => `Next — ${usd(c)}`}
+        confirmLabel={(c) => t('Next — {amount}', { amount: usd(c) })}
         onCancel={() => setStep({ kind: 'home' })}
         onConfirm={(c) => setStep({ kind: 'reason', move: step.move, amount: c as Cents })}
       />
@@ -166,14 +175,14 @@ export function DrawerPanel({
     const os = step.session.over_short_cents ?? 0;
     return (
       <View style={{ gap: 10 }}>
-        <Text style={s.title}>Drawer closed</Text>
-        <Row label="Counted" value={usd(step.session.counted_cents ?? 0)} />
-        <Row label="Expected" value={usd(step.session.expected_cents)} />
+        <Text style={s.title}>{t('Drawer closed')}</Text>
+        <Row label={t('Counted')} value={usd(step.session.counted_cents ?? 0)} />
+        <Row label={t('Expected')} value={usd(step.session.expected_cents)} />
         <Text style={[s.result, os < 0 ? s.short : s.even]}>
-          {os === 0 ? 'Right on the money.' : os < 0 ? `Short ${formatUsd((-os) as Cents)}` : `Over ${usd(os)}`}
+          {os === 0 ? t('Right on the money.') : os < 0 ? t('Short {amount}', { amount: formatUsd((-os) as Cents) }) : t('Over {amount}', { amount: usd(os) })}
         </Text>
-        <Text style={s.muted}>Recorded for {name(step.session.closed_by)}. The owner sees this in the merchant app.</Text>
-        {step.session.handover ? <Text style={s.body}>Handed over: the next shift starts with {usd(step.session.counted_cents ?? 0)} in the drawer. Next cashier, sign in.</Text> : null}
+        <Text style={s.muted}>{t('Recorded for {name}. The owner sees this in the merchant app.', { name: name(step.session.closed_by) })}</Text>
+        {step.session.handover ? <Text style={s.body}>{t('Handed over: the next shift starts with {amount} in the drawer. Next cashier, sign in.', { amount: usd(step.session.counted_cents ?? 0) })}</Text> : null}
         <Pressable
           style={s.primary}
           onPress={() => {
@@ -181,7 +190,7 @@ export function DrawerPanel({
             onClose();
           }}
         >
-          <Text style={s.primaryText}>Done</Text>
+          <Text style={s.primaryText}>{t('Done')}</Text>
         </Pressable>
       </View>
     );
@@ -190,31 +199,35 @@ export function DrawerPanel({
   // Home
   return (
     <View style={{ gap: 10 }}>
-      <Text style={s.title}>Drawer</Text>
+      <Text style={s.title}>{t('Drawer')}</Text>
       {!session ? (
         <>
-          <Text style={s.body}>The drawer isn’t started. Count the starting cash to begin taking cash.</Text>
+          <Text style={s.body}>{t('The drawer isn’t started. Count the starting cash to begin taking cash.')}</Text>
           <Pressable style={s.primary} onPress={() => setStep({ kind: 'float' })}>
-            <Text style={s.primaryText}>Start drawer</Text>
+            <Text style={s.primaryText}>{t('Start drawer')}</Text>
           </Pressable>
         </>
       ) : (
         <>
           <Text style={s.muted}>
-            Started {new Date(session.opened_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} by {name(session.opened_by)} with {usd(session.float_cents)}
+            {t('Started {time} by {name} with {amount}', {
+              time: new Date(session.opened_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+              name: name(session.opened_by),
+              amount: usd(session.float_cents),
+            })}
           </Text>
           <View style={s.grid}>
-            <Stat label="Cash sales" value={`${session.cash_sale_count}`} />
-            <Stat label="Drops" value={usd(session.drops_cents)} />
-            <Stat label="Paid out" value={usd(session.paid_out_cents)} />
-            <Stat label="Paid in" value={usd(session.paid_in_cents)} />
-            {seesExpected ? <Stat label="Should hold" value={usd(session.expected_cents)} /> : null}
+            <Stat label={t('Cash sales')} value={`${session.cash_sale_count}`} />
+            <Stat label={t('Drops')} value={usd(session.drops_cents)} />
+            <Stat label={t('Paid out')} value={usd(session.paid_out_cents)} />
+            <Stat label={t('Paid in')} value={usd(session.paid_in_cents)} />
+            {seesExpected ? <Stat label={t('Should hold')} value={usd(session.expected_cents)} /> : null}
           </View>
           {session.movements.length ? (
             <View>
               {session.movements.slice(-4).map((m) => (
                 <Text key={m.movement_id} style={s.muted}>
-                  {CASH_MOVEMENT_KINDS[m.kind].label} {usd(m.amount_cents)} — {m.reason}
+                  {t(KIND_LABEL[m.kind])} {usd(m.amount_cents)} — {t(storedText(m.reason))}
                 </Text>
               ))}
             </View>
@@ -222,11 +235,11 @@ export function DrawerPanel({
           <View style={s.row}>
             {(Object.keys(CASH_MOVEMENT_KINDS) as CashMovementKind[]).map((k) => (
               <Pressable key={k} style={s.ghost} onPress={() => guarded(PERMISSION[k], async () => setStep({ kind: 'amount', move: k }))}>
-                <Text>{CASH_MOVEMENT_KINDS[k].label}</Text>
+                <Text>{t(KIND_LABEL[k])}</Text>
               </Pressable>
             ))}
             <Pressable style={s.ghost} onPress={() => setStep({ kind: 'counterfeit' })}>
-              <Text>Counterfeit bill</Text>
+              <Text>{t('Counterfeit bill')}</Text>
             </Pressable>
             <Pressable
               style={s.ghost}
@@ -237,23 +250,24 @@ export function DrawerPanel({
                 })
               }
             >
-              <Text>No sale</Text>
+              <Text>{t('No sale')}</Text>
             </Pressable>
           </View>
           <Pressable style={s.primary} onPress={() => setStep({ kind: 'count' })}>
-            <Text style={s.primaryText}>Close & count drawer</Text>
+            <Text style={s.primaryText}>{t('Close & count drawer')}</Text>
           </Pressable>
         </>
       )}
       {error ? <Text style={s.error}>{error}</Text> : null}
       <Pressable onPress={onClose} style={{ alignSelf: 'center', padding: 8 }}>
-        <Text style={s.muted}>Back to the sale</Text>
+        <Text style={s.muted}>{t('Back to the sale')}</Text>
       </Pressable>
     </View>
   );
 }
 
 function ReasonStep({ move, amount, error, onBack, onSave }: { move: CashMovementKind; amount: Cents; error: string | null; onBack: () => void; onSave: (reason: string, payee: string | null) => void }) {
+  const t = useT();
   const [reason, setReason] = useState(REASONS[move][0]!);
   const [other, setOther] = useState('');
   const [payee, setPayee] = useState('');
@@ -261,24 +275,24 @@ function ReasonStep({ move, amount, error, onBack, onSave }: { move: CashMovemen
   return (
     <View style={{ gap: 10 }}>
       <Text style={s.title}>
-        {CASH_MOVEMENT_KINDS[move].label} — {usd(amount)}
+        {t(KIND_LABEL[move])} — {usd(amount)}
       </Text>
       <View style={[s.row, { flexWrap: 'wrap' }]}>
         {REASONS[move].map((r) => (
           <Pressable key={r} onPress={() => setReason(r)} style={[s.chip, reason === r && s.chipOn]}>
-            <Text style={[s.chipText, reason === r && { color: '#fff' }]}>{r}</Text>
+            <Text style={[s.chipText, reason === r && { color: '#fff' }]}>{t(r)}</Text>
           </Pressable>
         ))}
       </View>
-      {reason === 'Other' ? <TextInput style={s.input} value={other} onChangeText={setOther} placeholder="What was it for?" maxLength={200} /> : null}
-      {move === 'paid_out' ? <TextInput style={s.input} value={payee} onChangeText={setPayee} placeholder="Paid to (e.g. Stella Bakery)" maxLength={120} /> : null}
+      {reason === 'Other' ? <TextInput style={s.input} value={other} onChangeText={setOther} placeholder={t('What was it for?')} maxLength={200} /> : null}
+      {move === 'paid_out' ? <TextInput style={s.input} value={payee} onChangeText={setPayee} placeholder={t('Paid to (e.g. Stella Bakery)')} maxLength={120} /> : null}
       {error ? <Text style={s.error}>{error}</Text> : null}
       <View style={s.row}>
         <Pressable style={s.ghost} onPress={onBack}>
-          <Text>Cancel</Text>
+          <Text>{t('Cancel')}</Text>
         </Pressable>
         <Pressable style={[s.primary, s.black, !text.trim() && s.disabled]} disabled={!text.trim()} onPress={() => onSave(text, move === 'paid_out' ? payee : null)}>
-          <Text style={s.primaryText}>Open drawer & record</Text>
+          <Text style={s.primaryText}>{t('Open drawer & record')}</Text>
         </Pressable>
       </View>
     </View>
@@ -300,6 +314,7 @@ function CountStep({
   onCancel: () => void;
   onClose: (counted: Cents, opts: { denominations: Record<string, number> | null; photo_media_id: string | null; handover: boolean }) => void;
 }) {
+  const t = useT();
   const [mode, setMode] = useState<'total' | 'denoms'>('total');
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [photo, setPhoto] = useState<{ id: string | null; busy: boolean; note: string | null }>({ id: null, busy: false, note: null });
@@ -313,9 +328,9 @@ function CountStep({
     try {
       const blob = await takeCountPhoto();
       if (!blob) return setPhoto({ id: null, busy: false, note: null });
-      setPhoto({ id: await uploadPhoto(blob), busy: false, note: 'Photo attached' });
+      setPhoto({ id: await uploadPhoto(blob), busy: false, note: t('Photo attached') });
     } catch (e) {
-      setPhoto({ id: null, busy: false, note: `No photo: ${(e as Error).message}` });
+      setPhoto({ id: null, busy: false, note: t('No photo: {error}', { error: (e as Error).message }) });
     }
   }
 
@@ -324,11 +339,11 @@ function CountStep({
       <View style={s.row}>
         {uploadPhoto ? (
           <Pressable style={s.ghost} onPress={() => void snap()} disabled={photo.busy}>
-            <Text>{photo.busy ? 'Uploading…' : photo.id ? '✓ Photo of count sheet' : 'Photo of count sheet'}</Text>
+            <Text>{photo.busy ? t('Uploading…') : photo.id ? t('✓ Photo of count sheet') : t('Photo of count sheet')}</Text>
           </Pressable>
         ) : null}
         <Pressable style={[s.ghost, handover && s.chipOn]} onPress={() => setHandover((h) => !h)}>
-          <Text style={handover ? { color: '#fff' } : undefined}>{handover ? '✓ Hand over to next cashier' : 'Hand over to next cashier'}</Text>
+          <Text style={handover ? { color: '#fff' } : undefined}>{handover ? t('✓ Hand over to next cashier') : t('Hand over to next cashier')}</Text>
         </Pressable>
       </View>
       {photo.note ? <Text style={s.muted}>{photo.note}</Text> : null}
@@ -341,18 +356,18 @@ function CountStep({
       <View style={s.row}>
         {(['total', 'denoms'] as const).map((m) => (
           <Pressable key={m} onPress={() => setMode(m)} style={[s.chip, mode === m && s.chipOn]}>
-            <Text style={[s.chipText, mode === m && { color: '#fff' }]}>{m === 'total' ? 'Enter the total' : 'Count bills & coins'}</Text>
+            <Text style={[s.chipText, mode === m && { color: '#fff' }]}>{m === 'total' ? t('Enter the total') : t('Count bills & coins')}</Text>
           </Pressable>
         ))}
       </View>
       {mode === 'total' ? (
         <>
           <NumberPad
-            title="Count the drawer"
-            subtitle="Count everything in the drawer and enter the total. You’ll see the result after."
+            title={t('Count the drawer')}
+            subtitle={t('Count everything in the drawer and enter the total. You’ll see the result after.')}
             money
             max={100_000_00}
-            confirmLabel={(c) => `Close with ${usd(c)} counted`}
+            confirmLabel={(c) => t('Close with {amount} counted', { amount: usd(c) })}
             onCancel={onCancel}
             onConfirm={(c) => onClose(c as Cents, { denominations: null, photo_media_id: photo.id, handover })}
           />
@@ -360,7 +375,7 @@ function CountStep({
         </>
       ) : (
         <>
-          <Text style={s.title}>Count bills & coins</Text>
+          <Text style={s.title}>{t('Count bills & coins')}</Text>
           <View style={s.grid}>
             {DENOMINATIONS.map((d) => (
               <View key={d.cents} style={s.denom}>
@@ -371,19 +386,19 @@ function CountStep({
                   onChangeText={(v) => setCounts((c) => ({ ...c, [String(d.cents)]: v.replace(/[^0-9]/g, '').slice(0, 5) }))}
                   keyboardType="number-pad"
                   placeholder="0"
-                  accessibilityLabel={`Number of ${d.label}`}
+                  accessibilityLabel={t('Number of {denomination}', { denomination: d.label })}
                 />
               </View>
             ))}
           </View>
-          <Text style={s.statValue}>Counted {usd(total)}</Text>
+          <Text style={s.statValue}>{t('Counted {amount}', { amount: usd(total) })}</Text>
           {extras}
           <View style={s.row}>
             <Pressable style={s.ghost} onPress={onCancel}>
-              <Text>Cancel</Text>
+              <Text>{t('Cancel')}</Text>
             </Pressable>
             <Pressable style={[s.primary, total <= 0 && s.disabled]} disabled={total <= 0} onPress={() => onClose(cents(total), { denominations: numeric, photo_media_id: photo.id, handover })}>
-              <Text style={s.primaryText}>Close with {usd(total)} counted</Text>
+              <Text style={s.primaryText}>{t('Close with {amount} counted', { amount: usd(total) })}</Text>
             </Pressable>
           </View>
         </>
@@ -394,13 +409,14 @@ function CountStep({
 
 /** Refuse a bill as counterfeit (P15, Bible 1.2): which note, an optional note; logged, drawer stays shut. */
 function CounterfeitStep({ error, onBack, onFlag }: { error: string | null; onBack: () => void; onFlag: (denominationCents: number, note: string | null) => void }) {
+  const t = useT();
   const bills = DENOMINATIONS.filter((d) => d.kind === 'bill' && d.cents !== 200);
   const [denom, setDenom] = useState(2_000);
   const [note, setNote] = useState('');
   return (
     <View style={{ gap: 10 }}>
-      <Text style={s.title}>Counterfeit bill</Text>
-      <Text style={s.body}>Don’t take it. Hand it back and ask for another payment. This logs which note, when and who, for the owner.</Text>
+      <Text style={s.title}>{t('Counterfeit bill')}</Text>
+      <Text style={s.body}>{t('Don’t take it. Hand it back and ask for another payment. This logs which note, when and who, for the owner.')}</Text>
       <View style={[s.row, { flexWrap: 'wrap' }]}>
         {bills.map((b) => (
           <Pressable key={b.cents} onPress={() => setDenom(b.cents)} style={[s.chip, denom === b.cents && s.chipOn]}>
@@ -408,14 +424,14 @@ function CounterfeitStep({ error, onBack, onFlag }: { error: string | null; onBa
           </Pressable>
         ))}
       </View>
-      <TextInput style={s.input} value={note} onChangeText={setNote} placeholder="Note (optional): what gave it away, the customer" maxLength={200} />
+      <TextInput style={s.input} value={note} onChangeText={setNote} placeholder={t('Note (optional): what gave it away, the customer')} maxLength={200} />
       {error ? <Text style={s.error}>{error}</Text> : null}
       <View style={s.row}>
         <Pressable style={s.ghost} onPress={onBack}>
-          <Text>Cancel</Text>
+          <Text>{t('Cancel')}</Text>
         </Pressable>
         <Pressable style={[s.primary, s.black]} onPress={() => onFlag(denom, note || null)}>
-          <Text style={s.primaryText}>Log refused bill</Text>
+          <Text style={s.primaryText}>{t('Log refused bill')}</Text>
         </Pressable>
       </View>
     </View>

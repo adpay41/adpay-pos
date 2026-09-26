@@ -6,6 +6,7 @@
 import { cents, deriveCardPrice, parseUsdToCents, sub, type CatalogCategory, type CatalogItem, type Cents } from '@adpay/shared';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useT } from './i18n';
 import { C, usd } from './theme';
 
 /** Digits keypad. `money` fills from the cents column; otherwise it's a whole number (quantity). */
@@ -31,6 +32,7 @@ export function NumberPad({
   onConfirm: (value: number) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [digits, setDigits] = useState(initial ? String(initial) : '');
   const value = digits ? Number(digits) : 0;
   const ok = value > 0 || (allowZero && digits !== '');
@@ -46,14 +48,14 @@ export function NumberPad({
       <Text style={s.value}>{money ? usd(value) : value}</Text>
       <View style={s.keypad}>
         {['1', '2', '3', '4', '5', '6', '7', '8', '9', money ? '00' : 'C', '0', '⌫'].map((k) => (
-          <Pressable key={k} style={s.key} onPress={() => (k === 'C' ? setDigits('') : press(k))} accessibilityLabel={k === '⌫' ? 'Delete' : k}>
+          <Pressable key={k} style={s.key} onPress={() => (k === 'C' ? setDigits('') : press(k))} accessibilityLabel={k === '⌫' ? t('Delete') : k}>
             <Text style={s.keyText}>{k}</Text>
           </Pressable>
         ))}
       </View>
       <View style={s.row}>
         <Pressable style={s.ghost} onPress={onCancel}>
-          <Text>Back</Text>
+          <Text>{t('Back')}</Text>
         </Pressable>
         {/* A money button is black: the brand never puts red next to a dollar amount. */}
         <Pressable style={[s.primary, money && s.moneyBtn, !ok && s.disabled]} disabled={!ok} onPress={() => onConfirm(value)}>
@@ -81,6 +83,7 @@ export function UnknownItemForm({
   onCreate: (v: { name: string; cash: Cents; category_id: string | null }) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [category, setCategory] = useState<string | null>(categories[0]?.category_id ?? null);
@@ -93,21 +96,25 @@ export function UnknownItemForm({
     }
   })();
   const submit = () => {
-    if (!name.trim()) return setError('Type what it is');
-    if (cash === null || cash <= 0) return setError('Type a price like 3.49');
+    if (!name.trim()) return setError(t('Type what it is'));
+    if (cash === null || cash <= 0) return setError(t('Type a price like 3.49'));
     onCreate({ name: name.trim(), cash, category_id: category });
   };
+  // One sentence for translators; split at {code} so the barcode keeps its monospace style.
+  const [beforeCode, afterCode = ''] = t('Barcode {code} isn’t in the catalog yet. Add it once, and it rings up on every register from now on.').split('{code}');
   return (
     <>
-      <Text style={s.title}>New item</Text>
+      <Text style={s.title}>{t('New item')}</Text>
       <Text style={s.muted}>
-        Barcode <Text style={s.mono}>{code}</Text> isn’t in the catalog yet. Add it once, and it rings up on every register from now on.
+        {beforeCode}
+        <Text style={s.mono}>{code}</Text>
+        {afterCode}
       </Text>
-      <TextInput style={s.input} value={name} onChangeText={setName} placeholder="What is it? e.g. Goya Adobo 8oz" autoFocus maxLength={120} />
+      <TextInput style={s.input} value={name} onChangeText={setName} placeholder={t('What is it? e.g. Goya Adobo 8oz')} autoFocus maxLength={120} />
       <View style={s.row}>
-        <TextInput style={[s.input, { flex: 1 }]} value={price} onChangeText={setPrice} placeholder="Cash price, e.g. 3.49" keyboardType="decimal-pad" onSubmitEditing={submit} />
+        <TextInput style={[s.input, { flex: 1 }]} value={price} onChangeText={setPrice} placeholder={t('Cash price, e.g. 3.49')} keyboardType="decimal-pad" onSubmitEditing={submit} />
         <View style={{ justifyContent: 'center' }}>
-          <Text style={s.muted}>{cash ? `card ${usd(deriveCardPrice(cash, dualRatePpm))}` : ' '}</Text>
+          <Text style={s.muted}>{cash ? t('card {amount}', { amount: usd(deriveCardPrice(cash, dualRatePpm)) }) : ' '}</Text>
         </View>
       </View>
       <View style={[s.row, { flexWrap: 'wrap' }]}>
@@ -123,10 +130,10 @@ export function UnknownItemForm({
       {error ? <Text style={s.error}>{error}</Text> : null}
       <View style={s.row}>
         <Pressable style={s.ghost} onPress={onCancel}>
-          <Text>Cancel</Text>
+          <Text>{t('Cancel')}</Text>
         </Pressable>
         <Pressable style={s.primary} onPress={submit}>
-          <Text style={s.primaryText}>Add & ring up</Text>
+          <Text style={s.primaryText}>{t('Add & ring up')}</Text>
         </Pressable>
       </View>
     </>
@@ -135,35 +142,36 @@ export function UnknownItemForm({
 
 /** Price check: scan without ringing (Bible 1.9). Cost and margin only for people allowed to see them. */
 export function PriceCheckCard({ item, showCost, onShowCost, onDone }: { item: CatalogItem; showCost: boolean; onShowCost: () => void; onDone: () => void }) {
+  const t = useT();
   const margin =
     item.cost_cents !== null && item.cash_price_cents > 0
       ? Math.trunc((sub(cents(item.cash_price_cents), cents(item.cost_cents)) * 1000) / item.cash_price_cents) / 10
       : null;
   return (
     <>
-      <Text style={s.muted}>Price check — not rung up</Text>
+      <Text style={s.muted}>{t('Price check — not rung up')}</Text>
       <Text style={s.title}>{item.name}</Text>
       <View style={s.row}>
         <View style={s.box}>
-          <Text style={s.boxLabel}>Cash</Text>
-          <Text style={s.boxValue}>{item.open_price ? 'open' : usd(item.cash_price_cents)}</Text>
+          <Text style={s.boxLabel}>{t('Cash')}</Text>
+          <Text style={s.boxValue}>{item.open_price ? t('open') : usd(item.cash_price_cents)}</Text>
         </View>
         <View style={s.box}>
-          <Text style={s.boxLabel}>Card</Text>
-          <Text style={s.boxValue}>{item.open_price ? 'open' : usd(item.card_price_cents)}</Text>
+          <Text style={s.boxLabel}>{t('Card')}</Text>
+          <Text style={s.boxValue}>{item.open_price ? t('open') : usd(item.card_price_cents)}</Text>
         </View>
       </View>
       {showCost ? (
         <Text style={s.body}>
-          {item.cost_cents === null ? 'No cost entered for this item.' : `Cost ${usd(item.cost_cents)} · margin ${margin}%`}
+          {item.cost_cents === null ? t('No cost entered for this item.') : t('Cost {cost} · margin {margin}%', { cost: usd(item.cost_cents), margin: String(margin) })}
         </Text>
       ) : (
         <Pressable style={s.ghost} onPress={onShowCost}>
-          <Text>Show cost and margin</Text>
+          <Text>{t('Show cost and margin')}</Text>
         </Pressable>
       )}
       <Pressable style={s.primary} onPress={onDone}>
-        <Text style={s.primaryText}>Done</Text>
+        <Text style={s.primaryText}>{t('Done')}</Text>
       </Pressable>
     </>
   );

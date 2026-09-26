@@ -99,6 +99,8 @@ export const TEST_CONFIG: Config = {
   devOtpCode: '123456',
   corsOrigins: [],
   paymentProvider: 'stub',
+  publicBaseUrl: 'http://api.test',
+  messageProvider: 'log',
 };
 
 export async function createTestApp(db: Db, overrides: Partial<Config> = {}): Promise<FastifyInstance> {

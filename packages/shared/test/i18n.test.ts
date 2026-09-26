@@ -6,7 +6,7 @@ import {
   EN,
   foldSale,
   LANG_CODES,
-  MESSAGE_KEYS,
+  CUSTOMER_KEYS,
   offeredLanguages,
   parseRegisterEvent,
   placeholdersMatch,
@@ -35,7 +35,7 @@ describe('message catalogs', () => {
   it('fills values, prefers overrides, and falls back to English', () => {
     expect(translate('es', 'r_each', { price: '$2.75' })).toBe('@ $2.75 c/u');
     expect(translate('es', 'thanks', undefined, { es: { thanks: '¡Mil gracias!' } })).toBe('¡Mil gracias!');
-    expect(coverage('ko', { ko: {} }).total).toBe(MESSAGE_KEYS.length);
+    expect(coverage('ko', { ko: {} }).total).toBe(CUSTOMER_KEYS.length);
   });
 
   it('a placeholder dropped by a translation is caught', () => {

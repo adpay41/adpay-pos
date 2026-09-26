@@ -117,9 +117,10 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     await setLanguageStatus(db, asAdmin(request), lang, body.status, body.note, request.logContext.trace_id);
     return translationsOverview(db);
   });
-  app.put('/admin/translations/:lang/strings/:key', async (request) => {
-    const { lang, key } = z.object({ lang: LangSchema, key: MessageKeySchema }).parse(request.params);
-    const { text } = z.strictObject({ text: z.string().trim().min(1).max(200).nullable() }).parse(request.body);
+  // The key travels in the body: a cashier key is its English sentence.
+  app.put('/admin/translations/:lang/strings', async (request) => {
+    const { lang } = LangParams.parse(request.params);
+    const { key, text } = z.strictObject({ key: MessageKeySchema, text: z.string().trim().min(1).max(200).nullable() }).parse(request.body);
     await setTranslation(db, asAdmin(request), lang, key, text, request.logContext.trace_id);
     return translationStrings(db, lang);
   });
