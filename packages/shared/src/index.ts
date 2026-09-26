@@ -16,6 +16,7 @@ export * from './tender';
 export * from './i18n';
 export * from './loyalty';
 export * from './journal';
+export * from './promotions';
 export * from './receipt';
 export * from './receipt-settings';
 export * from './compliance';

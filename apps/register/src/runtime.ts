@@ -166,6 +166,8 @@ export async function boot(token: string): Promise<Runtime> {
     uuid: () => Crypto.randomUUID(),
     // Tax schedule and charges resolve at ring time by the store-local date (P10).
     compliance: () => ({ snapshot: currentCatalog.compliance, locationRatePpm: currentCatalog.tax_rate_ppm, timezone: identity.timezone }),
+    // Promotions apply as the ticket changes, by the store-local day and hour (P20a).
+    promotions: () => ({ promotions: currentCatalog.promotions ?? [], location_id: identity.location_id, timezone: identity.timezone, dual_price_rate_ppm: currentCatalog.dual_price_rate_ppm }),
   });
   await session.restore();
   const drawer = new DrawerManager(store, session, () => Crypto.randomUUID());
@@ -183,6 +185,7 @@ export async function boot(token: string): Promise<Runtime> {
     catalogVersion: () => currentCatalogVersion,
     uuid: () => Crypto.randomUUID(),
     compliance: () => ({ snapshot: currentCatalog.compliance, locationRatePpm: currentCatalog.tax_rate_ppm, timezone: identity.timezone }),
+    promotions: () => ({ promotions: currentCatalog.promotions ?? [], location_id: identity.location_id, timezone: identity.timezone, dual_price_rate_ppm: currentCatalog.dual_price_rate_ppm }),
   });
   // Who may sign in comes with the config snapshot; a newer snapshot refreshes it (P3).
   const staff = new StaffGate(store, session);

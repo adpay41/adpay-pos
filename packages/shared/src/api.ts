@@ -5,6 +5,7 @@
 import type { TileColor } from './catalog';
 import type { I18nSnapshot } from './i18n';
 import type { LoyaltySettings } from './loyalty';
+import type { Promotion } from './promotions';
 import type { ComplianceSnapshot, Restriction } from './compliance';
 import type { CashierUsual } from './catalog-templates';
 import type { FeatureFlags } from './flags';
@@ -112,6 +113,8 @@ export interface CatalogSnapshot {
   i18n?: I18nSnapshot;
   /** The loyalty program and this merchant's salt for the customer ref (P19a). Register snapshot only. */
   loyalty?: { settings: LoyaltySettings; salt: string };
+  /** Active promotions for this store that haven't ended (P20a); the register checks days and hours. */
+  promotions?: Promotion[];
 }
 
 export interface DeviceIdentity {

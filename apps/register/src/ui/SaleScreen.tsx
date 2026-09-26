@@ -5,6 +5,9 @@
  */
 import {
   DEFAULT_I18N,
+  localMoment,
+  promotionActive,
+  promotionText,
   type LoyaltyStatus,
   languageInfo,
   type Lang,
@@ -117,8 +120,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   type Cust = { saleId: string; ref: string; last4: string; status: LoyaltyStatus | null; offline: boolean };
   const [cust, setCust] = useState<Cust | null>(null);
   const [receiptText, setReceiptText] = useState<DisplayState['receipt_text']>(null);
-  const ctx = useRef({ language: customerLang, i18n, digital, loyaltySettings, cust, receiptText });
-  ctx.current = { language: customerLang, i18n, digital, loyaltySettings, cust, receiptText };
+  const ctx = useRef({ language: customerLang, i18n, digital, loyaltySettings, cust, receiptText, deals: (): string[] => [] });
+  const deals = () => {
+    const now = localMoment(new Date(), rt.identity.timezone);
+    return (catalog.promotions ?? []).filter((p) => p.show_on_idle && promotionActive(p, rt.identity.location_id, now)).slice(0, 4).map(promotionText);
+  };
+  ctx.current = { language: customerLang, i18n, digital, loyaltySettings, cust, receiptText, deals };
   const sesRef = useRef(ses);
   sesRef.current = ses;
   const lastArgs = useRef<Parameters<typeof show> | null>(null);
@@ -143,6 +150,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             }
           : null,
         receipt_text: paid ? c.receiptText : null,
+        // Deals of the day on the idle screen (P20a): the promotions running now that the store shows.
+        deals: s && s.lines.length ? [] : c.deals(),
       };
       lastArgs.current = [s, paid, card];
       lastShown.current = state;
@@ -771,6 +780,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                       {l.min_age ? ` · ${t('{age}+ checked', { age: l.min_age })}` : ''}
                       {!l.taxable ? ` · ${t('no tax')}` : ''}
                     </Text>
+                    {/* A promotion or reward on this line (P20a): what it was and what it took off. */}
+                    {l.cash_discount_cents > 0 ? (
+                      <Text style={s.lineDeal}>
+                        {l.discount_promo_id && l.discount_reason ? l.discount_reason.replace(/^Promo: /, '') : l.discount_reason === 'Loyalty reward' ? t('reward applied') : t('Discount')} −{usd(l.cash_discount_cents)}
+                      </Text>
+                    ) : null}
                   </View>
                   <Text style={s.lineAmt}>{usd(lineTotal(l, 'cash'))}</Text>
                   <Pressable onPress={() => void run(() => ses.removeLine(l.line_id))} style={s.remove} accessibilityLabel={t('Remove {name}', { name: l.name })}>
@@ -1665,6 +1680,7 @@ const s = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.line, gap: 8 },
   lineName: { color: C.ink, fontWeight: '600' },
   lineAmt: { color: C.black, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  lineDeal: { color: C.green, fontSize: 12, fontWeight: '700' },
   remove: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: C.ground },
   removeText: { fontSize: 18, color: C.muted, lineHeight: 20 },
   totals: { borderTopWidth: 1, borderTopColor: C.line, paddingTop: 10, gap: 6 },

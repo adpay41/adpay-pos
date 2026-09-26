@@ -81,6 +81,8 @@ const LineDiscounted = z.strictObject({
   cash_discount_cents: NonNegCents,
   card_discount_cents: NonNegCents,
   reason: z.string().max(200).nullable(),
+  /** Set when a promotion gave the discount (P20a); the register recomputes these as the ticket changes. Additive. */
+  promo_id: Uuid.nullable().optional(),
 });
 
 const AgeVerified = z.strictObject({

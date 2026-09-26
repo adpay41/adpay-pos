@@ -8,6 +8,9 @@
  */
 import {
   type Lang,
+  type Promotion,
+  applyPromotions,
+  promotionChanges,
   type LoyaltySettings,
   rewardDiscounts,
   ZERO,
@@ -43,6 +46,8 @@ export interface SessionDeps {
   now?: () => Date;
   /** The location's tax schedule and charges (P10); absent in tests and older snapshots. */
   compliance?: () => { snapshot: ComplianceSnapshot | undefined; locationRatePpm: number; timezone: string };
+  /** Running promotions and what they need to price (P20a); absent in tests without promotions. */
+  promotions?: () => { promotions: Promotion[]; location_id: string; timezone: string; dual_price_rate_ppm: number } | null;
 }
 
 export class SaleError extends Error {
@@ -230,6 +235,7 @@ export class SaleSession {
       if (merge) {
         // Same customer, same line: an age check already done for it covers this unit too.
         await this.emit('sale.line_qty_changed', { line_id: last.line_id, qty: Math.min(10_000, last.qty + qty) }, this.saleId!);
+        await this.reprice();
         this.notify();
         return this.state();
       }
@@ -272,9 +278,26 @@ export class SaleSession {
           { line_id, method: opts.idCheck ? 'id_scan' : 'manual', verified_by_user_id: this.actor, id_check: opts.idCheck ?? null },
           saleId,
         );
+      await this.reprice();
       this.notify();
       return this.state();
     });
+  }
+
+  /**
+   * Bring the open ticket's promotional discounts up to date (P20a): after every line change the
+   * running promotions are applied again and only what changed is written, as line discounts that
+   * carry the promotion's id. A promotion that no longer applies (one of a pair removed) is reset.
+   */
+  private async reprice(): Promise<void> {
+    const ctx = this.deps.promotions?.();
+    if (!ctx || !this.saleId) return;
+    const sale = foldSale(this.saleId, this.events);
+    if (sale.status !== 'open') return;
+    const wanted = applyPromotions(ctx.promotions, sale, { location_id: ctx.location_id, at: this.now(), timezone: ctx.timezone, dual_price_rate_ppm: ctx.dual_price_rate_ppm });
+    for (const c of promotionChanges(sale, wanted)) {
+      await this.emit('sale.line_discounted', { line_id: c.line_id, cash_discount_cents: c.cash_discount_cents, card_discount_cents: c.card_discount_cents, reason: c.reason, promo_id: c.promo_id }, this.saleId);
+    }
   }
 
   /** Would ringing `item` now just raise the last line's quantity? (The UI skips the age prompt then.) */
@@ -303,6 +326,7 @@ export class SaleSession {
       if (!Number.isInteger(qty) || qty < 0 || qty > 10_000) throw new SaleError('Quantity must be 0 to 10,000');
       if (qty === 0) await this.emit('sale.line_removed', { line_id: lineId }, sale.sale_id);
       else if (qty !== line.qty) await this.emit('sale.line_qty_changed', { line_id: lineId, qty }, sale.sale_id);
+      await this.reprice();
       this.notify();
       return this.state();
     });
@@ -313,6 +337,7 @@ export class SaleSession {
       const sale = this.current();
       if (!sale.lines.some((l) => l.line_id === lineId)) throw new SaleError('No such line');
       await this.emit('sale.line_removed', { line_id: lineId }, sale.sale_id);
+      await this.reprice();
       this.notify();
       return this.state();
     });

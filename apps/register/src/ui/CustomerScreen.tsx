@@ -105,6 +105,16 @@ export function CustomerScreen() {
         </Text>
         <Text style={s.welcome}>{state?.merchant_name ?? t('welcome')}</Text>
         <Text style={s.muted}>{t('welcome_note')}</Text>
+        {/* Deals of the day (P20a): the store's running promotions, as it wrote them. */}
+        {state?.deals.length ? (
+          <View style={s.deals} accessibilityRole="summary">
+            {state.deals.map((d) => (
+              <Text key={d} style={s.deal}>
+                ★ {d}
+              </Text>
+            ))}
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -186,10 +196,13 @@ export function CustomerScreen() {
             accessible
             accessibilityLabel={`${l.qty > 1 ? `${l.qty} × ` : ''}${l.name}. ${t('col_cash')} ${usd(l.cash_cents)}. ${t('col_card')} ${usd(l.card_cents)}.`}
           >
-            <Text style={s.colName} numberOfLines={2}>
-              {l.qty > 1 ? `${l.qty} × ` : ''}
-              {l.name}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.colName, { flex: 0 }]} numberOfLines={2}>
+                {l.qty > 1 ? `${l.qty} × ` : ''}
+                {l.name}
+              </Text>
+              {l.deal ? <Text style={s.lineDeal}>★ {l.deal.kind === 'promo' ? l.deal.name : t('r_reward')}</Text> : null}
+            </View>
             <Text style={s.colPrice}>{usd(l.cash_cents)}</Text>
             <Text style={[s.colPrice, s.cardCol]}>{usd(l.card_cents)}</Text>
           </View>
@@ -283,6 +296,9 @@ function makeStyles(big: boolean) {
     loyaltyButton: { borderWidth: 2, borderColor: C.black, borderRadius: 24, paddingHorizontal: 18, paddingVertical: 10 },
     loyaltyButtonText: { fontSize: f(18), fontWeight: '800', color: C.ink },
     loyaltyText: { fontSize: f(18), fontWeight: '700', color: C.ink, textAlign: 'center' },
+    deals: { marginTop: 18, gap: 8, alignItems: 'center' },
+    deal: { fontSize: f(22), fontWeight: '800', color: C.ink, textAlign: 'center' },
+    lineDeal: { fontSize: f(14), fontWeight: '700', color: green },
     pickTitle: { fontSize: f(30), fontWeight: '800', color: C.ink },
     pickGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 760 },
     pickBtn: { minWidth: 200, paddingVertical: 18, paddingHorizontal: 20, borderRadius: 12, borderWidth: 2, borderColor: C.black, backgroundColor: '#fff', alignItems: 'center' },

@@ -384,6 +384,7 @@ async function main() {
     // Demo staff with register PINs (DEMO_STAFF): the same routine that repairs an older database.
     await ensureDemoStaff(db);
     await ensureDemoLoyalty(db);
+    await ensureDemoPromotion(db);
 
     // Registers with history are "already paired" devices in the field.
     for (const r of [jc1, jc2, ast1, bay1]) {
@@ -510,8 +511,27 @@ async function ensureDemoLoyalty(db: Db): Promise<void> {
   }
 }
 
+/** A deal to try at the demo store (P20a): any two energy drinks for $6, shown on the idle screen. */
+async function ensureDemoPromotion(db: Db): Promise<void> {
+  const { rows } = await db.query<{ org_id: string; merchant_id: string; item_ids: string[] }>(
+    `SELECT m.org_id, m.merchant_id, array_agg(i.item_id) AS item_ids
+       FROM merchants m JOIN items i ON i.merchant_id = m.merchant_id AND (i.name LIKE 'Red Bull%' OR i.name LIKE 'Monster%')
+      WHERE m.name = 'Journal Square Deli & Grocery' AND NOT EXISTS (SELECT 1 FROM promotions p WHERE p.merchant_id = m.merchant_id)
+      GROUP BY m.org_id, m.merchant_id`,
+  );
+  for (const r of rows) {
+    await db.query(
+      `INSERT INTO promotions (org_id, merchant_id, name, rule, item_ids, starts_on, show_on_idle)
+       VALUES ($1, $2, 'Energy drinks', '{"kind":"multi_price","qty":2,"price_cents":600}', $3, current_date - 1, true)`,
+      [r.org_id, r.merchant_id, r.item_ids],
+    );
+    await db.query('UPDATE merchants SET catalog_version = catalog_version + 1 WHERE merchant_id = $1', [r.merchant_id]);
+  }
+}
+
 async function printLogins(db: Db) {
   await ensureDemoLoyalty(db);
+  await ensureDemoPromotion(db);
   const pins = await ensureDemoStaff(db);
   const { rows } = await db.query<{ register_id: string; label: string }>(
     `SELECT r.register_id, m.name || ' · ' || l.name || ' · ' || r.name AS label
