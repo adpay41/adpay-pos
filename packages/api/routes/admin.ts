@@ -28,6 +28,8 @@ import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPla
 import { recentSales, salesSummary } from '../services/reports';
 import { addHardware, addTicketNote, closeRma, createTicket, hardwareHistory, installHardware, listHardware, listTickets, swapHardware, ticketDetail } from '../services/support';
 import { rolloutOverview, setRollout } from '../services/rollouts';
+import { upcLibrary, upcLookup } from '../services/upc-library';
+import { cohorts, investorPack, investorPackCsv } from '../services/growth';
 import { addTerms, agentStatements, assignAgent, createAgent, listAgents, merchantAgentHistory, setAgentActive } from '../services/agents';
 import { createApiKey, createEndpoint, disableEndpoint, listApiKeys, listEndpoints, recentDeliveries, redeliver, revokeApiKey, rotateEndpointSecret } from '../services/partners';
 import { adminDocumentFile, listDocuments } from '../services/documents';
@@ -120,6 +122,25 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
     const { flag } = z.object({ flag: z.enum(FEATURE_FLAG_KEYS as [FeatureFlag, ...FeatureFlag[]]) }).parse(request.params);
     return setRollout(db, asAdmin(request), flag, FlagRolloutInput.parse(request.body), request.logContext.trace_id);
   });
+  // The global UPC library, cohorts, the investor / bank pack (P25c).
+  app.get('/admin/upc-library', async (request) => {
+    const q = z.object({ search: z.string().max(80).optional(), conflicts: z.enum(['0', '1']).optional() }).parse(request.query);
+    return upcLibrary(db, { ...(q.search ? { search: q.search } : {}), conflicts: q.conflicts === '1' });
+  });
+  app.get('/admin/upc/:code', async (request) => {
+    const { code } = z.object({ code: z.string().min(1).max(20) }).parse(request.params);
+    return { suggestion: await upcLookup(db, code) };
+  });
+  app.get('/admin/growth/cohorts', async () => {
+    const month = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }).slice(0, 7);
+    return { month, cohorts: await cohorts(db, month) };
+  });
+  app.get('/admin/investor-pack', async () => investorPack(db));
+  app.get('/admin/investor-pack.csv', async (_request, reply) => {
+    const p = await investorPack(db);
+    return reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="adpay-monthly-${p.kpis.month}.csv"`).send(investorPackCsv(p));
+  });
+
   // Referral partners and agents, their terms, the stores they brought, their monthly statements (P25b).
   const Month = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) });
   app.get('/admin/agents', async () => ({ agents: await listAgents(db) }));

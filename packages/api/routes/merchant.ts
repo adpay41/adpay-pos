@@ -12,6 +12,7 @@ import { cashierPerformance, dailyJournal } from '../services/performance';
 import { rollup } from '../services/rollup';
 import { listDocuments, pgDocumentStore, removeDocument, uploadDocument, validateDocument } from '../services/documents';
 import { checklistReport, getChecklists, setChecklists } from '../services/checklists';
+import { upcLookup } from '../services/upc-library';
 import { addTicketNote, createTicket, listHardware, listTickets, ticketDetail } from '../services/support';
 import { profitReport } from '../services/price-tools';
 import { customerList, customerStatus, loyaltyConfig, optOut, sendPromo, setLoyaltySettings } from '../services/loyalty';
@@ -141,6 +142,12 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
     const r = Range.parse(request.query);
     return timesheet(db, asMerchantUser(request).merchant_id, r.from, r.to);
   });
+  // The global UPC library (P25c): a suggestion when adding an item by barcode.
+  app.get('/merchant/upc/:code', { preHandler: requirePermission('catalog.edit') }, async (request) => {
+    const { code } = z.object({ code: z.string().min(1).max(20) }).parse(request.params);
+    return { suggestion: await upcLookup(db, code) };
+  });
+
   // Opening and closing checklists (P24c): the lists (config) and what was ticked (events).
   app.get('/merchant/checklists', async (request) => getChecklists(db, asMerchantUser(request).merchant_id));
   app.put('/merchant/checklists', { preHandler: requirePermission('staff.manage') }, async (request) =>

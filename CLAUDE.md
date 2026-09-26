@@ -110,6 +110,7 @@ purpose: support is one person for the first 200 stores.
 | [0038](docs/decisions/0038-checklists.md) | Checklists: lists are merchant config in the snapshot (starter lists by default); ticking is one `checklist.completed` event with every item as it stood; photos via /device/media (online); report read from events |
 | [0039](docs/decisions/0039-partner-api-webhooks.md) | Partner API: per-store read-only keys (hashed, shown once, scoped) on /v1 with its own guard; webhooks queued in the ingest transaction, HMAC-signed, leased delivery with fixed retries; https public hosts only |
 | [0040](docs/decisions/0040-agents-residual-split.md) | Agents: dated append-only terms (margin or revenue share, bounty) and store assignments (referral code at onboarding); statements computed from the residual report at month end, rounded down, pending without cost, never stored |
+| [0041](docs/decisions/0041-upc-library-cohorts-investor-pack.md) | UPC library = stores' catalogs deduped on read by `barcode_key` (real GTINs only; typical price from 3+ stores; suggests name / category, never price); cohorts by first-sale month and the investor pack from the monthly residual report, printed from the browser |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 
