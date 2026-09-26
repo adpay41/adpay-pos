@@ -172,9 +172,9 @@ section 5.
 | Sales tax report, exportable, quarterly pack (2.2) | ✅ | By month and rate, refunds' tax, net; quarterly CSV from the merchant app (P16b). | P16 |
 | Accountant access (read-only) (2.2) | 🔶 | `accountant` role: reports only, app by phone, never a register PIN; daily journal CSV (QuickBooks/Xero import) beside the tax and compliance exports (P19b). **Deferred:** direct QuickBooks Online / Xero sync (their developer apps + OAuth). | P19 |
 | QuickBooks/Xero sync (2.2) | ⛔ | Intuit/Xero developer app accounts | P-3P |
-| Profit: margin by item/category once costs are in (2.2) | ⬜ | Cost field (P2), reports | P20 |
-| Bulk price change (2.3) | ⬜ | P2 | P20 |
-| Price history and who changed what (2.3) | ⬜ | P2 records it from day one; this adds the UI | P20 |
+| Profit: margin by item/category once costs are in (2.2) | ✅ | Sales tab Profit: margin and share of sales vs share of profit by category, each unit at the cost in force when sold, uncosted units counted apart, below-cost sales flagged (P20b, ADR 0032). | P20 |
+| Bulk price change (2.3) | ✅ | Items → Bulk: ±%, ±$ or set, round up to …9 / .99, preview with below-cost warning, one write with history (P20b). "Match a vendor invoice" is the M-tier invoice AI. | P20 |
+| Price history and who changed what (2.3) | ✅ | Under each item in the merchant app: date, price, cost, who (P20b). | P20 |
 | Promotions builder: 2 for $5, mix & match, BOGO, happy hour (2.3) | ✅ | Merchant app → Deals: N for $X (mix & match), buy X get Y, % off with hours; dates, weekdays, per store. The register reprices on every change as line discounts carrying the promotion id; receipt names the deal and says what was saved (P20a). | P20 |
 | Shelf label print queue (2.3) | ⛔ | Label printer; see label printing | P21 |
 | Stock levels, low stock, dead stock (2.4) | ⬜ | P22 | P22 |
@@ -369,7 +369,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P20a Promotions | #29 | PR open — promotions builder (N for $X mix & match, buy X get Y, happy hour; dates, days, hours, per store), register repricing as promo line discounts, receipt deal names + "You saved", customer-screen deals of the day. ADR 0031. |
+| P20b Bulk prices, history, profit | #30 | PR open — bulk price change (preview, below-cost warning, one write with history), price history in the item editor, profit by category/item at the cost in force when sold. ADR 0032. |
+| P20a Promotions | #29 | Merged — promotions builder (N for $X mix & match, buy X get Y, happy hour; dates, days, hours, per store), register repricing as promo line discounts, receipt deal names + "You saved", customer-screen deals of the day. ADR 0031. |
 | P19b Roll-up, accountant, performance, alerts | #28 | Merged — multi-store roll-up, accountant role (read-only, no PIN) + daily journal CSV, cashier performance, big-ticket / slow-hour / late-first-sale alerts. ADR 0030. |
 | P19a Loyalty & customers | #27 | Merged — loyalty by phone (keyed hash on the sale, never the number; punch card or points folded from sales; reward applied by the cashier, online), opt-in to texts with the exact consent, customer list, promo texts once a week with STOP, "text me my receipt" on the customer screen; all texts through `MessageSender` (log). ADR 0029. |
 | P18b Cashier language & send receipt | #26 | Merged — every register screen after pairing translatable (282 strings keyed by English, extracted and typed), picker on sign-in and in the header, remembered per cashier; Spanish complete; admin Translations covers cashier strings; `MessageSender` + merchant-app Send receipt (log sender records, delivers nothing). ADR 0028. |

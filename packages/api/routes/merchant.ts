@@ -10,6 +10,7 @@ import { createMessageSender } from '../messaging/sender';
 import { sendReceipt } from '../services/messaging';
 import { cashierPerformance, dailyJournal } from '../services/performance';
 import { rollup } from '../services/rollup';
+import { profitReport } from '../services/price-tools';
 import { customerList, customerStatus, loyaltyConfig, optOut, sendPromo, setLoyaltySettings } from '../services/loyalty';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
 import { getSaleTimeline } from '../services/events';
@@ -113,6 +114,11 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
   app.get('/merchant/reports/cashiers', reports, async (request) => {
     const r = Range.parse(request.query);
     return cashierPerformance(db, asMerchantUser(request).merchant_id, r.from, r.to);
+  });
+  // Profit by category and item (P20b): each unit at the cost in force when it was sold.
+  app.get('/merchant/reports/profit', reports, async (request) => {
+    const r = Quarter.parse(request.query);
+    return profitReport(db, asMerchantUser(request).merchant_id, r.from, r.to);
   });
   app.get('/merchant/reports/journal', reports, async (request) => {
     const r = Quarter.parse(request.query);

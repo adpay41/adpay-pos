@@ -7,6 +7,7 @@
  * tamper with. Writes need the `catalog.edit` permission (owners always; managers by default).
  */
 import {
+  BulkPriceInput,
   LANGUAGES,
   PromotionInput,
   CATALOG_TEMPLATES,
@@ -26,6 +27,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { languageStatuses } from '../services/i18n';
 import { listPromotions, savePromotion, setPromotionActive } from '../services/promotions';
+import { bulkPriceChange } from '../services/price-tools';
 import { z } from 'zod';
 import { asAdmin, asMerchantUser, requireAdmin, requireMerchantUser } from '../http/auth-hooks';
 import { badRequest, forbidden } from '../http/errors';
@@ -154,6 +156,12 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId } = scope.resolve(r, false);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return (await getCatalogSnapshot(db, merchantId, locationId)).receipt;
+    });
+
+    // Bulk price change (P20b): preview (dry run), then apply; every price lands in the history.
+    s.post(`${p}/catalog/bulk-price`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      return bulkPriceChange(db, actor, merchantId, BulkPriceInput.parse(r.body), trace(r));
     });
 
     // Promotions builder (P20a): 2 for $5, buy X get Y, happy hour; per store, with dates and hours.

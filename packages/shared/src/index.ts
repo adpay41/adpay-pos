@@ -17,6 +17,7 @@ export * from './i18n';
 export * from './loyalty';
 export * from './journal';
 export * from './promotions';
+export * from './price-tools';
 export * from './receipt';
 export * from './receipt-settings';
 export * from './compliance';
