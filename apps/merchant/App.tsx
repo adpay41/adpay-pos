@@ -16,12 +16,12 @@ import { ProfitCard } from './pricing-tools';
 import { DealsTab } from './deals';
 import { StockTab } from './stock';
 import { OrdersTab } from './orders';
+import { HelpTab } from './helpTab';
 import { AlertsTab } from './alerts';
 import { CashTab } from './cash';
 import { CatalogTab } from './catalog';
 import { CashierCard, CompareCard, LiveTicker, tickerFromList, tickerFromMessage, useRealtime, type TickerRow } from './live';
 import { StaffTab, type Me } from './staff';
-import { SupportTab } from './support';
 import { HoursTab } from './hours';
 import { TaxCompliance } from './reports';
 import { C, usd } from './theme';
@@ -182,7 +182,7 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
   // Tabs follow what this person may do at this store (P3 permissions).
   const can = (p: Permission) => !!me?.principal.permissions.includes(p);
   const tabs: Tab[] = me
-    ? [...(can('reports.view') ? (['sales', 'tickets', 'cash', 'hours'] as const) : []), ...(can('customers.view') ? (['customers'] as const) : []), ...(can('catalog.edit') ? (['items', 'stock', 'orders', 'deals'] as const) : []), ...(can('reports.view') ? (['alerts'] as const) : []), 'staff', ...(flags?.support_chat ? (['help'] as const) : [])]
+    ? [...(can('reports.view') ? (['sales', 'tickets', 'cash', 'hours'] as const) : []), ...(can('customers.view') ? (['customers'] as const) : []), ...(can('catalog.edit') ? (['items', 'stock', 'orders', 'deals'] as const) : []), ...(can('reports.view') ? (['alerts'] as const) : []), 'staff', 'help']
     : [];
   const current = tab && tabs.includes(tab) ? tab : (tabs[0] ?? null);
 
@@ -228,7 +228,7 @@ function Home({ token, onUnauthorized, onSwitch }: { token: string; onUnauthoriz
       {current === 'items' && <CatalogTab token={token} />}
       {current === 'alerts' && <AlertsTab token={token} />}
       {current === 'staff' && me && <StaffTab token={token} me={{ ...me.principal }} />}
-      {current === 'help' && <SupportTab token={token} />}
+      {current === 'help' && <HelpTab token={token} chat={!!flags?.support_chat} />}
     </View>
   );
 }

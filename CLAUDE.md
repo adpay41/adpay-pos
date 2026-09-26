@@ -105,6 +105,7 @@ purpose: support is one person for the first 200 stores.
 | [0033](docs/decisions/0033-labels.md) | Labels are PDFs we write (built-in Helvetica, bars as rects); shared tested barcode encoders; in-store UPC for items without one; reprint queue from printed prices; price-embedded UPC for deli items rung at the printed price |
 | [0034](docs/decisions/0034-inventory.md) | No editable stock: folded from append-only movements (count sets, receive adds, write-off subtracts) and sales; case-break by stock ratio on the base item; low / dead (60 days) / expiring |
 | [0035](docs/decisions/0035-ordering.md) | Vendors with delivery days; suggestion = weekday forecast until the delivery after next + low point − shelf − on order, in cases; POs sent via `MessageSender`; received against at the register (po_id on the movement), ordered vs received read, never stored |
+| [0036](docs/decisions/0036-support-hardware.md) | Tickets with first-response SLA and append-only notes; canned fixes queue the remote action; a typed runbook per alert rule with its fix button; hardware by serial with one-step swap to RMA and an append-only history |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

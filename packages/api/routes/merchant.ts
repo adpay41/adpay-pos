@@ -10,6 +10,7 @@ import { createMessageSender } from '../messaging/sender';
 import { sendReceipt } from '../services/messaging';
 import { cashierPerformance, dailyJournal } from '../services/performance';
 import { rollup } from '../services/rollup';
+import { addTicketNote, createTicket, listHardware, listTickets, ticketDetail } from '../services/support';
 import { profitReport } from '../services/price-tools';
 import { customerList, customerStatus, loyaltyConfig, optOut, sendPromo, setLoyaltySettings } from '../services/loyalty';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
@@ -21,7 +22,7 @@ import { timesheet } from '../services/timeclock';
 import { zReports } from '../services/eod';
 import { complianceLog, salesTaxReport } from '../services/compliance-reports';
 import { merchantConfig, postSupportMessage, supportThread } from '../services/merchant-config';
-import { CustomerRefSchema, journalCsv, LoyaltySettingsInput, SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
+import { MerchantTicketInput, CustomerRefSchema, journalCsv, LoyaltySettingsInput, SupportMessageInput, complianceCsv, salesTaxCsv, timesheetCsv } from '@adpay/shared';
 import { forbidden } from '../http/errors';
 
 export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -151,6 +152,25 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
     const body = z.strictObject({ channel: z.enum(['sms', 'email']), to: z.string().trim().min(3).max(200) }).parse(request.body);
     return sendReceipt(db, sender, asMerchantUser(request), saleId, body, deps.config.publicBaseUrl, request.logContext.trace_id);
   });
+
+  // Equipment and support tickets from the store (P24a, Bible 2.8).
+  app.get('/merchant/tickets', async (request) => ({ tickets: await listTickets(db, { merchantId: asMerchantUser(request).merchant_id }) }));
+  app.post('/merchant/tickets', async (request, reply) => {
+    const me = asMerchantUser(request);
+    const b = MerchantTicketInput.parse(request.body);
+    reply.status(201);
+    return createTicket(db, me, { ...b, merchant_id: me.merchant_id, location_id: null, sale_id: null, priority: 'normal', source: 'merchant' }, request.logContext.trace_id);
+  });
+  app.get('/merchant/tickets/:ticketId', async (request) => {
+    const { ticketId } = z.object({ ticketId: z.uuid() }).parse(request.params);
+    return ticketDetail(db, ticketId, asMerchantUser(request).merchant_id);
+  });
+  app.post('/merchant/tickets/:ticketId/notes', async (request) => {
+    const { ticketId } = z.object({ ticketId: z.uuid() }).parse(request.params);
+    const { body } = z.strictObject({ body: z.string().trim().min(1).max(2000) }).parse(request.body);
+    return addTicketNote(db, asMerchantUser(request), ticketId, { body }, request.logContext.trace_id);
+  });
+  app.get('/merchant/hardware', async (request) => ({ units: await listHardware(db, asMerchantUser(request).merchant_id) }));
 
   // Loyalty program and customers (P19a).
   const customers = { preHandler: requirePermission('customers.view') };
