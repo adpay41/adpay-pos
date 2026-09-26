@@ -47,3 +47,23 @@ export async function upload<T>(path: string, token: string, body: Blob, content
 
 /** Absolute URL for a path the API returned (e.g. an item's `image_url`). */
 export const apiUrl = (path: string) => `${API_URL}${path}`;
+
+/**
+ * POST for a PDF (shelf tags, price labels, P21) and open it in a new tab to print. Printing needs a
+ * computer or a phone browser with a print dialog; the native app reports that instead.
+ */
+export async function openPdf(path: string, token: string, body: unknown): Promise<void> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.message ?? `HTTP ${res.status}`);
+  }
+  if (typeof window === 'undefined' || typeof URL.createObjectURL !== 'function') throw new ApiError(0, 'Open the merchant app in a browser to print labels');
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}

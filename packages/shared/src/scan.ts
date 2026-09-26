@@ -4,6 +4,7 @@
  * Kotlin scanner bridge all agree on what a scan means.
  */
 import type { CatalogItem, CatalogSnapshot } from './api';
+import { decodePriceEmbedded } from './labels';
 
 // ─────────────────────────────────────────────────────────── barcodes ──
 
@@ -23,7 +24,9 @@ export interface ScanMatch {
   item: CatalogItem;
   /** Units to ring: a case barcode rings its pack quantity (Bible 1.1 "scan a case barcode = pack qty"). */
   qty: number;
-  matched: 'upc' | 'barcode' | 'plu';
+  matched: 'upc' | 'barcode' | 'plu' | 'price_label';
+  /** A price-embedded label (P21): ring at this cash price instead of asking. */
+  price_cents?: number;
 }
 
 /** Index a catalog's barcodes once per snapshot; lookups are then O(1). */
@@ -43,6 +46,12 @@ export function barcodeIndex(snapshot: Pick<CatalogSnapshot, 'items'>): Map<stri
 export function lookupBarcode(index: Map<string, ScanMatch>, code: string): ScanMatch | null {
   const t = code.trim();
   if (!t) return null;
+  // A store-printed price label ("2" + PLU + price, P21): the item by its PLU, at the printed price.
+  const label = decodePriceEmbedded(t);
+  if (label) {
+    const byPlu = index.get(`plu:${label.plu}`);
+    if (byPlu) return { item: byPlu.item, qty: 1, matched: 'price_label', price_cents: label.price_cents };
+  }
   return index.get(barcodeKey(t)) ?? (/^\d{3,6}$/.test(t) ? (index.get(`plu:${t}`) ?? null) : null);
 }
 

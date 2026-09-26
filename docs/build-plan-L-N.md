@@ -148,7 +148,7 @@ section 5.
 | Receipt language follows customer screen (1.6) | 🔶 | Printed, previewed and digital receipts in the captured language, laid out in printer columns (CJK = 2) (P18a). **Boundary:** non-Latin glyphs on the thermal printer depend on the printer module (P-HW). | P18 |
 | Email/text a receipt later from the merchant app (1.6) | 🔶 | Merchant app → Tickets → Send receipt (text or email) with the digital-receipt link, through `MessageSender`; recorded masked, rate-limited, audited (P18b, ADR 0028). The `log` sender records but **delivers nothing**. **Deferred:** Twilio (SMS) / SES (email) accounts + TCPA review: one class each. | P18 |
 | Kitchen/deli ticket to a second printer (1.6) | ⛔ | Second printer hardware | P-HW |
-| Label printing, shelf tags with both prices (1.6) | ⛔ | Label printer hardware. Template + PDF output is buildable. | P21 |
+| Label printing, shelf tags with both prices (1.6) | 🔶 | Shelf tags with both prices and a barcode as PDF: Avery 5160 sheets (any printer) or 2.25″×1.25″ thermal labels; in-store UPC for items without a barcode; deli price labels (price-embedded UPC) that the register rings at the printed price (P21, ADR 0033). **Deferred:** direct label-printer connection and scanning printed codes on real hardware (P-HW). | P21 |
 | UPS aware (1.7) | ⛔ | Device power APIs, hardware | P-HW |
 | Time clock (1.8) | ✅ | Clock in/out by the cashier's name, separate from sign-in; punches are events; hours in the merchant app, weekly overtime (P15). | P15 |
 | Shift handover with photo (1.8) | ✅ | Close with count (+photo) → next session starts with that float, outgoing cashier clocked and signed out (P15). | P15 |
@@ -176,7 +176,7 @@ section 5.
 | Bulk price change (2.3) | ✅ | Items → Bulk: ±%, ±$ or set, round up to …9 / .99, preview with below-cost warning, one write with history (P20b). "Match a vendor invoice" is the M-tier invoice AI. | P20 |
 | Price history and who changed what (2.3) | ✅ | Under each item in the merchant app: date, price, cost, who (P20b). | P20 |
 | Promotions builder: 2 for $5, mix & match, BOGO, happy hour (2.3) | ✅ | Merchant app → Deals: N for $X (mix & match), buy X get Y, % off with hours; dates, weekdays, per store. The register reprices on every change as line discounts carrying the promotion id; receipt names the deal and says what was saved (P20a). | P20 |
-| Shelf label print queue (2.3) | ⛔ | Label printer; see label printing | P21 |
+| Shelf label print queue (2.3) | ✅ | Items → Tags: every tag whose price moved since it was printed (and recent price changes never tagged); "Print N tags" (P21). | P21 |
 | Stock levels, low stock, dead stock (2.4) | ⬜ | P22 | P22 |
 | Reorder suggestions (2.4) | ⬜ | P22 + history | P23 |
 | Vendor list; one-tap order text/email (2.4) | 🟡-able | Vendor records buildable; sending needs SMS/email provider ⛔ | P23 |
@@ -213,7 +213,7 @@ section 5.
 | Scan-data program admin (3.3) | ⛔ | Scan-data contracts | P-3P |
 | Tax tables by jurisdiction with effective dates; age rules by state (3.4) | 🟡 | /admin/tax: every store's rate today, scheduled changes, charges, age overrides, drift by state (P16b). Shared jurisdiction library: data source needed. | P16 |
 | Global UPC library, deduped (3.4) | ⬜ | P2, P5 unknown-barcode items | P25 |
-| Receipt/label template editor (3.4) | ⬜ | P8 template model | P21 |
+| Receipt/label template editor (3.4) | ✅ | Label templates (stock, card price, barcode, category, small print) in the merchant app; receipt settings per location in the merchant app and admin since P8 (P21). | P21 |
 | Translations management (3.4) | ✅ | Admin → Translations: status per language (draft / offered / reviewed, with reviewer), coverage, per-string corrections with placeholder check, stores asking; reaches registers at next sync (P18a). | P18 |
 | API keys & webhooks for partners (3.4) | ⬜ | | P25 |
 | Cohort views (3.5) | ⬜ | P13 KPIs | P25 |
@@ -369,7 +369,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P20b Bulk prices, history, profit | #30 | PR open — bulk price change (preview, below-cost warning, one write with history), price history in the item editor, profit by category/item at the cost in force when sold. ADR 0032. |
+| P21 Labels | #31 | PR open — shelf tags as PDF (Avery sheet / thermal), both prices + barcode (UPC-A / EAN-13 / Code 128, in-store UPC assigned), reprint queue, deli price labels rung at the printed price, label templates. ADR 0033. |
+| P20b Bulk prices, history, profit | #30 | Merged — bulk price change (preview, below-cost warning, one write with history), price history in the item editor, profit by category/item at the cost in force when sold. ADR 0032. |
 | P20a Promotions | #29 | Merged — promotions builder (N for $X mix & match, buy X get Y, happy hour; dates, days, hours, per store), register repricing as promo line discounts, receipt deal names + "You saved", customer-screen deals of the day. ADR 0031. |
 | P19b Roll-up, accountant, performance, alerts | #28 | Merged — multi-store roll-up, accountant role (read-only, no PIN) + daily journal CSV, cashier performance, big-ticket / slow-hour / late-first-sale alerts. ADR 0030. |
 | P19a Loyalty & customers | #27 | Merged — loyalty by phone (keyed hash on the sale, never the number; punch card or points folded from sales; reward applied by the cashier, online), opt-in to texts with the exact consent, customer list, promo texts once a week with STOP, "text me my receipt" on the customer screen; all texts through `MessageSender` (log). ADR 0029. |
