@@ -4,7 +4,7 @@
  */
 import { LOG_RING_SIZE, parseRegisterEvent, type DeviceLogLine, type RegisterEvent } from '@adpay/shared';
 import * as SQLite from 'expo-sqlite';
-import type { AckOutcome, EventStore, StoreCounts } from './store';
+import { SEQ_FLOOR_KEY, type AckOutcome, type EventStore, type StoreCounts } from './store';
 
 const SCHEMA = `
 PRAGMA journal_mode = WAL;
@@ -69,7 +69,8 @@ export class SqliteEventStore implements EventStore {
 
   async nextSeq() {
     const row = await this.db.getFirstAsync<{ s: number | null }>('SELECT max(device_seq) AS s FROM events');
-    return (row?.s ?? -1) + 1;
+    const floor = Number((await this.getMeta(SEQ_FLOOR_KEY)) ?? -1);
+    return Math.max(row?.s ?? -1, floor) + 1;
   }
 
   async append(e: RegisterEvent) {

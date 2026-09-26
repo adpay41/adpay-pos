@@ -380,7 +380,7 @@ function ItemEditor({
         <TextInput style={s.input} value={f.upc} onChangeText={(t) => set('upc', t)} keyboardType="number-pad" placeholder="Scan or type" />
         {hint ? (
           <Text style={s.mutedSmall}>
-            {hint.stores} store{hint.stores === 1 ? '' : 's'} on AD Pay call it “{hint.name}”
+            {hint.stores === 1 ? '1 store on AD Pay calls it' : `${hint.stores} stores on AD Pay call it`} “{hint.name}”
             {hint.typical_cash_cents !== null ? `, usually ${usd(hint.typical_cash_cents)}` : ''}.
           </Text>
         ) : null}

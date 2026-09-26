@@ -14,6 +14,16 @@ import type { EventStore } from './store';
 
 const KEY = 'eod';
 
+/**
+ * Where a newly paired device's first Z starts: numbered after the register's last Z on the server,
+ * covering this device's own events (everything after the pairing's seq floor).
+ */
+export async function seedEndOfDay(store: EventStore, lastZNumber: number, seqFloor: number): Promise<void> {
+  if (lastZNumber <= 0 || (await store.getMeta(KEY))) return;
+  const state: EodState = { z_number: lastZNumber + 1, from_seq: seqFloor + 1, last_closed_at: null };
+  await store.setMeta(KEY, JSON.stringify(state));
+}
+
 interface EodState {
   /** The next Z's number. */
   z_number: number;

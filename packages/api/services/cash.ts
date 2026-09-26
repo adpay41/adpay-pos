@@ -44,7 +44,7 @@ export async function drawerSessions(
        FROM sale_events e
       WHERE ($1::uuid IS NULL OR e.merchant_id = $1) AND e.business_date >= $2::date AND e.type = ANY($3::text[])
         AND ($4::uuid IS NULL OR e.location_id = $4)
-      ORDER BY e.register_id, e.device_seq`,
+      ORDER BY e.register_id, e.occurred_at, e.device_seq`,
     [merchantId, fromDate, CASH_TYPES, locationId],
   );
   interface Group {
@@ -64,7 +64,10 @@ export async function drawerSessions(
   }
   const out: (DrawerSession & { business_date: string; merchant_id: string; location_id: string })[] = [];
   for (const g of byRegister.values()) {
-    for (const s of foldDrawer(g.events).sessions) {
+    // Rows arrive in time order. Renumber them so the fold (which sorts by device_seq) keeps that
+    // order even where a re-paired register reused seqs from its earlier device.
+    const inOrder = g.events.map((e, i) => ({ ...e, device_seq: i }));
+    for (const s of foldDrawer(inOrder).sessions) {
       // A session whose opening fell before the window was cut off; only report whole sessions.
       const d = g.openedDate.get(s.session_id);
       if (d) out.push({ ...s, business_date: d, merchant_id: g.merchant, location_id: g.location });
@@ -87,7 +90,11 @@ export async function cashReport(q: Queryable, merchantId: string, range: CashRe
   const sessions = (await drawerSessions(q, merchantId, d_from, locationId)).filter((s) => s.business_date <= d_to);
   // Cash in each drawer right now, looking back a week so a session opened last night still counts.
   const weekAgo = new Date(Date.parse(`${d_to}T12:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
-  const openNow = (await drawerSessions(q, merchantId, weekAgo, locationId)).filter((s) => s.closed_at === null);
+  // Only a register's latest session can still be open: one left unclosed ended when the next began.
+  const recent = await drawerSessions(q, merchantId, weekAgo, locationId);
+  const latest = new Map<string, (typeof recent)[number]>();
+  for (const s of recent) if (!latest.has(s.register_id) || s.opened_at > latest.get(s.register_id)!.opened_at) latest.set(s.register_id, s);
+  const openNow = [...latest.values()].filter((s) => s.closed_at === null).sort((a, b) => b.opened_at.localeCompare(a.opened_at));
   const { rows: settingsRow } = await q.query<{ alert_settings: unknown }>('SELECT alert_settings FROM merchants WHERE merchant_id = $1', [merchantId]);
   const dropOver = (AlertSettingsInput.safeParse(settingsRow[0]?.alert_settings ?? {}).data ?? DEFAULT_ALERT_SETTINGS).drop_over_cents;
 

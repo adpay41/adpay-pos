@@ -76,6 +76,19 @@ describe('promotions builder', () => {
     ]);
     const list = (await app.inject({ method: 'GET', url: '/merchant/promotions', headers: auth(owner) })).json();
     expect(list.promotions.find((p: { promo_id: string }) => p.promo_id === id)).toMatchObject({ uses_30d: 1, given_30d_cents: 128 });
+
+    // A ticket voided before it was paid, and a line repriced twice, don't inflate what the deal gave.
+    const voided = randomUUID();
+    const l3 = randomUUID();
+    const on = (saleId: string, type: string, payload: unknown) => ({ ...ev(type, payload), sale_id: saleId });
+    await ingestEvents(db, { kind: 'device', org_id: a.org_id, merchant_id: a.merchant_id, location_id: a.location_id, register_id: a.register_id }, [
+      on(voided, 'sale.opened', { cashier_user_id: null, catalog_version: 1 }),
+      on(voided, 'sale.line_discounted', { line_id: l3, cash_discount_cents: 60, card_discount_cents: 60, reason: 'Promo: Two for five', promo_id: id }),
+      on(voided, 'sale.line_discounted', { line_id: l3, cash_discount_cents: 90, card_discount_cents: 90, reason: 'Promo: Two for five', promo_id: id }),
+      on(voided, 'sale.voided', { reason: 'customer left', by_user_id: null }),
+    ]);
+    const after = (await app.inject({ method: 'GET', url: '/merchant/promotions', headers: auth(owner) })).json();
+    expect(after.promotions.find((p: { promo_id: string }) => p.promo_id === id)).toMatchObject({ uses_30d: 1, given_30d_cents: 128 });
   });
 
   it('another merchant can’t see or change them', async () => {

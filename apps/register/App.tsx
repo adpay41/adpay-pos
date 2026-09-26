@@ -11,7 +11,9 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { boot, call, tokenStore, Unpaired, type Runtime } from './src/runtime';
+import { seedEndOfDay } from './src/core/eod';
+import { SEQ_FLOOR_KEY } from './src/core/store';
+import { boot, call, openStore, tokenStore, Unpaired, type Runtime } from './src/runtime';
 import { CustomerScreen } from './src/ui/CustomerScreen';
 import { CashierLanguage } from './src/ui/i18n';
 import { SaleScreen } from './src/ui/SaleScreen';
@@ -105,7 +107,12 @@ function Pair({ onPaired, notice }: { onPaired: (token: string) => void; notice:
     setBusy(true);
     setError(null);
     try {
-      const r = await call<{ device_token: string }>('/auth/device/pair', null, { setup_code: code });
+      const r = await call<{ device_token: string; seq_floor?: number; last_z_number?: number }>('/auth/device/pair', null, { setup_code: code });
+      // Number this device's events after the register's history on the server (a re-pair or a new
+      // device), and carry on its Z numbering.
+      const store = await openStore();
+      await store.setMeta(SEQ_FLOOR_KEY, String(r.seq_floor ?? -1));
+      await seedEndOfDay(store, r.last_z_number ?? 0, r.seq_floor ?? -1);
       onPaired(r.device_token);
     } catch (e) {
       setError((e as Error).message);
