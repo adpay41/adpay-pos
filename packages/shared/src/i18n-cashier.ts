@@ -25,6 +25,7 @@ export const CASHIER_EN = [
   '✓ Photo of count sheet',
   '0 removes the line',
   '1 item',
+  'Accountant',
   'Add {label}',
   'Add & ring up',
   'Add an unknown item at the register',

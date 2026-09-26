@@ -99,6 +99,7 @@ purpose: support is one person for the first 200 stores.
 | [0027](docs/decisions/0027-languages-digital-receipt.md) | Languages: one catalog in shared, draft/offered/reviewed per language, customer picks and the sale records it, receipt follows; digital receipt by random token at a public `/r/` page; customer-screen accessibility |
 | [0028](docs/decisions/0028-cashier-language-send-receipt.md) | Cashier language: strings keyed by English, extracted to a typed shared list, Spanish complete, others filled in admin; choice per cashier on the register; `MessageSender` (log only) for receipts sent later by text/email, recipient masked |
 | [0029](docs/decisions/0029-loyalty-by-phone.md) | Loyalty by phone: sales carry a keyed hash (merchant salt) + last four, never the number; number stored only with opt-in that matches the hash, with the exact consent; balances folded from sales; rewards need a connection; promos once a week with STOP through `MessageSender` |
+| [0030](docs/decisions/0030-rollup-accountant-performance-alerts.md) | Roll-up over every store with `reports.view`; `accountant` role fixed read-only, never a PIN, daily journal CSV for QuickBooks/Xero import; cashier performance folded from events; big-ticket / slow-hour / late-first-sale alerts with thresholds |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

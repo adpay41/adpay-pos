@@ -293,6 +293,7 @@ export const CASHIER_ES: Partial<Record<CashierKey, string>> = {
   'Who’s working?': '¿Quién trabaja?',
   'Wrong item': 'Artículo equivocado',
   'Z-report #{number} taken': 'Reporte Z n.º {number} hecho',
+  Accountant: 'Contador',
   // Loyalty (P19a)
   '{balance} points': '{balance} puntos',
   '{balance}/{needed} visits': '{balance}/{needed} visitas',

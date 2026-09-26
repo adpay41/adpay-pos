@@ -122,7 +122,7 @@ const s = StyleSheet.create({
  */
 function AlertSettingsCard({ token, onSaved }: { token: string; onSaved: () => void }) {
   const [cur, setCur] = useState<AlertSettings | null>(null);
-  const [f, setF] = useState({ refund: '', short: '', nosale: '', drop: '' });
+  const [f, setF] = useState({ refund: '', short: '', nosale: '', drop: '', big: '', slow: '', late: '' });
   const [muted, setMuted] = useState<AlertRule[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -131,14 +131,20 @@ function AlertSettingsCard({ token, onSaved }: { token: string; onSaved: () => v
     api<AlertSettings>('/merchant/alert-settings', token).then((x) => {
       setCur(x);
       setMuted(x.muted);
-      setF({ refund: dollars(x.large_refund_cents), short: dollars(x.drawer_short_cents), nosale: String(x.no_sale_spike), drop: dollars(x.drop_over_cents) });
+      setF({
+        refund: dollars(x.large_refund_cents), short: dollars(x.drawer_short_cents), nosale: String(x.no_sale_spike), drop: dollars(x.drop_over_cents),
+        big: dollars(x.big_ticket_cents), slow: String(x.slow_hour_pct), late: String(x.late_open_minutes),
+      });
     }, (e) => setMsg((e as Error).message));
   }, [token]);
 
   async function save() {
     setMsg(null);
     try {
-      const body = { muted, large_refund_cents: parseUsdToCents(f.refund), drawer_short_cents: parseUsdToCents(f.short), no_sale_spike: Number(f.nosale), drop_over_cents: parseUsdToCents(f.drop) };
+      const body = {
+        muted, large_refund_cents: parseUsdToCents(f.refund), drawer_short_cents: parseUsdToCents(f.short), no_sale_spike: Number(f.nosale), drop_over_cents: parseUsdToCents(f.drop),
+        big_ticket_cents: parseUsdToCents(f.big), slow_hour_pct: Number(f.slow), late_open_minutes: Number(f.late),
+      };
       setCur(await api<AlertSettings>('/merchant/alert-settings', token, body, 'PUT'));
       setMsg('Saved.');
       onSaved();
@@ -169,6 +175,12 @@ function AlertSettingsCard({ token, onSaved }: { token: string; onSaved: () => v
           <TextInput style={s.input} value={f.drop} onChangeText={(v) => setF({ ...f, drop: v })} keyboardType="decimal-pad" />
           <Text style={s.mutedSmall}>Drawer opened without a sale, times per register per day</Text>
           <TextInput style={s.input} value={f.nosale} onChangeText={(v) => setF({ ...f, nosale: v.replace(/\D/g, '') })} keyboardType="number-pad" />
+          <Text style={s.mutedSmall}>Big-ticket sale at or over ($)</Text>
+          <TextInput style={s.input} value={f.big} onChangeText={(v) => setF({ ...f, big: v })} keyboardType="decimal-pad" />
+          <Text style={s.mutedSmall}>Slow hour: under this % of the same hour on recent same weekdays</Text>
+          <TextInput style={s.input} value={f.slow} onChangeText={(v) => setF({ ...f, slow: v.replace(/\D/g, '') })} keyboardType="number-pad" />
+          <Text style={s.mutedSmall}>First sale late: minutes past your usual first sale</Text>
+          <TextInput style={s.input} value={f.late} onChangeText={(v) => setF({ ...f, late: v.replace(/\D/g, '') })} keyboardType="number-pad" />
           <Pressable onPress={() => void save()} style={s.small}>
             <Text style={s.smallText}>Save alert settings</Text>
           </Pressable>

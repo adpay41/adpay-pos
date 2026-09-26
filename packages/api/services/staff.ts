@@ -101,7 +101,8 @@ export async function registerStaff(q: Queryable, merchantId: string): Promise<R
   const rows = await staffRows(q, merchantId);
   return {
     members: rows
-      .filter((r) => !r.disabled && r.pin_hash)
+      // An accountant never signs in at a register (and has no PIN).
+      .filter((r) => !r.disabled && r.pin_hash && r.role !== 'accountant')
       .map((r) => ({ user_id: r.user_id, name: r.name, role: r.role, pin_hash: r.pin_hash!, permissions: permissionsFor(r.role, overrides) })),
   };
 }
@@ -237,6 +238,12 @@ export async function updateStaff(
       throw badRequest('A store needs at least one active owner. Add another owner first.');
     }
 
+    if (patch.role === 'accountant' && before.role !== 'accountant') {
+      // An accountant signs in to the app by phone, and loses any register PIN.
+      const { rows: u } = await q.query<{ phone: string | null }>('SELECT phone FROM users WHERE user_id = $1', [userId]);
+      if (!u[0]?.phone) throw badRequest('An accountant needs a phone number to sign in to the app');
+      await q.query('UPDATE memberships SET pin_hash = NULL, pin_set_at = NULL WHERE user_id = $1 AND merchant_id = $2', [userId, merchantId]);
+    }
     if (patch.role !== undefined || patch.disabled !== undefined) {
       await q.query(
         `UPDATE memberships SET role = coalesce($3, role),
@@ -282,6 +289,7 @@ export async function setPin(
       merchantId,
     ]);
     if (!rows[0]) throw notFound('Staff member not found');
+    if (rows[0].role === 'accountant') throw badRequest('An accountant doesn’t use the register, so has no PIN');
     const self = actor.kind === 'merchant_user' && actor.user_id === userId;
     if (!self) assertCanManage(actor, rows[0].role === 'owner');
     await q.query('UPDATE memberships SET pin_hash = $3, pin_set_at = now() WHERE user_id = $1 AND merchant_id = $2', [

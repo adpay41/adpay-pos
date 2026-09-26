@@ -7,6 +7,7 @@ import { hhmm, localDate, timesheetCsv, type Timesheet } from '@adpay/shared';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { api } from './api';
+import { CashierPerformance } from './team';
 import { C } from './theme';
 
 /** Monday..Sunday of this week (offset 0) or an earlier one, store-local (the app runs in the store's zone). */
@@ -90,6 +91,7 @@ export function HoursTab({ token }: { token: string }) {
           <Text style={s.muted}>Overtime is over 40 hours in a Monday–Sunday week. Hours count on the day the shift started.</Text>
         </>
       )}
+      <CashierPerformance token={token} from={range.from} to={range.to} />
     </ScrollView>
   );
 }
