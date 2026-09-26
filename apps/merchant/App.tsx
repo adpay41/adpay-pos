@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api, tokenStore } from './api';
+import { SendReceipt } from './sendReceipt';
 import { AlertsTab } from './alerts';
 import { CashTab } from './cash';
 import { CatalogTab } from './catalog';
@@ -343,12 +344,20 @@ function SalesTab({ token }: { token: string }) {
 
 function TicketsTab({ token }: { token: string }) {
   const { data, error } = useApi<{ sales: SaleListRow[] }>('/merchant/sales?limit=50', token);
+  // Tap a completed ticket to send its receipt by text or email (P18b).
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <ScrollView contentContainerStyle={s.page}>
       {error ? <Text style={s.error}>{error}</Text> : null}
       {!data ? <ActivityIndicator /> : null}
       {data?.sales.map((t) => (
-        <View key={t.sale_id} style={s.ticket}>
+        <Pressable
+          key={t.sale_id}
+          style={[s.ticket, { flexWrap: 'wrap' }]}
+          onPress={() => setOpen(open === t.sale_id ? null : t.sale_id)}
+          accessibilityRole="button"
+          accessibilityHint="Opens the ticket to send its receipt"
+        >
           <View style={{ flex: 1 }}>
             <Text style={s.lineName}>
               {new Date(t.occurred_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · {t.location_name} ·{' '}
@@ -359,7 +368,12 @@ function TicketsTab({ token }: { token: string }) {
             </Text>
           </View>
           {t.status === 'completed' ? <Text style={s.money}>{usd(t.total_cents)}</Text> : <Text style={s.voided}>{t.status}</Text>}
-        </View>
+          {open === t.sale_id && t.status === 'completed' ? (
+            <View style={{ width: '100%' }}>
+              <SendReceipt token={token} saleId={t.sale_id} />
+            </View>
+          ) : null}
+        </Pressable>
       ))}
     </ScrollView>
   );

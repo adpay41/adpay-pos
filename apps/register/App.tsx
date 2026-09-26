@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { boot, call, tokenStore, Unpaired, type Runtime } from './src/runtime';
 import { CustomerScreen } from './src/ui/CustomerScreen';
+import { CashierLanguage } from './src/ui/i18n';
 import { SaleScreen } from './src/ui/SaleScreen';
 import { C } from './src/ui/theme';
 
@@ -75,7 +76,9 @@ function Register() {
           }}
         />
       ) : rt ? (
-        <SaleScreen rt={rt} onForget={forget} />
+        <CashierLanguage rt={rt}>
+          <SaleScreen rt={rt} onForget={forget} />
+        </CashierLanguage>
       ) : error ? (
         <View style={s.center}>
           <Text style={s.error}>{error}</Text>

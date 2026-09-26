@@ -9,7 +9,8 @@
 import {
   builtIn,
   coverage,
-  EN,
+  englishOf,
+  messageArea,
   isRtl,
   LANG_CODES,
   LANGUAGE_DEFAULT_STATUS,
@@ -49,13 +50,20 @@ export async function translationOverrides(q: Queryable): Promise<Overrides> {
   return out;
 }
 
-/** The register's language slice of the snapshot: what this location offers, with the overrides. */
+/**
+ * The register's language slice of the snapshot: what this location offers customers, the languages
+ * a cashier may choose (any not in draft, P18b), and every override (the cashier's language needn't
+ * be one the store offers customers).
+ */
 export async function i18nSnapshot(q: Queryable, receipt: ReceiptSettings): Promise<I18nSnapshot> {
-  const offered = offeredLanguages(receipt.languages, await languageStatuses(q));
-  const overrides = await translationOverrides(q);
-  const only: Overrides = {};
-  for (const l of offered) if (overrides[l]) only[l] = overrides[l];
-  return { offered, default: offered.includes(receipt.default_language) ? receipt.default_language : 'en', overrides: only };
+  const statuses = await languageStatuses(q);
+  const offered = offeredLanguages(receipt.languages, statuses);
+  return {
+    offered,
+    default: offered.includes(receipt.default_language) ? receipt.default_language : 'en',
+    cashier: LANG_CODES.filter((l) => statuses[l] !== 'draft'),
+    overrides: await translationOverrides(q),
+  };
 }
 
 /** Admin → Translations: every language with its status, reviewer and coverage. */
@@ -72,6 +80,7 @@ export async function translationsOverview(q: Queryable) {
     languages: LANGUAGES.map((l) => {
       const row = rows.find((r) => r.lang === l.code);
       const c = coverage(l.code, overrides);
+      const cashier = coverage(l.code, overrides, 'cashier');
       return {
         ...l,
         status: row?.status ?? LANGUAGE_DEFAULT_STATUS[l.code],
@@ -80,6 +89,8 @@ export async function translationsOverview(q: Queryable) {
         review_note: row?.review_note ?? null,
         translated: c.translated,
         total: c.total,
+        cashier_translated: cashier.translated,
+        cashier_total: cashier.total,
         overrides: Object.keys(overrides[l.code] ?? {}).length,
         locations_asking: l.code === 'en' ? null : (offeredBy.find((o) => o.lang === l.code)?.n ?? 0),
       };
@@ -94,7 +105,8 @@ export async function translationStrings(q: Queryable, lang: Lang) {
     lang,
     strings: MESSAGE_KEYS.map((key) => ({
       key,
-      english: EN[key],
+      area: messageArea(key),
+      english: englishOf(key),
       built_in: builtIn(lang, key),
       override: overrides[key] ?? null,
     })),
@@ -124,7 +136,7 @@ export async function setLanguageStatus(db: Db, actor: AdminPrincipal, lang: Lan
 /** Set (or with `text` null, remove) one override. A translation must keep the English placeholders. */
 export async function setTranslation(db: Db, actor: AdminPrincipal, lang: Lang, key: MessageKey, text: string | null, traceId: string): Promise<void> {
   if (text !== null && !placeholdersMatch(key, text)) {
-    throw badRequest(`Keep the same {placeholders} as the English: “${EN[key]}”`);
+    throw badRequest(`Keep the same {placeholders} as the English: “${englishOf(key)}”`);
   }
   await db.tx(async (q) => {
     if (text === null) await q.query('DELETE FROM translation_overrides WHERE lang = $1 AND key = $2', [lang, key]);
@@ -150,7 +162,8 @@ export interface ReceiptPage {
 /** The receipt behind a token, rendered as printed; null when the sale hasn't synced (or never existed). */
 export async function receiptByToken(q: Queryable, token: string): Promise<ReceiptPage | null> {
   const { rows: hit } = await q.query<{ sale_id: string }>(
-    `SELECT sale_id FROM sale_events WHERE type = 'sale.completed' AND payload->>'receipt_token' = $1 LIMIT 1`,
+    `SELECT sale_id FROM sale_events WHERE type = 'sale.completed' AND payload->>'receipt_token' = $1
+     UNION ALL SELECT sale_id FROM receipt_links WHERE token::text = $1 LIMIT 1`,
     [token],
   );
   if (!hit[0]) return null;

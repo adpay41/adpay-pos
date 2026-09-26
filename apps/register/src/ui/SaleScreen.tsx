@@ -51,6 +51,7 @@ import { repeatBatch, ringBatch, usualBatch, usualLinesFrom, type Batch } from '
 import type { StaffState } from '../core/staff';
 import type { SyncStatus } from '../core/sync';
 import { API_URL, type Runtime } from '../runtime';
+import { LanguageButton } from './LanguageUI';
 import { Qr } from './Qr';
 import { QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
@@ -59,6 +60,7 @@ import { HeldTickets, TicketBrowser } from './TicketsUI';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
 import { C, usd } from './theme';
+import { useT } from './i18n';
 
 const FAVORITES = '__favorites__';
 
@@ -88,6 +90,10 @@ type Modal =
   | { kind: 'remove_usual'; usual: CashierUsual };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
+  const t = useT();
+  // Long-lived callbacks (printer preview, remote-action handlers) read the current language through this.
+  const tRef = useRef(t);
+  tRef.current = t;
   const [catalog, setCatalog] = useState<CatalogSnapshot>(rt.catalog);
   // Training mode (P16, Bible 1.8): a separate in-memory session that is never synced or saved.
   const [training, setTraining] = useState(false);
@@ -155,7 +161,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       new WebPreviewHardware(
         (lines) => {
           if (quietPrint.current) return;
-          setModal({ kind: 'receipt', lines, title: 'Receipt (printer preview)' });
+          const t = tRef.current;
+          setModal({ kind: 'receipt', lines, title: t('Receipt (printer preview)') });
         },
         () => {
           setDrawerFlash(true);
@@ -261,10 +268,16 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const myUsuals = (catalog.usuals ?? []).filter((u) => staff.member && u.user_id === staff.member.user_id);
   const ringAll = (batch: Batch, label: string, ageConfirmed: boolean, idCheck?: { age: number; jurisdiction: string | null }) =>
     void run(async () => {
-      if (batch.lines.length === 0) throw new Error(`Nothing to ring: ${batch.skipped.join(', ') || 'no items'} not sold any more`);
+      if (batch.lines.length === 0)
+        throw new Error(
+          batch.skipped.length
+            ? t('Nothing to ring: {items} not sold any more', { items: batch.skipped.join(', ') })
+            : t('Nothing to ring: no items not sold any more'),
+        );
       await ringBatch(ses, batch, ageConfirmed, idCheck);
       rt.log.info('batch rung', { label, lines: batch.lines.length, skipped: batch.skipped.length });
-      if (batch.skipped.length) setModal({ kind: 'error', message: `Rung ${label}. Not rung (not sold any more, or needs a price): ${batch.skipped.join(', ')}.` });
+      if (batch.skipped.length)
+        setModal({ kind: 'error', message: t('Rung {label}. Not rung (not sold any more, or needs a price): {items}.', { label, items: batch.skipped.join(', ') }) });
     });
   const startBatch = (batch: Batch, label: string) => (batch.min_age ? setModal({ kind: 'batch_age', batch, label }) : ringAll(batch, label, false));
 
@@ -275,7 +288,10 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       rt.log.info('scan', { matched: hit.matched, qty: hit.qty });
       ring(hit.item, { qty: hit.qty, entry: 'scan' });
     } else if (priceCheck || !flags.register_item_create) {
-      setModal({ kind: 'error', message: `Barcode ${code} isn’t in the catalog.${priceCheck ? '' : ' Ask the owner to add it.'}` });
+      setModal({
+        kind: 'error',
+        message: priceCheck ? t('Barcode {code} isn’t in the catalog.', { code }) : t('Barcode {code} isn’t in the catalog. Ask the owner to add it.', { code }),
+      });
     } else {
       rt.log.info('unknown barcode scanned', { code });
       guarded('item.create', sale?.sale_id ?? null, async () => setModal({ kind: 'unknown', code }));
@@ -383,7 +399,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         if (events.length === 0) throw new Error('That sale is not on this register');
         await hardware.printReceipt(receiptFor(foldSale(saleId, events), 'reprint'));
         await ses.recordReceipt(saleId, 'reprint');
-        return `Reprinted ticket ${saleId.slice(0, 4).toUpperCase()}`;
+        const t = tRef.current;
+        return t('Reprinted ticket {id}', { id: saleId.slice(0, 4).toUpperCase() });
       },
       printerTest: async () => {
         await hardware.printReceipt([
@@ -392,7 +409,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           { text: new Date().toLocaleString(), style: 'normal' },
           { text: 'If you can read this, the printer works.', style: 'normal' },
         ]);
-        return 'Test page printed';
+        const t = tRef.current;
+        return t('Test page printed');
       },
       restartApp: () => {
         if (Platform.OS === 'web') window.location.reload();
@@ -491,7 +509,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     await run(async () => {
       const events = await ses.lastSaleEvents();
       const last = session.lastCompleted;
-      if (!last || events.length === 0) throw new Error('No completed sale on this register yet');
+      if (!last || events.length === 0) throw new Error(t('No completed sale on this register yet'));
       await hardware.printReceipt(receiptFor(foldSale(last.sale_id, events), 'reprint'));
       await ses.recordReceipt(last.sale_id, 'reprint');
       rt.sync.kick();
@@ -517,7 +535,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         {pulse && pulse.today_cents > 0 ? (
           // Hourly target ribbon (Bible 1.10): where today is against yesterday by this time. Up is green; down stays white.
           <Text style={s.ribbon} numberOfLines={1}>
-            Today {usd(pulse.today_cents)} · yesterday by now {usd(pulse.yesterday_cents)}
+            {t('Today {today} · yesterday by now {yesterday}', { today: usd(pulse.today_cents), yesterday: usd(pulse.yesterday_cents) })}
             {pulse.vs_yesterday_tenths !== null ? <Text style={pulse.vs_yesterday_tenths > 0 ? s.ribbonUp : undefined}> {pctChangeText(pulse.vs_yesterday_tenths)}</Text> : null}
           </Text>
         ) : null}
@@ -528,34 +546,38 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               void run(() => (rt.clock.since(m.user_id) ? rt.clock.clockOut(m.user_id) : rt.clock.clockIn(m.user_id)));
             }}
             style={[s.who, rt.clock.since(staff.member.user_id) ? s.onClock : null]}
-            accessibilityLabel={rt.clock.since(staff.member.user_id) ? 'Clock out' : 'Clock in'}
+            accessibilityLabel={rt.clock.since(staff.member.user_id) ? t('Clock out') : t('Clock in')}
           >
-            <Text style={s.whoText}>{rt.clock.since(staff.member.user_id) ? `On the clock ${hhmm(rt.clock.minutes(staff.member.user_id))}` : 'Clock in'}</Text>
+            <Text style={s.whoText}>
+              {rt.clock.since(staff.member.user_id) ? t('On the clock {time}', { time: hhmm(rt.clock.minutes(staff.member.user_id)) }) : t('Clock in')}
+            </Text>
           </Pressable>
         ) : null}
         {staff.member ? (
-          <Pressable onPress={() => void run(() => rt.staff.signOut('manual'))} style={s.who} accessibilityLabel={`Signed in as ${staff.member.name}. Tap to lock.`}>
+          <Pressable onPress={() => void run(() => rt.staff.signOut('manual'))} style={s.who} accessibilityLabel={t('Signed in as {name}. Tap to lock.', { name: staff.member.name })}>
             <Text style={s.whoText}>{staff.member.name.split(' ')[0]}</Text>
-            <Text style={s.whoLock}>Lock</Text>
+            <Text style={s.whoLock}>{t('Lock')}</Text>
           </Pressable>
         ) : (
           <View style={[s.pill, s.pillWarn]}>
-            <Text style={[s.pillText, { color: C.amber }]}>No staff PINs set up</Text>
+            <Text style={[s.pillText, { color: C.amber }]}>{t('No staff PINs set up')}</Text>
           </View>
         )}
         <Pressable onPress={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false })} style={[s.pill, drawerSession ? s.pillDark : s.pillWarn]}>
-          <Text style={[s.pillText, { color: drawerSession ? '#fff' : C.amber }]}>{drawerSession ? 'Drawer' : 'Drawer not started'}</Text>
+          <Text style={[s.pillText, { color: drawerSession ? '#fff' : C.amber }]}>{drawerSession ? t('Drawer') : t('Drawer not started')}</Text>
         </Pressable>
         <SyncPill status={sync} onPress={() => setModal({ kind: 'device' })} />
+        {/* The cashier's own language (P18b), independent of the customer screen. */}
+        <LanguageButton dark />
         {Platform.OS === 'web' ? (
           <Pressable onPress={openCustomerScreen}>
-            <Text style={s.topLink}>Customer screen ↗</Text>
+            <Text style={s.topLink}>{t('Customer screen ↗')}</Text>
           </Pressable>
         ) : null}
       </View>
       {drawerFlash ? (
         <View style={s.drawerFlash}>
-          <Text style={s.drawerText}>Drawer opened</Text>
+          <Text style={s.drawerText}>{t('Drawer opened')}</Text>
         </View>
       ) : null}
 
@@ -563,7 +585,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         <View style={s.catCol}>
           {favorites.length > 0 ? (
             <Pressable onPress={() => setCategory(FAVORITES)} style={[s.cat, category === FAVORITES && s.catActive]}>
-              <Text style={[s.catText, category === FAVORITES && { color: '#fff' }]}>★ Favorites</Text>
+              <Text style={[s.catText, category === FAVORITES && { color: '#fff' }]}>{t('★ Favorites')}</Text>
             </Pressable>
           ) : null}
           {catalog.categories.filter((c) => c.active !== false).map((c) => (
@@ -580,7 +602,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               style={s.search}
               value={query}
               onChangeText={setQuery}
-              placeholder="Search name, UPC or PLU — or scan"
+              placeholder={t('Search name, UPC or PLU — or scan')}
               autoCorrect={false}
               onSubmitEditing={() => {
                 const q = query.trim();
@@ -596,19 +618,19 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   onCode(q);
                 }
               }}
-              accessibilityLabel="Search items"
+              accessibilityLabel={t('Search items')}
             />
             {query ? (
-              <Pressable onPress={() => setQuery('')} style={s.clear} accessibilityLabel="Clear search">
+              <Pressable onPress={() => setQuery('')} style={s.clear} accessibilityLabel={t('Clear search')}>
                 <Text style={s.clearText}>×</Text>
               </Pressable>
             ) : null}
           </View>
           {priceCheck ? (
             <View style={s.checkBanner}>
-              <Text style={s.checkText}>Price check — scan or tap an item to see its prices. Nothing is rung up.</Text>
+              <Text style={s.checkText}>{t('Price check — scan or tap an item to see its prices. Nothing is rung up.')}</Text>
               <Pressable onPress={() => setPriceCheck(false)}>
-                <Text style={s.checkText}>Done</Text>
+                <Text style={s.checkText}>{t('Done')}</Text>
               </Pressable>
             </View>
           ) : null}
@@ -618,7 +640,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             ))}
             {results && results.length === 0 ? (
               <Text style={s.mutedSmall}>
-                Nothing matches “{query}”.{/^\d{6,}$/.test(query.trim()) ? ' Press Enter to add it as a new item.' : ''}
+                {/^\d{6,}$/.test(query.trim())
+                  ? t('Nothing matches “{query}”. Press Enter to add it as a new item.', { query })
+                  : t('Nothing matches “{query}”.', { query })}
               </Text>
             ) : null}
           </ScrollView>
@@ -626,13 +650,13 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
         <View style={s.ticket}>
           <Text style={s.ticketTitle}>
-            {sale ? `Ticket ${sale.sale_id.slice(0, 4).toUpperCase()}` : 'New ticket'}
+            {sale ? t('Ticket {id}', { id: sale.sale_id.slice(0, 4).toUpperCase() }) : t('New ticket')}
             {/* The customer chose a language on their screen (P18): the cashier knows, and the receipt follows. */}
-            {customerLang !== 'en' ? ` · Customer: ${languageInfo(customerLang).name}` : ''}
+            {customerLang !== 'en' ? ` · ${t('Customer: {language}', { language: languageInfo(customerLang).name })}` : ''}
           </Text>
           <ScrollView style={{ flex: 1 }}>
             {!sale || sale.lines.length === 0 ? (
-              <Text style={s.mutedSmall}>Tap an item to start a sale.</Text>
+              <Text style={s.mutedSmall}>{t('Tap an item to start a sale.')}</Text>
             ) : (
               sale.lines.map((l) => (
                 <Pressable
@@ -640,7 +664,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   style={s.line}
                   onLongPress={() => setModal({ kind: 'set_qty', line_id: l.line_id, name: l.name, qty: l.qty })}
                   delayLongPress={450}
-                  accessibilityHint="Long-press to change the quantity"
+                  accessibilityHint={t('Long-press to change the quantity')}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={s.lineName}>
@@ -648,14 +672,14 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                       {l.name}
                     </Text>
                     <Text style={s.mutedSmall}>
-                      card {usd(lineTotal(l, 'card'))}
-                      {l.charges.map((c) => ` · incl. ${c.label}`).join('')}
-                      {l.min_age ? ` · ${l.min_age}+ checked` : ''}
-                      {!l.taxable ? ' · no tax' : ''}
+                      {t('card {amount}', { amount: usd(lineTotal(l, 'card')) })}
+                      {l.charges.map((c) => ` · ${t('incl. {label}', { label: c.label })}`).join('')}
+                      {l.min_age ? ` · ${t('{age}+ checked', { age: l.min_age })}` : ''}
+                      {!l.taxable ? ` · ${t('no tax')}` : ''}
                     </Text>
                   </View>
                   <Text style={s.lineAmt}>{usd(lineTotal(l, 'cash'))}</Text>
-                  <Pressable onPress={() => void run(() => ses.removeLine(l.line_id))} style={s.remove} accessibilityLabel={`Remove ${l.name}`}>
+                  <Pressable onPress={() => void run(() => ses.removeLine(l.line_id))} style={s.remove} accessibilityLabel={t('Remove {name}', { name: l.name })}>
                     <Text style={s.removeText}>×</Text>
                   </Pressable>
                 </Pressable>
@@ -663,41 +687,49 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             )}
           </ScrollView>
           <View style={s.totals}>
-            <Row label="Subtotal" value={sale?.cash.subtotal_cents ?? 0} />
-            <Row label="Tax" value={sale?.cash.tax_cents ?? 0} />
+            <Row label={t('Subtotal')} value={sale?.cash.subtotal_cents ?? 0} />
+            <Row label={t('Tax')} value={sale?.cash.tax_cents ?? 0} />
             <View style={s.dual}>
               <View style={s.dualBox}>
-                <Text style={s.dualLabel}>Cash</Text>
+                <Text style={s.dualLabel}>{t('Cash')}</Text>
                 <Text style={s.dualValue}>{usd(sale?.cash.total_cents ?? 0)}</Text>
               </View>
               <View style={s.dualBox}>
-                <Text style={s.dualLabel}>Card</Text>
+                <Text style={s.dualLabel}>{t('Card')}</Text>
                 <Text style={s.dualValue}>{usd(sale?.card.total_cents ?? 0)}</Text>
               </View>
             </View>
             {sale && sale.tenders.some((t) => t.approved) ? (
               <View style={s.partPaid}>
                 <Text style={s.partPaidText}>
-                  Paid so far {usd(sale.paid_cents)} · left {usd(sale.remaining_cash_cents)} cash or{' '}
-                  {usd(cardAmountFor(sale.remaining_cash_cents, sale.cash.total_cents, sale.card.total_cents))} card
+                  {t('Paid so far {paid} · left {cash} cash or {card} card', {
+                    paid: usd(sale.paid_cents),
+                    cash: usd(sale.remaining_cash_cents),
+                    card: usd(cardAmountFor(sale.remaining_cash_cents, sale.cash.total_cents, sale.card.total_cents)),
+                  })}
                 </Text>
               </View>
             ) : null}
             {training ? (
               <View style={s.trainingBanner}>
-                <Text style={s.trainingText}>TRAINING — practice only. Nothing is saved, synced or charged; receipts say TRAINING.</Text>
+                <Text style={s.trainingText}>{t('TRAINING — practice only. Nothing is saved, synced or charged; receipts say TRAINING.')}</Text>
               </View>
             ) : null}
             {dropNeed.needed && !training ? (
               // Bible 1.2: "drawer over $600, drop now", on the cashier's screen only, never the customer's.
               <Pressable style={s.dropBanner} onPress={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false })}>
-                <Text style={s.dropText}>Drawer is over {usd(catalog.cash_settings?.drop_over_cents ?? 0)}. Drop about {usd(dropNeed.suggest_cents)} to the safe now.</Text>
+                <Text style={s.dropText}>
+                  {t('Drawer is over {limit}. Drop about {amount} to the safe now.', {
+                    limit: usd(catalog.cash_settings?.drop_over_cents ?? 0),
+                    amount: usd(dropNeed.suggest_cents),
+                  })}
+                </Text>
               </Pressable>
             ) : null}
             {flags.card_payments && !cardOk && sale?.lines.length ? (
               // Bible 1.7: when the card path is down, say so plainly and keep selling for cash.
               <Pressable style={s.cashOnly} onPress={() => rt.sync.kick()}>
-                <Text style={s.cashOnlyText}>Cash only right now — no connection to the card machine. Tap to retry.</Text>
+                <Text style={s.cashOnlyText}>{t('Cash only right now — no connection to the card machine. Tap to retry.')}</Text>
               </Pressable>
             ) : null}
             <View style={s.actions}>
@@ -707,7 +739,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 // Cash needs a started drawer (a counted float), so the day reconciles to the cent.
                 onPress={() => setModal(training || rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true })}
               >
-                <Text style={s.payText}>Cash</Text>
+                <Text style={s.payText}>{t('Cash')}</Text>
               </Pressable>
               {flags.card_payments && !training ? (
               <Pressable
@@ -715,16 +747,16 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 disabled={!sale?.lines.length || !cardOk}
                 onPress={() => setModal({ kind: 'card', phase: { kind: 'ready' } })}
               >
-                <Text style={s.payText}>Card</Text>
-                {!cardOk ? <Text style={s.paySub}>offline</Text> : null}
+                <Text style={s.payText}>{t('Card')}</Text>
+                {!cardOk ? <Text style={s.paySub}>{t('offline')}</Text> : null}
               </Pressable>
               ) : null}
             </View>
             {session.lastCompleted || myUsuals.length || (sale?.lines.length && staff.member) ? (
               <View style={s.actions}>
                 {session.lastCompleted && !sale?.lines.length ? (
-                  <Pressable style={s.ghost} onPress={() => startBatch(repeatBatch(session.lastCompleted!, byId), 'the last sale')} accessibilityLabel="Repeat the last sale">
-                    <Text>↻ Repeat last</Text>
+                  <Pressable style={s.ghost} onPress={() => startBatch(repeatBatch(session.lastCompleted!, byId), t('the last sale'))} accessibilityLabel={t('Repeat the last sale')}>
+                    <Text>{t('↻ Repeat last')}</Text>
                   </Pressable>
                 ) : null}
                 {myUsuals.map((u) => (
@@ -734,14 +766,14 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                     onPress={() => startBatch(usualBatch(u, byId), u.label)}
                     onLongPress={() => setModal({ kind: 'remove_usual', usual: u })}
                     delayLongPress={600}
-                    accessibilityHint="Long-press to remove"
+                    accessibilityHint={t('Long-press to remove')}
                   >
                     <Text>★ {u.label}</Text>
                   </Pressable>
                 ))}
                 {sale?.lines.some((l) => !l.is_fee) && staff.member && !training ? (
                   <Pressable style={[s.ghost, !cardOk && s.disabled]} disabled={!cardOk} onPress={() => setModal({ kind: 'save_usual' })}>
-                    <Text>+ Save as usual</Text>
+                    <Text>{t('+ Save as usual')}</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -754,7 +786,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                     key={r.rule_id}
                     style={s.ghost}
                     onPress={() => void run(() => ses.addItem(feeItem(r, catalog.tax_rate_ppm), { entry: 'key', fee: true }))}
-                    accessibilityLabel={`Add ${r.label}`}
+                    accessibilityLabel={t('Add {label}', { label: r.label })}
                   >
                     <Text>+ {r.label} {usd(cents(r.amount_cents ?? 0))}</Text>
                   </Pressable>
@@ -767,30 +799,30 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 disabled={!sale}
                 onPress={() => sale && guarded('ticket.void', sale.sale_id, () => ses.voidSale('Voided at register'))}
               >
-                <Text>Void ticket</Text>
+                <Text>{t('Void ticket')}</Text>
               </Pressable>
               <Pressable style={[s.ghost, !session.lastCompleted && s.disabled]} disabled={!session.lastCompleted} onPress={() => void reprintLast()}>
-                <Text>Reprint last</Text>
+                <Text>{t('Reprint last')}</Text>
               </Pressable>
               {flags.hold_tickets ? (
                 <Pressable style={[s.ghost, !sale?.lines.length && s.disabled]} disabled={!sale?.lines.length} onPress={() => void run(() => ses.hold())}>
-                  <Text>Hold</Text>
+                  <Text>{t('Hold')}</Text>
                 </Pressable>
               ) : null}
               {session.parked.length ? (
                 <Pressable style={[s.ghost, s.ghostOn]} onPress={() => setModal({ kind: 'held' })}>
-                  <Text style={{ color: '#fff' }}>Held ({session.parked.length})</Text>
+                  <Text style={{ color: '#fff' }}>{t('Held ({count})', { count: session.parked.length })}</Text>
                 </Pressable>
               ) : null}
               {!training ? (
                 // Refunds and voids move real money: not from training mode.
                 <Pressable style={s.ghost} onPress={() => setModal({ kind: 'tickets' })}>
-                  <Text>Tickets</Text>
+                  <Text>{t('Tickets')}</Text>
                 </Pressable>
               ) : null}
               {flags.price_check ? (
                 <Pressable style={[s.ghost, priceCheck && s.ghostOn]} onPress={() => setPriceCheck((v) => !v)}>
-                  <Text style={priceCheck ? { color: '#fff' } : undefined}>Price check</Text>
+                  <Text style={priceCheck ? { color: '#fff' } : undefined}>{t('Price check')}</Text>
                 </Pressable>
               ) : null}
               <Pressable
@@ -803,14 +835,14 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   })
                 }
               >
-                <Text style={training ? { color: '#fff' } : undefined}>{training ? 'Exit training' : 'Training'}</Text>
+                <Text style={training ? { color: '#fff' } : undefined}>{training ? t('Exit training') : t('Training')}</Text>
               </Pressable>
               {!training ? (
                 <Pressable
                   style={s.ghost}
                   onPress={() => void run(async () => setModal({ kind: 'eod', z: await rt.eod.preview(catalog), lines: null, done: false }))}
                 >
-                  <Text>End of day</Text>
+                  <Text>{t('End of day')}</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -820,11 +852,17 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       {modal.kind === 'eod' && modal.z && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
-          <Text style={s.modalTitle}>{modal.done ? `Z-report #${modal.z.z_number} taken` : 'End of day'}</Text>
+          <Text style={s.modalTitle}>{modal.done ? t('Z-report #{number} taken', { number: modal.z.z_number }) : t('End of day')}</Text>
           {!modal.done ? (
             <Text style={s.modalBody}>
-              Since the last Z: {modal.z.sales_count} sales, {usd(modal.z.gross_cents)} (cash {usd(modal.z.by_tender.cash_cents)}, card {usd(modal.z.by_tender.card_cents)}), tax {usd(modal.z.tax_cents)}.
-              {drawerSession ? ' Close and count the drawer first: the count is part of the Z.' : ''}
+              {t('Since the last Z: {sales} sales, {gross} (cash {cash}, card {card}), tax {tax}.', {
+                sales: modal.z.sales_count,
+                gross: usd(modal.z.gross_cents),
+                cash: usd(modal.z.by_tender.cash_cents),
+                card: usd(modal.z.by_tender.card_cents),
+                tax: usd(modal.z.tax_cents),
+              })}
+              {drawerSession ? ` ${t('Close and count the drawer first: the count is part of the Z.')}` : ''}
             </Text>
           ) : (
             <ScrollView style={{ maxHeight: 360 }}>
@@ -837,11 +875,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           )}
           <View style={s.actions}>
             <Pressable style={s.ghost} onPress={() => setModal({ kind: 'none' })}>
-              <Text>{modal.done ? 'Done' : 'Not now'}</Text>
+              <Text>{modal.done ? t('Done') : t('Not now')}</Text>
             </Pressable>
             {!modal.done && drawerSession ? (
               <Pressable style={s.ghost} onPress={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false })}>
-                <Text>Count the drawer</Text>
+                <Text>{t('Count the drawer')}</Text>
               </Pressable>
             ) : null}
             {!modal.done ? (
@@ -858,7 +896,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                   })
                 }
               >
-                <Text style={s.primaryText}>Take Z & print</Text>
+                <Text style={s.primaryText}>{t('Take Z & print')}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -867,12 +905,14 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       {modal.kind === 'batch_age' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
-          <Text style={s.modalTitle}>Check ID — {modal.batch.min_age}+</Text>
-          <Text style={s.modalBody}>{modal.label} includes age-restricted items. Scan their ID, or confirm they are {modal.batch.min_age} or older.</Text>
+          <Text style={s.modalTitle}>{t('Check ID — {age}+', { age: modal.batch.min_age ?? '' })}</Text>
+          <Text style={s.modalBody}>
+            {t('{label} includes age-restricted items. Scan their ID, or confirm they are {age} or older.', { label: modal.label, age: modal.batch.min_age ?? '' })}
+          </Text>
           {idResult ? <Text style={s.idWarn}>{idResult.flags.map((f) => ID_FLAG_TEXT[f]).join(' ')}</Text> : null}
           <View style={s.actions}>
             <Pressable style={s.ghost} onPress={() => setModal({ kind: 'none' })}>
-              <Text>Not verified</Text>
+              <Text>{t('Not verified')}</Text>
             </Pressable>
             <Pressable
               style={[s.primary, !!idResult && (idResult.flags.includes('under_age') || idResult.flags.includes('expired')) && s.disabled]}
@@ -883,7 +923,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 ringAll(batch, label, true);
               }}
             >
-              <Text style={s.primaryText}>ID checked — {modal.batch.min_age}+</Text>
+              <Text style={s.primaryText}>{t('ID checked — {age}+', { age: modal.batch.min_age ?? '' })}</Text>
             </Pressable>
           </View>
         </Overlay>
@@ -907,11 +947,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       {modal.kind === 'remove_usual' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
-          <Text style={s.modalTitle}>Remove “{modal.usual.label}”?</Text>
-          <Text style={s.modalBody}>It disappears from every register within a few seconds. Sales already rung are not affected.</Text>
+          <Text style={s.modalTitle}>{t('Remove “{label}”?', { label: modal.usual.label })}</Text>
+          <Text style={s.modalBody}>{t('It disappears from every register within a few seconds. Sales already rung are not affected.')}</Text>
           <View style={s.actions}>
             <Pressable style={s.ghost} onPress={() => setModal({ kind: 'none' })}>
-              <Text>Keep</Text>
+              <Text>{t('Keep')}</Text>
             </Pressable>
             <Pressable
               style={s.primary}
@@ -923,7 +963,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 });
               }}
             >
-              <Text style={s.primaryText}>Remove</Text>
+              <Text style={s.primaryText}>{t('Remove')}</Text>
             </Pressable>
           </View>
         </Overlay>
@@ -931,14 +971,17 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       {modal.kind === 'age' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
-          <Text style={s.modalTitle}>Check ID — {modal.item.min_age}+</Text>
+          <Text style={s.modalTitle}>{t('Check ID — {age}+', { age: modal.item.min_age ?? '' })}</Text>
           <Text style={s.modalBody}>
-            {modal.item.name} is age-restricted. Scan the back of their ID, or check it by eye and confirm they are {modal.item.min_age} or older.
+            {t('{name} is age-restricted. Scan the back of their ID, or check it by eye and confirm they are {age} or older.', {
+              name: modal.item.name,
+              age: modal.item.min_age ?? '',
+            })}
           </Text>
           {idResult ? <Text style={s.idWarn}>{idResult.flags.map((f) => ID_FLAG_TEXT[f]).join(' ')}</Text> : null}
           <View style={s.actions}>
             <Pressable style={s.ghost} onPress={() => setModal({ kind: 'none' })}>
-              <Text>Not verified</Text>
+              <Text>{t('Not verified')}</Text>
             </Pressable>
             <Pressable
               style={[s.primary, !!idResult && (idResult.flags.includes('under_age') || idResult.flags.includes('expired')) && s.disabled]}
@@ -949,7 +992,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 ring(item, { qty, entry, ageConfirmed: true });
               }}
             >
-              <Text style={s.primaryText}>ID checked — {modal.item.min_age}+</Text>
+              <Text style={s.primaryText}>{t('ID checked — {age}+', { age: modal.item.min_age ?? '' })}</Text>
             </Pressable>
           </View>
         </Overlay>
@@ -988,33 +1031,38 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       {modal.kind === 'done' && (
         <Overlay>
-          <Text style={s.modalTitle}>Sale complete</Text>
+          <Text style={s.modalTitle}>{t('Sale complete')}</Text>
           {/* Change only when cash was handed over; an all-card sale has none to give. */}
           {modal.sale.price_mode !== 'card' ? (
             <>
-              <Text style={s.changeLabel}>Change due</Text>
+              <Text style={s.changeLabel}>{t('Change due')}</Text>
               <Text style={s.changeValue}>{usd(modal.change)}</Text>
             </>
           ) : null}
           <Text style={s.modalBody}>
             {modal.sale.price_mode === 'card'
-              ? `Paid ${usd(modal.sale.paid_cents)} by card${modal.sale.tenders.find((t) => t.card)?.card?.last4 ? ` ···· ${modal.sale.tenders.find((t) => t.card)!.card!.last4}` : ''}`
+              ? modal.sale.tenders.find((x) => x.card)?.card?.last4
+                ? t('Paid {amount} by card ···· {digits}', { amount: usd(modal.sale.paid_cents), digits: modal.sale.tenders.find((x) => x.card)!.card!.last4 ?? '' })
+                : t('Paid {amount} by card', { amount: usd(modal.sale.paid_cents) })
               : modal.sale.price_mode === 'split'
-                ? `Paid ${usd(modal.sale.paid_cents)}: ${modal.sale.tenders
-                    .filter((t) => t.approved)
-                    .map((t) => `${usd(t.amount_cents)} ${t.tender_type}`)
-                    .join(' + ')}`
-                : `Total ${usd(modal.sale.cash.total_cents)} cash · drawer opened`}
-            {modal.after === 'print' ? ' · receipt printed' : ''}
-            {modal.sale.language ? ` · receipt in ${languageInfo(modal.sale.language).name}` : ''}
+                ? t('Paid {amount}: {tenders}', {
+                    amount: usd(modal.sale.paid_cents),
+                    tenders: modal.sale.tenders
+                      .filter((x) => x.approved)
+                      .map((x) => `${usd(x.amount_cents)} ${x.tender_type}`)
+                      .join(' + '),
+                  })
+                : t('Total {amount} cash · drawer opened', { amount: usd(modal.sale.cash.total_cents) })}
+            {modal.after === 'print' ? ` · ${t('receipt printed')}` : ''}
+            {modal.sale.language ? ` · ${t('receipt in {language}', { language: languageInfo(modal.sale.language).name })}` : ''}
           </Text>
           {modal.after === 'ask' ? (
             <View style={s.actions}>
               <Pressable style={s.ghost} onPress={() => void finishReceipt(modal.sale, false)}>
-                <Text>No receipt</Text>
+                <Text>{t('No receipt')}</Text>
               </Pressable>
               <Pressable style={s.primary} onPress={() => void finishReceipt(modal.sale, true)}>
-                <Text style={s.primaryText}>Print receipt</Text>
+                <Text style={s.primaryText}>{t('Print receipt')}</Text>
               </Pressable>
             </View>
           ) : (
@@ -1036,11 +1084,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                       })
                     }
                   >
-                    <Text>Print receipt</Text>
+                    <Text>{t('Print receipt')}</Text>
                   </Pressable>
                 ) : modal.printed ? (
-                  <Pressable style={s.ghost} onPress={() => setModal({ kind: 'receipt', lines: modal.printed!, title: 'Receipt (printer preview)' })}>
-                    <Text>See receipt</Text>
+                  <Pressable style={s.ghost} onPress={() => setModal({ kind: 'receipt', lines: modal.printed!, title: t('Receipt (printer preview)') })}>
+                    <Text>{t('See receipt')}</Text>
                   </Pressable>
                 ) : null
               }
@@ -1055,7 +1103,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           <ScrollView style={s.paper}>
             {modal.lines.map((l, i) =>
               l.style === 'logo' ? (
-                <Image key={i} source={{ uri: l.url }} style={s.paperLogo} resizeMode="contain" accessibilityLabel="Store logo" />
+                <Image key={i} source={{ uri: l.url }} style={s.paperLogo} resizeMode="contain" accessibilityLabel={t('Store logo')} />
               ) : l.style === 'qr' ? (
                 // The printer module prints it with ESC/POS's native QR command; the preview draws the same code.
                 <View key={i} style={s.paperQr}>
@@ -1072,7 +1120,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             )}
           </ScrollView>
           <Pressable style={s.primary} onPress={() => setModal({ kind: 'none' })}>
-            <Text style={s.primaryText}>Done</Text>
+            <Text style={s.primaryText}>{t('Done')}</Text>
           </Pressable>
         </Overlay>
       )}
@@ -1092,10 +1140,10 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       {modal.kind === 'add_qty' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
           <NumberPad
-            title={`How many ${modal.item.name}?`}
+            title={t('How many {name}?', { name: modal.item.name })}
             money={false}
             max={999}
-            confirmLabel={(n) => `Ring up ${n || ''}`}
+            confirmLabel={(n) => t('Ring up {qty}', { qty: n || '' })}
             onCancel={() => setModal({ kind: 'none' })}
             onConfirm={(n) => {
               const { item, entry } = modal;
@@ -1109,13 +1157,13 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       {modal.kind === 'set_qty' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
           <NumberPad
-            title={`Quantity — ${modal.name}`}
-            subtitle="0 removes the line"
+            title={t('Quantity — {name}', { name: modal.name })}
+            subtitle={t('0 removes the line')}
             money={false}
             max={9999}
             allowZero
             initial={modal.qty}
-            confirmLabel={(n) => (n === 0 ? 'Remove line' : `Set to ${n}`)}
+            confirmLabel={(n) => (n === 0 ? t('Remove line') : t('Set to {qty}', { qty: n }))}
             onCancel={() => setModal({ kind: 'none' })}
             onConfirm={(n) => {
               const lineId = modal.line_id;
@@ -1129,12 +1177,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       {modal.kind === 'open_price' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
           <NumberPad
-            title={`Price — ${modal.item.name}`}
-            subtitle={`Card price follows automatically (+${(catalog.dual_price_rate_ppm / 10_000).toString()}%)`}
+            title={t('Price — {name}', { name: modal.item.name })}
+            subtitle={t('Card price follows automatically (+{rate}%)', { rate: (catalog.dual_price_rate_ppm / 10_000).toString() })}
             money
             max={9_999_99}
             initial={modal.item.cash_price_cents || undefined}
-            confirmLabel={(c) => (c ? `Ring up ${usd(c)}` : 'Enter a price')}
+            confirmLabel={(c) => (c ? t('Ring up {amount}', { amount: usd(c) }) : t('Enter a price'))}
             onCancel={() => setModal({ kind: 'none' })}
             onConfirm={(c) => {
               const { item, qty, entry, ageConfirmed } = modal;
@@ -1257,10 +1305,10 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
       {modal.kind === 'error' && (
         <Overlay onClose={() => setModal({ kind: 'none' })}>
-          <Text style={s.modalTitle}>Can't do that</Text>
+          <Text style={s.modalTitle}>{t('Can\'t do that')}</Text>
           <Text style={s.modalBody}>{modal.message}</Text>
           <Pressable style={s.primary} onPress={() => setModal({ kind: 'none' })}>
-            <Text style={s.primaryText}>OK</Text>
+            <Text style={s.primaryText}>{t('OK')}</Text>
           </Pressable>
         </Overlay>
       )}
@@ -1270,6 +1318,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
 /** "Next customer" with a short countdown, so a zero-tap sale clears itself (P8). Any tap stops the timer. */
 function AutoNext({ onNext, extra }: { onNext: () => void; extra: ReactNode }) {
+  const t = useT();
   const [left, setLeft] = useState(4);
   const [held, setHeld] = useState(false);
   // The parent re-renders often (sync pill); keep the latest callback without restarting the countdown.
@@ -1281,14 +1330,14 @@ function AutoNext({ onNext, extra }: { onNext: () => void; extra: ReactNode }) {
       next.current();
       return;
     }
-    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setLeft((n) => n - 1), 1000);
+    return () => clearTimeout(timer);
   }, [left, held]);
   return (
     <View style={s.actions} onTouchStart={() => setHeld(true)}>
       {extra}
       <Pressable style={[s.primary, { backgroundColor: C.black }]} onPress={onNext}>
-        <Text style={s.primaryText}>Next customer{held ? '' : ` (${left})`}</Text>
+        <Text style={s.primaryText}>{held ? t('Next customer') : t('Next customer ({seconds})', { seconds: left })}</Text>
       </Pressable>
     </View>
   );
@@ -1304,14 +1353,15 @@ function Row({ label, value }: { label: string; value: number }) {
 }
 
 function SyncPill({ status, onPress }: { status: SyncStatus | null; onPress: () => void }) {
+  const t = useT();
   const ok = status?.online && status.queued === 0;
   const label = !status
-    ? 'Starting…'
+    ? t('Starting…')
     : status.online
       ? status.queued === 0
-        ? 'Synced'
-        : `Syncing · ${status.queued} queued`
-      : `Offline · ${status.queued} queued`;
+        ? t('Synced')
+        : t('Syncing · {count} queued', { count: status.queued })
+      : t('Offline · {count} queued', { count: status.queued });
   return (
     <Pressable onPress={onPress} style={[s.pill, ok ? s.pillOk : s.pillWarn]}>
       <Text style={[s.pillText, { color: ok ? C.green : C.amber }]}>{label}</Text>
@@ -1336,21 +1386,22 @@ function CashModal({
   /** Split: take this much cash now, the rest on a card. */
   onPart: (amount: number) => void;
 }) {
+  const t = useT();
   const [digits, setDigits] = useState('');
   const typed = digits ? Number(digits) : 0; // keypad fills from the cents column: 2-0-0-0 → $20.00
   const options = quickCashOptions(cents(total));
   const press = (k: string) => setDigits((d) => (k === '⌫' ? d.slice(0, -1) : (d + k).replace(/^0+/, '').slice(0, 7)));
   return (
     <Overlay onClose={onCancel}>
-      <Text style={s.modalTitle}>Cash — {usd(total)}</Text>
+      <Text style={s.modalTitle}>{t('Cash — {amount}', { amount: usd(total) })}</Text>
       <View style={s.quickRow}>
         {options.map((o) => (
           <Pressable key={o} style={s.quick} onPress={() => onTender(o)}>
-            <Text style={s.quickText}>{o === total ? 'Exact' : usd(o)}</Text>
+            <Text style={s.quickText}>{o === total ? t('Exact') : usd(o)}</Text>
           </Pressable>
         ))}
       </View>
-      <Text style={s.muted}>Other amount</Text>
+      <Text style={s.muted}>{t('Other amount')}</Text>
       <Text style={s.keypadValue}>{usd(typed)}</Text>
       <View style={s.keypad}>
         {['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '⌫'].map((k) => (
@@ -1361,19 +1412,19 @@ function CashModal({
       </View>
       <View style={s.actions}>
         <Pressable style={s.ghost} onPress={onCancel}>
-          <Text>Back</Text>
+          <Text>{t('Back')}</Text>
         </Pressable>
         <Pressable style={s.ghost} onPress={onCounterfeit}>
-          <Text>Reject a bill</Text>
+          <Text>{t('Reject a bill')}</Text>
         </Pressable>
         {/* Black, not red: these buttons carry dollar amounts. */}
         {typed > 0 && typed < total && allowPart ? (
           <Pressable style={[s.primary, { backgroundColor: C.black }]} onPress={() => onPart(typed)}>
-            <Text style={s.primaryText}>Take {usd(typed)} now, rest by card</Text>
+            <Text style={s.primaryText}>{t('Take {amount} now, rest by card', { amount: usd(typed) })}</Text>
           </Pressable>
         ) : (
           <Pressable style={[s.primary, { backgroundColor: C.black }, typed < total && s.disabled]} disabled={typed < total} onPress={() => onTender(typed)}>
-            <Text style={s.primaryText}>Take {usd(typed)}</Text>
+            <Text style={s.primaryText}>{t('Take {amount}', { amount: usd(typed) })}</Text>
           </Pressable>
         )}
       </View>
@@ -1394,24 +1445,25 @@ function DevicePanel({
   onForget: () => void;
   onError: (m: string) => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const rows: [string, string][] = [
-    ['Register', `${rt.identity.register_name} · ${rt.identity.register_id}`],
-    ['Location', `${rt.identity.location_name} (${rt.identity.timezone})`],
-    ['Sync', status ? (status.online ? 'online' : 'offline') : '—'],
-    ['Queued events', String(status?.queued ?? '—')],
-    ['Rejected events', String(status?.rejected ?? 0)],
-    ['Last sync', status?.lastSyncAt ? new Date(status.lastSyncAt).toLocaleTimeString() : 'never'],
-    ['Last error', status?.lastError ?? '—'],
-    ['Catalog', `v${status?.catalogVersion ?? rt.catalog.catalog_version}`],
-    ['Packs', rt.identity.enabled_packs.join(', ')],
-    ['Realtime', rt.ops.socketOpen() ? 'connected' : 'not connected (polling)'],
+    [t('Register'), `${rt.identity.register_name} · ${rt.identity.register_id}`],
+    [t('Location'), `${rt.identity.location_name} (${rt.identity.timezone})`],
+    [t('Sync'), status ? (status.online ? t('online') : t('offline')) : '—'],
+    [t('Queued events'), String(status?.queued ?? '—')],
+    [t('Rejected events'), String(status?.rejected ?? 0)],
+    [t('Last sync'), status?.lastSyncAt ? new Date(status.lastSyncAt).toLocaleTimeString() : t('never')],
+    [t('Last error'), status?.lastError ?? '—'],
+    [t('Catalog'), `v${status?.catalogVersion ?? rt.catalog.catalog_version}`],
+    [t('Packs'), rt.identity.enabled_packs.join(', ')],
+    [t('Realtime'), rt.ops.socketOpen() ? t('connected') : t('not connected (polling)')],
     ...Object.entries(PREVIEW_HEALTH).map(([slot, h]): [string, string] => [slot.replace('_', ' '), `${h.state}${h.detail ? ` · ${h.detail}` : ''}`]),
   ];
   const queued = status?.queued ?? 0;
   return (
     <>
-      <Text style={s.modalTitle}>Device</Text>
+      <Text style={s.modalTitle}>{t('Device')}</Text>
       {rows.map(([k, v]) => (
         <View key={k} style={s.row}>
           <Text style={s.muted}>{k}</Text>
@@ -1422,7 +1474,7 @@ function DevicePanel({
       ))}
       <View style={s.actions}>
         <Pressable style={s.ghost} onPress={() => rt.sync.kick()}>
-          <Text>Sync now</Text>
+          <Text>{t('Sync now')}</Text>
         </Pressable>
         <Pressable
           style={[s.ghost, busy && s.disabled]}
@@ -1434,13 +1486,17 @@ function DevicePanel({
             setBusy(false);
           }}
         >
-          <Text>Resync catalog</Text>
+          <Text>{t('Resync catalog')}</Text>
         </Pressable>
         <Pressable
           style={s.ghost}
-          onPress={() => (queued > 0 ? onError(`${queued} events have not reached the server yet. Sync before forgetting this pairing, or those sales would be stranded.`) : onForget())}
+          onPress={() =>
+            queued > 0
+              ? onError(t('{count} events have not reached the server yet. Sync before forgetting this pairing, or those sales would be stranded.', { count: queued }))
+              : onForget()
+          }
         >
-          <Text>Forget pairing</Text>
+          <Text>{t('Forget pairing')}</Text>
         </Pressable>
       </View>
     </>
@@ -1552,18 +1608,19 @@ const s = StyleSheet.create({
 
 /** Name a usual: "Mike — coffee + Newports". Saved online; every register gets it with the next sync. */
 function SaveUsual({ suggestion, onSave, onCancel }: { suggestion: string; onSave: (label: string) => void; onCancel: () => void }) {
+  const t = useT();
   const [label, setLabel] = useState(suggestion.slice(0, 40));
   return (
     <View style={{ gap: 10 }}>
-      <Text style={s.modalTitle}>Save this ticket as a usual</Text>
-      <Text style={s.modalBody}>One tap rings it again. It’s yours: it shows when you’re signed in.</Text>
-      <TextInput style={s.search} value={label} onChangeText={setLabel} maxLength={40} autoFocus placeholder="Mike — coffee + Newports" />
+      <Text style={s.modalTitle}>{t('Save this ticket as a usual')}</Text>
+      <Text style={s.modalBody}>{t('One tap rings it again. It’s yours: it shows when you’re signed in.')}</Text>
+      <TextInput style={s.search} value={label} onChangeText={setLabel} maxLength={40} autoFocus placeholder={t('Mike — coffee + Newports')} />
       <View style={s.actions}>
         <Pressable style={s.ghost} onPress={onCancel}>
-          <Text>Cancel</Text>
+          <Text>{t('Cancel')}</Text>
         </Pressable>
         <Pressable style={[s.primary, !label.trim() && s.disabled]} disabled={!label.trim()} onPress={() => onSave(label.trim())}>
-          <Text style={s.primaryText}>Save usual</Text>
+          <Text style={s.primaryText}>{t('Save usual')}</Text>
         </Pressable>
       </View>
     </View>

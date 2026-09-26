@@ -7,9 +7,11 @@ import { TILE_COLORS, type CatalogItem } from '@adpay/shared';
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { API_URL } from '../runtime';
+import { useT } from './i18n';
 import { C, usd } from './theme';
 
 export function QuickKey({ item, onPress, onLongPress }: { item: CatalogItem; onPress: (i: CatalogItem) => void; onLongPress?: (i: CatalogItem) => void }) {
+  const t = useT();
   const [imageFailed, setImageFailed] = useState(false);
   const palette = item.color ? TILE_COLORS[item.color] : null;
   const showImage = !!item.image_url && !imageFailed;
@@ -34,7 +36,7 @@ export function QuickKey({ item, onPress, onLongPress }: { item: CatalogItem; on
       </View>
       <View>
         <Text style={s.cash}>{usd(item.cash_price_cents)}</Text>
-        <Text style={s.card}>card {usd(item.card_price_cents)}</Text>
+        <Text style={s.card}>{t('card {amount}', { amount: usd(item.card_price_cents) })}</Text>
       </View>
     </Pressable>
   );

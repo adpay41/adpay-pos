@@ -6,6 +6,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asMerchantUser, requireMerchantUser, requirePermission } from '../http/auth-hooks';
 import type { AppDeps } from '../server';
+import { createMessageSender } from '../messaging/sender';
+import { sendReceipt } from '../services/messaging';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
 import { getSaleTimeline } from '../services/events';
 import { tenancyTree } from '../services/onboarding';
@@ -112,6 +114,14 @@ export async function merchantRoutes(app: FastifyInstance, deps: AppDeps): Promi
     const r = Range.parse(request.query);
     const t = await timesheet(db, asMerchantUser(request).merchant_id, r.from, r.to);
     return reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="hours-${r.from}-to-${r.to}.csv"`).send(timesheetCsv(t));
+  });
+
+  // Send a receipt later by text or email (P18b): the digital-receipt link, through the message sender.
+  const sender = deps.messages ?? createMessageSender('log', deps.logger);
+  app.post('/merchant/sales/:saleId/send-receipt', reports, async (request) => {
+    const { saleId } = z.object({ saleId: z.uuid() }).parse(request.params);
+    const body = z.strictObject({ channel: z.enum(['sms', 'email']), to: z.string().trim().min(3).max(200) }).parse(request.body);
+    return sendReceipt(db, sender, asMerchantUser(request), saleId, body, deps.config.publicBaseUrl, request.logContext.trace_id);
   });
 
   app.get('/merchant/sales/:saleId', reports, async (request) => {

@@ -47,6 +47,10 @@ export interface Config {
   devOtpCode: string;
   corsOrigins: string[];
   paymentProvider: string;
+  /** This API's public URL, for links people open on their phones (digital receipts, P18). */
+  publicBaseUrl: string;
+  /** log | (twilio, ses: not built) — who delivers texts and emails (P18b). */
+  messageProvider: string;
 }
 
 export function loadConfig(overrides: Partial<Config> = {}): Config {
@@ -67,6 +71,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       .map((s) => s.trim())
       .filter(Boolean),
     paymentProvider: str('PAYMENT_PROVIDER', 'stub'),
+    publicBaseUrl: str('API_BASE_URL', `http://localhost:${int('API_PORT', 3000)}`),
+    messageProvider: str('MESSAGE_PROVIDER', 'log'),
     ...overrides,
   };
   if (config.jwtSecret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');

@@ -9,9 +9,21 @@
  * had a professional review yet: that is outside the code (build plan).
  */
 import { z } from 'zod';
-import { BUILT_IN, EN, type MessageKey, type Messages } from './i18n-messages';
+import { CASHIER_EN, type CashierKey } from './i18n-cashier';
+import { CASHIER_ES } from './i18n-cashier-es';
+import { BUILT_IN as CUSTOMER_BUILT_IN, EN, type CustomerKey } from './i18n-messages';
 
-export { EN, type MessageKey, type Messages } from './i18n-messages';
+export { EN, type CustomerKey } from './i18n-messages';
+export { CASHIER_EN, type CashierKey } from './i18n-cashier';
+export { CASHIER_ES } from './i18n-cashier-es';
+
+/** Every translatable string: customer screen and receipt (named keys) and the cashier's (English text). */
+export type MessageKey = CustomerKey | CashierKey;
+export type Messages = Partial<Record<MessageKey, string>>;
+
+/** English for every key; a cashier key is its own English. */
+const EN_ALL: Record<string, string> = { ...Object.fromEntries(CASHIER_EN.map((k) => [k, k])), ...EN };
+const BUILT_IN: Record<string, Messages> = { ...CUSTOMER_BUILT_IN, es: { ...CASHIER_ES, ...CUSTOMER_BUILT_IN.es } };
 
 export const LANGUAGES = [
   { code: 'en', name: 'English', native: 'English', dir: 'ltr' },
@@ -55,8 +67,15 @@ export const LANGUAGE_DEFAULT_STATUS: Record<Lang, LanguageStatus> = {
 };
 
 export type Overrides = Partial<Record<Lang, Messages>>;
-export const MESSAGE_KEYS = Object.keys(EN) as MessageKey[];
-export const MessageKeySchema = z.enum(MESSAGE_KEYS as [MessageKey, ...MessageKey[]]);
+export const CUSTOMER_KEYS = Object.keys(EN) as CustomerKey[];
+export const CASHIER_KEYS = [...CASHIER_EN] as CashierKey[];
+export const MESSAGE_KEYS: MessageKey[] = [...CUSTOMER_KEYS, ...CASHIER_KEYS];
+export const MessageKeySchema = z
+  .string()
+  .refine((k) => k in EN_ALL, 'Unknown string')
+  .transform((k) => k as MessageKey);
+/** Where a string shows: the customer screen, the receipt, or the cashier's register screens. */
+export const messageArea = (key: MessageKey): 'customer' | 'receipt' | 'cashier' => (key in EN ? (key.startsWith('r_') ? 'receipt' : 'customer') : 'cashier');
 
 /** What the register carries in its snapshot. */
 export interface I18nSnapshot {
@@ -64,17 +83,19 @@ export interface I18nSnapshot {
   offered: Lang[];
   /** The customer screen starts every sale in this language. */
   default: Lang;
+  /** Languages a cashier may pick for the register itself (P18b): every one not in draft. */
+  cashier?: Lang[];
   overrides: Overrides;
 }
 
-export const DEFAULT_I18N: I18nSnapshot = { offered: ['en'], default: 'en', overrides: {} };
+export const DEFAULT_I18N: I18nSnapshot = { offered: ['en'], default: 'en', cashier: ['en'], overrides: {} };
 
 const fill = (text: string, vars?: Record<string, string | number>) =>
   vars ? text.replace(/\{(\w+)\}/g, (m, name: string) => (name in vars ? String(vars[name]) : m)) : text;
 
 /** One string: override, then the built-in catalog, then English. */
 export function translate(lang: Lang, key: MessageKey, vars?: Record<string, string | number>, overrides?: Overrides): string {
-  return fill(overrides?.[lang]?.[key] ?? BUILT_IN[lang][key] ?? overrides?.en?.[key] ?? EN[key], vars);
+  return fill(overrides?.[lang]?.[key] ?? BUILT_IN[lang]?.[key] ?? overrides?.en?.[key] ?? EN_ALL[key] ?? key, vars);
 }
 
 export type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
@@ -84,19 +105,21 @@ export function translator(lang: Lang, overrides?: Overrides): Translate {
 }
 
 /** The built-in string alone (what an override replaces), or null where the catalog has none. */
-export const builtIn = (lang: Lang, key: MessageKey): string | null => BUILT_IN[lang][key] ?? null;
+export const builtIn = (lang: Lang, key: MessageKey): string | null => (lang === 'en' ? (EN_ALL[key] ?? null) : (BUILT_IN[lang]?.[key] ?? null));
+export const englishOf = (key: MessageKey): string => EN_ALL[key] ?? key;
 
-/** How much of a language is translated, counting overrides. */
-export function coverage(lang: Lang, overrides?: Overrides): { translated: number; total: number; missing: MessageKey[] } {
-  const missing = MESSAGE_KEYS.filter((k) => !(overrides?.[lang]?.[k] ?? BUILT_IN[lang][k]));
-  return { translated: MESSAGE_KEYS.length - missing.length, total: MESSAGE_KEYS.length, missing };
+/** How much of a language is translated, counting overrides: the customer side, or the cashier's. */
+export function coverage(lang: Lang, overrides?: Overrides, area: 'customer' | 'cashier' = 'customer'): { translated: number; total: number; missing: MessageKey[] } {
+  const keys: MessageKey[] = area === 'customer' ? CUSTOMER_KEYS : CASHIER_KEYS;
+  const missing = lang === 'en' ? [] : keys.filter((k) => !(overrides?.[lang]?.[k] ?? BUILT_IN[lang]?.[k]));
+  return { translated: keys.length - missing.length, total: keys.length, missing };
 }
 
 const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
 
 /** A translation must keep exactly the English string's `{placeholders}`, or amounts go missing. */
 export function placeholdersMatch(key: MessageKey, text: string): boolean {
-  return placeholders(EN[key]) === placeholders(text);
+  return placeholders(englishOf(key)) === placeholders(text);
 }
 
 /**

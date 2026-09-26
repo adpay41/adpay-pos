@@ -3,40 +3,46 @@
  * the list of tickets rung here with reprint; refunds by line at the price paid; and voiding a
  * completed sale. Refunds and voids are permission-gated with a manager's PIN in place.
  */
-import { lineTotal, refundQuote, refundableQty, type FoldedSale, type Permission } from '@adpay/shared';
+import { lineTotal, refundQuote, refundableQty, type CashierKey, type FoldedSale, type Permission } from '@adpay/shared';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { CardRefunder, ParkedTicket, SaleSession } from '../core/session';
 import type { StaffGate } from '../core/staff';
 import type { EventStore } from '../core/store';
+import { tk, useT } from './i18n';
 import { OverridePrompt } from './StaffUI';
 import { C, usd } from './theme';
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
+const STATUS: Record<FoldedSale['status'], CashierKey> = { open: tk('open'), suspended: tk('suspended'), completed: tk('completed'), voided: tk('voided') };
+// Stored in the refund event in English; translated only where shown.
+const REFUND_REASONS = [tk('Returned'), tk('Damaged'), tk('Wrong item'), tk('Price error')];
+
 export function HeldTickets({ session, onRecall, onClose }: { session: SaleSession; onRecall: (saleId: string) => void; onClose: () => void }) {
+  const t = useT();
   const [list, setList] = useState<(ParkedTicket & { sale: FoldedSale })[] | null>(null);
   useEffect(() => {
     void session.parkedTickets().then(setList);
   }, [session]);
   return (
     <View style={{ gap: 10 }}>
-      <Text style={s.title}>Held tickets</Text>
-      {list?.length === 0 ? <Text style={s.muted}>Nothing on hold.</Text> : null}
-      {list?.map((t) => (
-        <Pressable key={t.sale_id} style={s.row} onPress={() => onRecall(t.sale_id)}>
+      <Text style={s.title}>{t('Held tickets')}</Text>
+      {list?.length === 0 ? <Text style={s.muted}>{t('Nothing on hold.')}</Text> : null}
+      {list?.map((p) => (
+        <Pressable key={p.sale_id} style={s.row} onPress={() => onRecall(p.sale_id)}>
           <View style={{ flex: 1 }}>
-            <Text style={s.name}>{t.label ?? `Ticket ${t.sale_id.slice(0, 4).toUpperCase()}`}</Text>
+            <Text style={s.name}>{p.label ?? t('Ticket {id}', { id: p.sale_id.slice(0, 4).toUpperCase() })}</Text>
             <Text style={s.muted}>
-              held {time(t.held_at)} · {t.sale.lines.length} {t.sale.lines.length === 1 ? 'item' : 'items'}
+              {p.sale.lines.length === 1 ? t('held {time} · 1 item', { time: time(p.held_at) }) : t('held {time} · {count} items', { time: time(p.held_at), count: p.sale.lines.length })}
             </Text>
           </View>
-          <Text style={s.money}>{usd(t.sale.cash.total_cents)}</Text>
-          <Text style={s.link}>Recall</Text>
+          <Text style={s.money}>{usd(p.sale.cash.total_cents)}</Text>
+          <Text style={s.link}>{t('Recall')}</Text>
         </Pressable>
       ))}
       <Pressable onPress={onClose} style={s.back}>
-        <Text style={s.muted}>Back to the sale</Text>
+        <Text style={s.muted}>{t('Back to the sale')}</Text>
       </Pressable>
     </View>
   );
@@ -63,6 +69,7 @@ export function TicketBrowser({
   onCashBack: (sale: FoldedSale, amount: number, what: 'refund' | 'void') => Promise<void>;
   onClose: () => void;
 }) {
+  const t = useT();
   const [step, setStep] = useState<Step>({ kind: 'list' });
   const [tickets, setTickets] = useState<{ sale: FoldedSale; at: string }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,24 +119,25 @@ export function TicketBrowser({
   }
 
   if (step.kind === 'detail') {
-    const t = tickets?.find((x) => x.sale.sale_id === step.saleId);
-    if (!t) return null;
+    const tix = tickets?.find((x) => x.sale.sale_id === step.saleId);
+    if (!tix) return null;
     return (
       <TicketDetail
-        sale={t.sale}
-        at={t.at}
+        sale={tix.sale}
+        at={tix.at}
         error={error}
         onBack={() => setStep({ kind: 'list' })}
-        onReprint={() => void run(() => onReprint(t.sale))}
+        onReprint={() => void run(() => onReprint(tix.sale))}
         onRefund={(lines, reason) =>
-          guarded('sale.refund', t.sale.sale_id, async () => {
-            const r = await session.refund(t.sale.sale_id, lines, reason, cardRefund);
+          guarded('sale.refund', tix.sale.sale_id, async () => {
+            const r = await session.refund(tix.sale.sale_id, lines, reason, cardRefund);
             await onCashBack(r.sale, r.amount, 'refund');
           })
         }
         onVoid={() =>
-          guarded('sale.void', t.sale.sale_id, async () => {
-            const r = await session.voidCompleted(t.sale.sale_id, 'Voided at register', cardRefund);
+          guarded('sale.void', tix.sale.sale_id, async () => {
+            // The void reason is stored in the event: stays English.
+            const r = await session.voidCompleted(tix.sale.sale_id, 'Voided at register', cardRefund);
             await onCashBack(r.sale, r.amount, 'void');
           })
         }
@@ -139,18 +147,18 @@ export function TicketBrowser({
 
   return (
     <View style={{ gap: 10 }}>
-      <Text style={s.title}>Tickets on this register</Text>
+      <Text style={s.title}>{t('Tickets on this register')}</Text>
       <ScrollView style={{ maxHeight: 460 }}>
-        {tickets?.length === 0 ? <Text style={s.muted}>No tickets yet.</Text> : null}
+        {tickets?.length === 0 ? <Text style={s.muted}>{t('No tickets yet.')}</Text> : null}
         {tickets?.map(({ sale, at }) => (
           <Pressable key={sale.sale_id} style={s.row} onPress={() => setStep({ kind: 'detail', saleId: sale.sale_id })}>
             <View style={{ flex: 1 }}>
               <Text style={s.name}>
-                {at ? time(at) : ''} · Ticket {sale.sale_id.slice(0, 4).toUpperCase()}
+                {at ? time(at) : ''} · {t('Ticket {id}', { id: sale.sale_id.slice(0, 4).toUpperCase() })}
               </Text>
               <Text style={s.muted}>
-                {sale.lines.length} {sale.lines.length === 1 ? 'item' : 'items'} · {sale.status}
-                {sale.refunded_cents > 0 && sale.status === 'completed' ? ` · refunded ${usd(sale.refunded_cents)}` : ''}
+                {sale.lines.length === 1 ? t('1 item') : t('{count} items', { count: sale.lines.length })} · {t(STATUS[sale.status])}
+                {sale.refunded_cents > 0 && sale.status === 'completed' ? ` · ${t('refunded {amount}', { amount: usd(sale.refunded_cents) })}` : ''}
               </Text>
             </View>
             <Text style={s.money}>{usd(sale.price_mode === 'split' && sale.declared ? sale.declared.total_cents : sale.price_mode === 'card' ? sale.card.total_cents : sale.cash.total_cents)}</Text>
@@ -158,7 +166,7 @@ export function TicketBrowser({
         ))}
       </ScrollView>
       <Pressable onPress={onClose} style={s.back}>
-        <Text style={s.muted}>Back to the sale</Text>
+        <Text style={s.muted}>{t('Back to the sale')}</Text>
       </Pressable>
     </View>
   );
@@ -181,6 +189,7 @@ function TicketDetail({
   onRefund: (lines: { line_id: string; qty: number }[], reason: string) => void;
   onVoid: () => void;
 }) {
+  const t = useT();
   const left = sale.status === 'completed' ? refundableQty(sale) : {};
   const [pick, setPick] = useState<Record<string, number>>({});
   const [reason, setReason] = useState('Returned');
@@ -199,10 +208,10 @@ function TicketDetail({
 
   return (
     <View style={{ gap: 8 }}>
-      <Text style={s.title}>Ticket {sale.sale_id.slice(0, 4).toUpperCase()}</Text>
+      <Text style={s.title}>{t('Ticket {id}', { id: sale.sale_id.slice(0, 4).toUpperCase() })}</Text>
       <Text style={s.muted}>
-        {at ? new Date(at).toLocaleString() : ''} · {sale.status} · paid {mode === 'card' ? 'by card' : 'in cash'} {usd(sale.paid_cents)}
-        {sale.refunded_cents > 0 ? ` · refunded ${usd(sale.refunded_cents)}` : ''}
+        {at ? new Date(at).toLocaleString() : ''} · {t(STATUS[sale.status])} · {mode === 'card' ? t('paid by card {amount}', { amount: usd(sale.paid_cents) }) : t('paid in cash {amount}', { amount: usd(sale.paid_cents) })}
+        {sale.refunded_cents > 0 ? ` · ${t('refunded {amount}', { amount: usd(sale.refunded_cents) })}` : ''}
       </Text>
       <ScrollView style={{ maxHeight: 300 }}>
         {sale.lines.map((l) => {
@@ -215,16 +224,16 @@ function TicketDetail({
                   {l.qty > 1 ? `${l.qty} × ` : ''}
                   {l.name}
                 </Text>
-                {(sale.refunded_qty[l.line_id] ?? 0) > 0 ? <Text style={s.muted}>{sale.refunded_qty[l.line_id]} returned</Text> : null}
+                {(sale.refunded_qty[l.line_id] ?? 0) > 0 ? <Text style={s.muted}>{t('{count} returned', { count: sale.refunded_qty[l.line_id] ?? 0 })}</Text> : null}
               </View>
               <Text style={s.money}>{usd(lineTotal(l, mode === 'card' ? 'card' : 'cash'))}</Text>
               {refundable && can > 0 ? (
                 <View style={s.stepper}>
-                  <Pressable style={s.step} onPress={() => setPick((p) => ({ ...p, [l.line_id]: Math.max(0, n - 1) }))} accessibilityLabel={`Return one less ${l.name}`}>
+                  <Pressable style={s.step} onPress={() => setPick((p) => ({ ...p, [l.line_id]: Math.max(0, n - 1) }))} accessibilityLabel={t('Return one less {name}', { name: l.name })}>
                     <Text style={s.stepText}>−</Text>
                   </Pressable>
                   <Text style={s.stepCount}>{n}</Text>
-                  <Pressable style={s.step} onPress={() => setPick((p) => ({ ...p, [l.line_id]: Math.min(can, n + 1) }))} accessibilityLabel={`Return one more ${l.name}`}>
+                  <Pressable style={s.step} onPress={() => setPick((p) => ({ ...p, [l.line_id]: Math.min(can, n + 1) }))} accessibilityLabel={t('Return one more {name}', { name: l.name })}>
                     <Text style={s.stepText}>+</Text>
                   </Pressable>
                 </View>
@@ -235,9 +244,9 @@ function TicketDetail({
       </ScrollView>
       {refundable ? (
         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-          {['Returned', 'Damaged', 'Wrong item', 'Price error'].map((r) => (
+          {REFUND_REASONS.map((r) => (
             <Pressable key={r} onPress={() => setReason(r)} style={[s.chip, reason === r && s.chipOn]}>
-              <Text style={[s.chipText, reason === r && { color: '#fff' }]}>{r}</Text>
+              <Text style={[s.chipText, reason === r && { color: '#fff' }]}>{t(r)}</Text>
             </Pressable>
           ))}
         </View>
@@ -245,21 +254,21 @@ function TicketDetail({
       {error ? <Text style={s.error}>{error}</Text> : null}
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
         <Pressable style={s.ghost} onPress={onReprint}>
-          <Text>Reprint</Text>
+          <Text>{t('Reprint')}</Text>
         </Pressable>
         {refundable ? (
           <Pressable style={[s.ghost, s.dark, quote <= 0 && s.disabled]} disabled={quote <= 0} onPress={() => onRefund(selection, reason)}>
-            <Text style={{ color: '#fff', fontWeight: '700' }}>{quote > 0 ? `Refund ${usd(quote)} ${mode === 'card' ? 'to card' : 'cash'}` : 'Pick items to refund'}</Text>
+            <Text style={{ color: '#fff', fontWeight: '700' }}>{quote > 0 ? (mode === 'card' ? t('Refund {amount} to card', { amount: usd(quote) }) : t('Refund {amount} cash', { amount: usd(quote) })) : t('Pick items to refund')}</Text>
           </Pressable>
         ) : null}
         {sale.status === 'completed' ? (
           <Pressable style={s.ghost} onPress={onVoid}>
-            <Text>Void sale</Text>
+            <Text>{t('Void sale')}</Text>
           </Pressable>
         ) : null}
       </View>
       <Pressable onPress={onBack} style={s.back}>
-        <Text style={s.muted}>‹ All tickets</Text>
+        <Text style={s.muted}>{t('‹ All tickets')}</Text>
       </Pressable>
     </View>
   );
