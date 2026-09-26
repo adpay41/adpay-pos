@@ -13,7 +13,7 @@
  * Refuses to run with NODE_ENV=production.
  */
 import { randomUUID } from 'node:crypto';
-import { foldSale, hashPin, parseRegisterEvent, resolveDualPrice, type RegisterEvent, type Role, type TileColor } from '@adpay/shared';
+import { foldSale, hashPin, parseRegisterEvent, verifyPin, resolveDualPrice, type RegisterEvent, type Role, type TileColor } from '@adpay/shared';
 import { hashPassword, hashSetupCode } from '../auth/crypto';
 import type { DevicePrincipal } from '../auth/principal';
 import { loadDatabaseUrl } from '../config';
@@ -381,26 +381,8 @@ async function main() {
     const bcmCatalog = await seedCatalog(db, org2.org_id, bcm.merchant_id, 20_000);
     await seedFavorites(db, bay.location_id, bcmCatalog);
 
-    // Demo staff with register PINs (local only; README lists them). Cashiers need no phone:
-    // they only sign in at the register, never to the merchant app.
-    const staff: [string, string, Role, string, string | null, string][] = [
-      [org.org_id, jsq.merchant_id, 'owner', 'Nadia Haddad', '+12015550100', '2580'],
-      [org.org_id, jsq.merchant_id, 'manager', 'Luis Ortega', '+12015550101', '1357'],
-      [org.org_id, jsq.merchant_id, 'cashier', 'Maria Santos', null, '2468'],
-      [org.org_id, jsq.merchant_id, 'cashier', 'Dev Patel', null, '3690'],
-      [org2.org_id, bcm.merchant_id, 'owner', 'Kevin Walsh', '+12015550142', '2580'],
-      [org2.org_id, bcm.merchant_id, 'cashier', 'Aisha Khan', null, '4826'],
-    ];
-    for (const [o, m, role, name, phone, pin] of staff) {
-      const { rows: u } = await db.query<{ user_id: string }>(
-        `INSERT INTO users (kind, name, phone) VALUES ('merchant_user', $1, $2) RETURNING user_id`,
-        [name, phone],
-      );
-      await db.query(
-        `INSERT INTO memberships (user_id, org_id, merchant_id, role, pin_hash, pin_set_at) VALUES ($1, $2, $3, $4, $5, now())`,
-        [u[0]!.user_id, o, m, role, hashPin(pin)],
-      );
-    }
+    // Demo staff with register PINs (DEMO_STAFF): the same routine that repairs an older database.
+    await ensureDemoStaff(db);
 
     // Registers with history are "already paired" devices in the field.
     for (const r of [jc1, jc2, ast1, bay1]) {
@@ -440,6 +422,63 @@ const DEMO_SETUP_CODES: Record<string, string> = {
 };
 const DEV_OTP_CODE = process.env.DEV_OTP_CODE || '123456';
 
+/**
+ * Demo staff and their register PINs (local only; the README lists them). Cashiers have no phone:
+ * they only sign in at the register, never the merchant app. Owners and managers can approve what a
+ * cashier can't (voids, refunds, discounts, price override, no-sale) with their PIN.
+ */
+const DEMO_STAFF: { merchant: string; role: Role; name: string; phone: string | null; pin: string }[] = [
+  { merchant: 'Journal Square Deli & Grocery', role: 'owner', name: 'Nadia Haddad', phone: '+12015550100', pin: '2580' },
+  { merchant: 'Journal Square Deli & Grocery', role: 'manager', name: 'Luis Ortega', phone: '+12015550101', pin: '1357' },
+  { merchant: 'Journal Square Deli & Grocery', role: 'cashier', name: 'Maria Santos', phone: null, pin: '2468' },
+  { merchant: 'Journal Square Deli & Grocery', role: 'cashier', name: 'Dev Patel', phone: null, pin: '3690' },
+  { merchant: 'Bayonne Corner Mart', role: 'owner', name: 'Kevin Walsh', phone: '+12015550142', pin: '2580' },
+  { merchant: 'Bayonne Corner Mart', role: 'cashier', name: 'Aisha Khan', phone: null, pin: '4826' },
+];
+
+/**
+ * Make sure every demo person exists at their store with their PIN. Runs on every `npm run dev` /
+ * `npm run logins`, so a database seeded before a person or PINs existed catches up. A PIN that
+ * was changed in the app is left alone (and reported). Registers pick changes up with the snapshot.
+ */
+async function ensureDemoStaff(db: Db): Promise<string[]> {
+  const lines: string[] = [];
+  const touched = new Set<string>();
+  for (const p of DEMO_STAFF) {
+    const { rows: m } = await db.query<{ org_id: string; merchant_id: string }>('SELECT org_id, merchant_id FROM merchants WHERE name = $1 ORDER BY created_at LIMIT 1', [p.merchant]);
+    if (!m[0]) continue;
+    const { rows: found } = await db.query<{ user_id: string; pin_hash: string | null; has_membership: boolean }>(
+      `SELECT u.user_id, ms.pin_hash, ms.user_id IS NOT NULL AS has_membership
+         FROM users u LEFT JOIN memberships ms ON ms.user_id = u.user_id AND ms.merchant_id = $2
+        WHERE u.kind = 'merchant_user' AND (($3::text IS NOT NULL AND u.phone = $3) OR ($3::text IS NULL AND u.name = $1))
+        ORDER BY ms.user_id IS NULL, u.created_at LIMIT 1`,
+      [p.name, m[0].merchant_id, p.phone],
+    );
+    let userId = found[0]?.user_id;
+    if (!userId) {
+      userId = (await db.query<{ user_id: string }>(`INSERT INTO users (kind, name, phone) VALUES ('merchant_user', $1, $2) RETURNING user_id`, [p.name, p.phone])).rows[0]!.user_id;
+    }
+    if (!found[0]?.has_membership) {
+      await db.query(`INSERT INTO memberships (user_id, org_id, merchant_id, role, pin_hash, pin_set_at) VALUES ($1, $2, $3, $4, $5, now())`, [userId, m[0].org_id, m[0].merchant_id, p.role, hashPin(p.pin)]);
+      touched.add(m[0].merchant_id);
+    } else if (!found[0].pin_hash) {
+      await db.query('UPDATE memberships SET pin_hash = $3, pin_set_at = now() WHERE user_id = $1 AND merchant_id = $2', [userId, m[0].merchant_id, hashPin(p.pin)]);
+      touched.add(m[0].merchant_id);
+    }
+    // Report what the database actually holds, checked against the stored hash.
+    const { rows: now } = await db.query<{ pin_hash: string | null; role: string; disabled: boolean }>(
+      'SELECT pin_hash, role, disabled_at IS NOT NULL AS disabled FROM memberships WHERE user_id = $1 AND merchant_id = $2',
+      [userId, m[0].merchant_id],
+    );
+    const ok = now[0]?.pin_hash ? verifyPin(p.pin, now[0].pin_hash) : false;
+    const state = now[0]?.disabled ? 'DISABLED in the app' : ok ? '' : 'PIN was changed in the app';
+    lines.push(`    ${p.pin}  ${p.name.padEnd(13)} ${(now[0]?.role ?? p.role).padEnd(8)} ${p.merchant}${state ? `  (${state})` : ''}`);
+  }
+  // Registers refresh who can sign in when the catalog version moves.
+  for (const id of touched) await db.query('UPDATE merchants SET catalog_version = catalog_version + 1 WHERE merchant_id = $1', [id]);
+  return lines;
+}
+
 async function armDemoSetupCode(db: Db, registerId: string, code: string) {
   const hash = hashSetupCode(code);
   await db.tx(async (q) => {
@@ -456,6 +495,7 @@ async function armDemoSetupCode(db: Db, registerId: string, code: string) {
 }
 
 async function printLogins(db: Db) {
+  const pins = await ensureDemoStaff(db);
   const { rows } = await db.query<{ register_id: string; label: string }>(
     `SELECT r.register_id, m.name || ' · ' || l.name || ' · ' || r.name AS label
        FROM registers r JOIN locations l USING (location_id) JOIN merchants m ON m.merchant_id = r.merchant_id
@@ -480,6 +520,8 @@ async function printLogins(db: Db) {
       '  Register             http://localhost:8082   enter a setup code:',
       ...codes,
       '                       Codes are re-armed on every `npm run dev` or `npm run logins`.',
+      '  Register PINs        "Who\'s working?" → tap the name, enter the PIN (owner/manager PINs approve overrides):',
+      ...pins,
       '──────────────────────────────────────────────────────────────────────────────────────────',
       '',
     ].join('\n'),

@@ -20,6 +20,16 @@ npm run dev        # or: pnpm dev
 From a clean clone this creates `.env` (local values, fresh JWT secret, gitignored), installs,
 starts Postgres 16 + Redis in Docker, migrates, seeds a demo c-store and opens:
 
+### Share it with someone outside this machine
+
+`npm run share` does four things:
+- opens free Cloudflare quick tunnels (no account) for the API and all three apps;
+- starts the stack pointed at the **tunnelled API** (CORS and the apps' API URL are set for it);
+- waits until each public URL answers;
+- prints the URLs and the demo logins.
+
+It needs `cloudflared` (`winget install Cloudflare.cloudflared`). Stop `npm run dev` first, because it uses the same ports. The URLs change on every run, so send the new ones each time. **They are public**: anyone with a URL can sign in with the demo logins below. Ctrl+C stops it.
+
 ### How to log in (local demo — fixed values)
 
 | What | URL | Sign in with |
@@ -37,9 +47,9 @@ starts Postgres 16 + Redis in Docker, migrates, seeds a demo c-store and opens:
 | `2015550101` | Luis Ortega, manager | Journal Square Deli & Grocery |
 | `2015550142` | Kevin Walsh, owner | Bayonne Corner Mart (a separate tenant) |
 
-**Register PINs.** The register asks "Who's working?" and takes a PIN. Demo staff, on a fresh
-database (`npm run dev:reset`); a database from before P3 has the people but no PINs, so set
-them in the merchant app under **Staff**:
+**Register PINs.** The register asks "Who's working?": tap your name and enter the PIN. Every
+`npm run dev` and `npm run logins` makes sure these people exist with these PINs (an older database
+catches up), prints them, and says if one was changed in the app:
 
 | Person | Role | PIN | Store |
 | --- | --- | --- | --- |
