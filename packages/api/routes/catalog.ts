@@ -8,6 +8,7 @@
  */
 import {
   BulkPriceInput,
+  LabelTemplateInput,
   LANGUAGES,
   PromotionInput,
   CATALOG_TEMPLATES,
@@ -28,6 +29,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { languageStatuses } from '../services/i18n';
 import { listPromotions, savePromotion, setPromotionActive } from '../services/promotions';
 import { bulkPriceChange } from '../services/price-tools';
+import { labelTemplates, printPriceLabels, printShelfTags, saveLabelTemplate, tagQueue } from '../services/labels';
 import { z } from 'zod';
 import { asAdmin, asMerchantUser, requireAdmin, requireMerchantUser } from '../http/auth-hooks';
 import { badRequest, forbidden } from '../http/errors';
@@ -156,6 +158,36 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId } = scope.resolve(r, false);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return (await getCatalogSnapshot(db, merchantId, locationId)).receipt;
+    });
+
+    // Shelf tags, the tag queue, price labels and label templates (P21): PDFs for any printer.
+    s.get(`${p}/labels/templates`, async (r) => ({ templates: await labelTemplates(db, scope.resolve(r, false).merchantId) }));
+    s.post(`${p}/labels/templates`, async (r, reply) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      reply.status(201);
+      return saveLabelTemplate(db, actor, merchantId, null, LabelTemplateInput.parse(r.body), trace(r));
+    });
+    s.put(`${p}/labels/templates/:templateId`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { templateId } = z.object({ templateId: z.uuid() }).parse(r.params);
+      return saveLabelTemplate(db, actor, merchantId, templateId, LabelTemplateInput.parse(r.body), trace(r));
+    });
+    s.get(`${p}/labels/queue`, async (r) => {
+      const { merchantId } = scope.resolve(r, false);
+      const { location_id } = z.object({ location_id: z.uuid() }).parse(r.query);
+      return tagQueue(db, merchantId, location_id);
+    });
+    s.post(`${p}/labels/shelf-tags.pdf`, async (r, reply) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const body = z.strictObject({ item_ids: z.array(z.uuid()).min(1).max(600), location_id: z.uuid(), template_id: z.uuid().nullable().default(null), copies: z.int().min(1).max(10).default(1) }).parse(r.body);
+      const pdf = await printShelfTags(db, actor, merchantId, body, trace(r));
+      return reply.header('content-type', 'application/pdf').header('content-disposition', 'inline; filename="shelf-tags.pdf"').send(pdf);
+    });
+    s.post(`${p}/labels/price-labels.pdf`, async (r, reply) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const body = z.strictObject({ item_id: z.uuid(), location_id: z.uuid(), price_cents: z.int().min(1).max(99_999), copies: z.int().min(1).max(50).default(1) }).parse(r.body);
+      const pdf = await printPriceLabels(db, actor, merchantId, body, trace(r));
+      return reply.header('content-type', 'application/pdf').header('content-disposition', 'inline; filename="price-labels.pdf"').send(pdf);
     });
 
     // Bulk price change (P20b): preview (dry run), then apply; every price lands in the history.

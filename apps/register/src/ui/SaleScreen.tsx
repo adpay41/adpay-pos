@@ -329,12 +329,14 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
    * item again raises its line. Age checks are skipped only when it merges into an already-checked
    * line; open-price items ask for the price.
    */
-  const ring = (item: CatalogItem, opts: { qty?: number; entry: Entry; ageConfirmed?: boolean; idCheck?: { age: number; jurisdiction: string | null } }) => {
+  const ring = (item: CatalogItem, opts: { qty?: number; entry: Entry; ageConfirmed?: boolean; idCheck?: { age: number; jurisdiction: string | null }; labelPrice?: number }) => {
     const qty = opts.qty ?? 1;
     if (priceCheck) return setModal({ kind: 'price_check', item, showCost: false });
     if (item.min_age && !opts.ageConfirmed && !ses.wouldMerge(item)) return setModal({ kind: 'age', item, qty, entry: opts.entry });
-    if (item.open_price) return setModal({ kind: 'open_price', item, qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed });
-    void run(() => ses.addItem(item, { qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed, ...(opts.idCheck ? { idCheck: opts.idCheck } : {}) }));
+    // A price-embedded label (P21) carries the price: no need to ask.
+    const price = opts.labelPrice !== undefined ? { cash: cents(opts.labelPrice), card: deriveCardPrice(cents(opts.labelPrice), catalog.dual_price_rate_ppm) } : undefined;
+    if (item.open_price && !price) return setModal({ kind: 'open_price', item, qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed });
+    void run(() => ses.addItem(item, { qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed, ...(price ? { price } : {}), ...(opts.idCheck ? { idCheck: opts.idCheck } : {}) }));
   };
   const addItem = (item: CatalogItem) => ring(item, { entry: query ? 'search' : 'key' });
   // Compliance (P10): bag-fee keys in force today, and each category's effective age check.
@@ -365,7 +367,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     const hit = lookupBarcode(index, code);
     if (hit) {
       rt.log.info('scan', { matched: hit.matched, qty: hit.qty });
-      ring(hit.item, { qty: hit.qty, entry: 'scan' });
+      ring(hit.item, { qty: hit.qty, entry: 'scan', ...(hit.price_cents !== undefined ? { labelPrice: hit.price_cents } : {}) });
     } else if (priceCheck || !flags.register_item_create) {
       setModal({
         kind: 'error',
