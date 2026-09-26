@@ -132,9 +132,9 @@ section 5.
 | ID scan: DL 2D barcode → age, flags, logs (not the ID number) (1.4) | ✅ | AAMVA parse → age/expiry/state/flags only; under-age/expired blocks the manual confirm; logged as id_scan with age + state (P16b, ADR 0026). **Prove on a real 2D scanner.** | P16 |
 | Tobacco scan-data reporting (Altria, RJR, ITG) (1.4) | ⛔ | **Program enrollment and contracts** with each manufacturer, plus their file specs | P-3P |
 | Manufacturer promo sync (1.4) | ⛔ | Same programs' promo feeds | P-3P |
-| Lottery module: pack activation, per-game tracking, inventory, reconciliation vs state terminal, payouts vs drawer (1.4) | ⬜ | P6. Reconciliation is manual entry of terminal totals (no state lottery API integration). | P17 |
+| Lottery module: pack activation, per-game tracking, inventory, reconciliation vs state terminal, payouts vs drawer (1.4) | ✅ | Games, packs by bin (received/active/sold out/returned), append-only counts, terminal totals typed in, daily reconciliation of sales and payouts vs drawer, merchant Lottery tab (P17, ADR 0027). No state lottery API. | P17 |
 | State tax tables, full (1.4) | 🟡 | Per-location dated tables (P10) + admin cross-store view with scheduled changes (P16b). A maintained jurisdiction library needs an accountant/tax-data source. | P16 |
-| Compliance log export (1.4) | ⬜ | P3, P10, P17 | P17 |
+| Compliance log export (1.4) | ✅ | Age-check log CSV (P16b) + lottery daily CSV (P17). | P17 |
 | Digital receipt: QR or text-to-phone (1.5) | 🟡-able | QR to a hosted receipt page is buildable (needs a public URL, which means deploying). Text needs SMS (Twilio signup). | P18 |
 | Loyalty by phone number on the customer screen (1.5) | ⬜ | P9 customer-screen state machine; a customers table | P19 |
 | Language toggle, 8 languages, cashier and customer independently (1.5) | ⬜ | i18n framework (P9 lays the hook). **Human translation/review** of 8 languages. | P18 |
@@ -365,7 +365,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P16b ID scan, tax report, compliance log | #22 | PR open — AAMVA ID scan at the age check (derived facts only; failed scan blocks manual confirm), sales-tax report by month/rate with refunds' tax and quarterly CSV, age-check compliance log CSV, admin tax-tables view; fixes training-mode batch/held/tickets leaks. ADR 0026. |
+| P16b ID scan, tax report, compliance log | #22 | Merged — AAMVA ID scan at the age check (derived facts only; failed scan blocks manual confirm), sales-tax report by month/rate with refunds' tax and quarterly CSV, age-check compliance log CSV, admin tax-tables view; fixes training-mode batch/held/tickets leaks. ADR 0026. |
+| P17 Lottery | #PR | PR open — games, packs by bin with checked transitions, append-only counts, typed terminal report, reconciliation of rung vs instant+online and drawer payouts vs terminal cashes, CSV export, merchant Lottery tab; demo categories get their restriction kinds. ADR 0027. |
 | P16a End of day & training | #21 | merged — end of day / Z-report (spec v1): everything since the previous Z, drawer counted first, printed, eod.closed synced; server rebuilds each Z with the same function and flags mismatches; EOD-not-closed alert; merchant app Z list; training mode (in-memory, never synced, cash only, receipts say TRAINING). ADR 0025. |
 | P15 Cash & time N | #20 | merged — drop-needed threshold (cashier banner, merchant "in the drawers now", drawer_over alert), counterfeit refusals, denomination counts + count-sheet photo, shift handover, time clock with weekly overtime and payroll CSV, hourly target ribbon. ADR 0024. |
 | P14 Catalog N | #19 | merged — catalog templates (c-store starter shared with the seed) and generic CSV import through one bulk write (dry-run preview, match by barcode then name, price history); register repeat-last-sale and cashier usuals; merchant-app arrange-keys grid. ADR 0023. |

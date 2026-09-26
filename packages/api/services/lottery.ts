@@ -16,7 +16,7 @@ import {
   type RegisterEvent,
 } from '@adpay/shared';
 import type { z } from 'zod';
-import type { LotteryCountInput, LotteryGameInput, PackActivateInput, PackReceiveInput, TerminalReportInput } from '@adpay/shared';
+import type { LotteryCountInput, LotteryGameInput, PackReceiveInput, TerminalReportInput } from '@adpay/shared';
 import type { AdminPrincipal, MerchantUserPrincipal } from '../auth/principal';
 import type { Db, Queryable } from '../db/db';
 import { badRequest, notFound } from '../http/errors';
@@ -179,21 +179,33 @@ export async function lotteryDay(q: Queryable, merchantId: string, locationId: s
     byGame.set(p.game_number, g);
   }
 
-  // Rung at the register: lottery-restricted lines on sales completed that day, at the price paid.
+  // Rung at the register: lottery lines on sales completed that day, at the price paid. A line is
+  // lottery if it was captured as such (P10+), or, for lines rung before the category was marked,
+  // if its category is marked lottery now.
+  const { rows: lotteryCats } = await q.query<{ category_id: string }>(
+    `SELECT c.category_id FROM categories c JOIN locations l ON l.merchant_id = c.merchant_id WHERE l.location_id = $1 AND c.restriction = 'lottery'`,
+    [locationId],
+  );
+  const lotteryCategoryIds = lotteryCats.map((c) => c.category_id);
   const { rows: evRows } = await q.query<Record<string, unknown> & { occurred_at: Date }>(
     `SELECT e.event_id, e.schema_version, e.sale_id, e.device_seq, e.occurred_at, e.org_id, e.merchant_id, e.location_id, e.register_id, e.trace_id, e.actor_user_id, e.type, e.payload
        FROM sale_events e
       WHERE e.sale_id IN (SELECT x.sale_id FROM sale_events x WHERE x.location_id = $1 AND x.type = 'sale.completed' AND x.business_date = $2::date)
-        AND e.sale_id IN (SELECT y.sale_id FROM sale_events y WHERE y.location_id = $1 AND y.type = 'sale.line_added' AND y.payload->>'restriction' = 'lottery')
+        AND e.sale_id IN (SELECT y.sale_id FROM sale_events y
+                           WHERE y.location_id = $1 AND y.type = 'sale.line_added'
+                             AND (y.payload->>'restriction' = 'lottery'
+                                  OR (y.payload->>'restriction' IS NULL AND y.payload->>'category_id' = ANY($3::text[]))))
       ORDER BY e.sale_id, e.device_seq`,
-    [locationId, date],
+    [locationId, date, lotteryCategoryIds],
   );
   const bySale = new Map<string, RegisterEvent[]>();
   const lotteryLines = new Set<string>();
   for (const r of evRows) {
     const e = RegisterEventSchema.parse({ ...r, occurred_at: new Date(r.occurred_at).toISOString() });
     bySale.set(e.sale_id!, [...(bySale.get(e.sale_id!) ?? []), e]);
-    if (e.type === 'sale.line_added' && e.payload.restriction === 'lottery') lotteryLines.add(e.payload.line_id);
+    if (e.type !== 'sale.line_added') continue;
+    const captured = e.payload.restriction;
+    if (captured === 'lottery' || (!captured && e.payload.category_id && lotteryCategoryIds.includes(e.payload.category_id))) lotteryLines.add(e.payload.line_id);
   }
   let rung = 0;
   for (const [id, events] of bySale) {

@@ -382,6 +382,7 @@ async function main() {
     await seedFavorites(db, bay.location_id, bcmCatalog);
 
     // Demo staff with register PINs (DEMO_STAFF): the same routine that repairs an older database.
+    await ensureDemoRestrictions(db);
     await ensureDemoStaff(db);
 
     // Registers with history are "already paired" devices in the field.
@@ -494,7 +495,24 @@ async function armDemoSetupCode(db: Db, registerId: string, code: string) {
   });
 }
 
+/**
+ * Demo categories seeded before P10 have no restriction kind, so the state age rule and the
+ * lottery reconciliation (P17) can't see them. Mark them once; bump the catalog so registers refresh.
+ */
+async function ensureDemoRestrictions(db: Db): Promise<void> {
+  const { rows } = await db.query<{ merchant_id: string }>(
+    `UPDATE categories c SET restriction = lower(c.name)
+       FROM merchants m
+      WHERE m.merchant_id = c.merchant_id AND m.name = ANY($1::text[])
+        AND c.name IN ('Tobacco', 'Lottery') AND c.restriction IS NULL
+      RETURNING c.merchant_id`,
+    [[...new Set(DEMO_STAFF.map((s) => s.merchant))]],
+  );
+  for (const id of new Set(rows.map((r) => r.merchant_id))) await db.query('UPDATE merchants SET catalog_version = catalog_version + 1 WHERE merchant_id = $1', [id]);
+}
+
 async function printLogins(db: Db) {
+  await ensureDemoRestrictions(db);
   const pins = await ensureDemoStaff(db);
   const { rows } = await db.query<{ register_id: string; label: string }>(
     `SELECT r.register_id, m.name || ' · ' || l.name || ' · ' || r.name AS label

@@ -127,3 +127,25 @@ describe('lottery export', () => {
     expect(lines[2]).toBe('2026-09-23,40.00,8,50.00,30.00,10.00,25.00,0.00,5.00');
   });
 });
+
+describe('lines rung before the category was marked lottery', () => {
+  it('count as lottery once the category is marked, even though the line carries no restriction', async () => {
+    const { rows } = await db.query<{ category_id: string }>(
+      `INSERT INTO categories (org_id, merchant_id, name, sort, taxable) VALUES ($1, $2, 'Old Lottery', 99, false) RETURNING category_id`,
+      [a.org_id, a.merchant_id],
+    );
+    const cat = rows[0]!.category_id;
+    const at = new Date('2026-09-25T16:00:00Z');
+    const sale = randomUUID();
+    await ingestEvents(db, device(), [
+      ev(sale, 'sale.opened', { cashier_user_id: null, catalog_version: 1 }, at),
+      ev(sale, 'sale.line_added', { line_id: randomUUID(), item_id: randomUUID(), name: 'Pick-3', category_id: cat, qty: 3, unit_cash_price_cents: 100, unit_card_price_cents: 100, taxable: false, tax_rate_ppm: 0, min_age: 18 }, at),
+      ev(sale, 'sale.tender_added', { tender_id: randomUUID(), tender_type: 'cash', amount_cents: 300, tendered_cents: 300, change_cents: 0, card: null }, at),
+      ev(sale, 'sale.completed', { price_mode: 'cash', subtotal_cents: 300, tax_cents: 0, total_cents: 300 }, at),
+    ], { receivedAt: at });
+    const day = async () => ((await app.inject({ method: 'GET', url: `${base()}/day?date=2026-09-25`, headers: auth(owner) })).json() as LotteryDay).rung_cents;
+    expect(await day()).toBe(0);
+    await db.query(`UPDATE categories SET restriction = 'lottery' WHERE category_id = $1`, [cat]);
+    expect(await day()).toBe(300);
+  });
+});
