@@ -369,7 +369,7 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P23b Shrink | #PR | PR open — count variances (expected vs counted) and write-offs by reason, by category and item at cost, with cashier voids / refunds / no-sale; Stock tab Shrink card. ADR 0034. |
+| P23b Shrink | #35 | PR open — count variances (expected vs counted) and write-offs by reason, by category and item at cost, with cashier voids / refunds / no-sale; Stock tab Shrink card. ADR 0034. |
 | P23a Ordering | #34 | Merged — vendors, reorder suggestions by weekday until the delivery after next in whole cases, purchase orders sent through `MessageSender`, received at the register against the order, ordered vs received. ADR 0035. |
 | P22b Register inventory | #33 | Merged — receive a delivery by scan, write-offs behind a PIN, low-stock badges on tiles, sell-soon on the cashier's idle screen, /device/stock. ADR 0034. |
 | P22a Inventory model | #32 | Merged — stock folded from append-only movements (counts, receipts, write-offs) and sales, case-break by stock ratio, low / dead / expiring, merchant app Stock tab, register inventory events ingested. ADR 0034. |
