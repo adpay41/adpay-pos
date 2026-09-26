@@ -34,9 +34,12 @@ export const PERMISSIONS = {
   'cash.drop': { label: 'Cash drop to the safe', where: 'register' },
   'item.view_cost': { label: 'See cost and margin', where: 'register' },
   'item.create': { label: 'Add an unknown item at the register', where: 'register' },
+  'loyalty.redeem': { label: 'Apply a loyalty reward', where: 'register' },
   'catalog.edit': { label: 'Edit items and prices', where: 'apps' },
   'reports.view': { label: 'See sales reports', where: 'apps' },
   'staff.manage': { label: 'Manage staff and PINs', where: 'apps' },
+  'customers.view': { label: 'See customers and loyalty', where: 'apps' },
+  'customers.message': { label: 'Text a promotion to customers', where: 'apps' },
 } as const;
 export type Permission = keyof typeof PERMISSIONS;
 export const PERMISSION_KEYS = Object.keys(PERMISSIONS) as Permission[];
@@ -45,7 +48,7 @@ export const PermissionSchema = z.enum(PERMISSION_KEYS as [Permission, ...Permis
 /** Defaults. Owners always hold every permission; a merchant can adjust manager and cashier. */
 export const DEFAULT_PERMISSIONS: Record<Exclude<Role, 'owner'>, readonly Permission[]> = {
   manager: PERMISSION_KEYS.filter((p) => p !== 'staff.manage'),
-  cashier: ['ticket.void', 'cash.drop', 'item.create'],
+  cashier: ['ticket.void', 'cash.drop', 'item.create', 'loyalty.redeem'],
 };
 
 /** Per-merchant overrides over the defaults: `{ cashier: { 'sale.refund': true } }`. */

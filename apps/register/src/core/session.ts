@@ -8,6 +8,8 @@
  */
 import {
   type Lang,
+  type LoyaltySettings,
+  rewardDiscounts,
   ZERO,
   cardAmountFor,
   lineCompliance,
@@ -311,6 +313,39 @@ export class SaleSession {
       const sale = this.current();
       if (!sale.lines.some((l) => l.line_id === lineId)) throw new SaleError('No such line');
       await this.emit('sale.line_removed', { line_id: lineId }, sale.sale_id);
+      this.notify();
+      return this.state();
+    });
+  }
+
+  /**
+   * The customer typed their number on the customer screen (P19a): the sale carries the keyed hash
+   * and the last four digits, never the number. Typing again replaces who the sale is for.
+   */
+  identifyCustomer(c: { ref: string; last4: string; marketing_opt_in: boolean }): Promise<SessionState> {
+    return this.serial(async () => {
+      const sale = this.current();
+      await this.emit('sale.customer_identified', { customer_ref: c.ref, last4: c.last4, marketing_opt_in: c.marketing_opt_in }, sale.sale_id);
+      this.notify();
+      return this.state();
+    });
+  }
+
+  /**
+   * Apply a loyalty reward (P19a): the line discounts, then what it cost from the balance. The caller
+   * checked the balance with the server (a reward needs a connection) and the permission.
+   */
+  redeemLoyalty(settings: LoyaltySettings): Promise<SessionState> {
+    return this.serial(async () => {
+      const sale = this.current();
+      if (!sale.customer) throw new SaleError('No customer on this ticket');
+      if (sale.loyalty) throw new SaleError('A reward is already on this ticket');
+      const r = rewardDiscounts(settings, sale);
+      if (!r) throw new SaleError('Nothing on the ticket can take the reward');
+      for (const l of r.lines) {
+        await this.emit('sale.line_discounted', { line_id: l.line_id, cash_discount_cents: l.cash_discount_cents, card_discount_cents: l.card_discount_cents, reason: 'Loyalty reward' }, sale.sale_id);
+      }
+      await this.emit('sale.loyalty_redeemed', { customer_ref: sale.customer.ref, cost: r.cost, discount_cents: r.discount_cents }, sale.sale_id);
       this.notify();
       return this.state();
     });

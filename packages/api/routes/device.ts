@@ -1,7 +1,7 @@
 /**
  * Register routes. Identity and tenancy come from the device token alone.
  */
-import { DeviceItemCreateInput, EventBatchSchema, MEDIA_MAX_BYTES, MEDIA_TYPES, UsualInput } from '@adpay/shared';
+import { CustomerRefSchema, DeviceItemCreateInput, EventBatchSchema, MEDIA_MAX_BYTES, MEDIA_TYPES, UsualInput } from '@adpay/shared';
 import { badRequest } from '../http/errors';
 import { validateImage } from '../services/media';
 import { salesCompare } from '../services/reports';
@@ -9,6 +9,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asDevice, requireDevice } from '../http/auth-hooks';
 import type { AppDeps } from '../server';
+import { createMessageSender } from '../messaging/sender';
+import { customerStatus, loyaltyConfig, recordOptIn } from '../services/loyalty';
+import { textReceiptFromRegister } from '../services/messaging';
 import { getCatalogSnapshot } from '../services/catalog';
 import { catalogVersion, createItemFromDevice, uploadMedia } from '../services/catalog-write';
 import { ingestEvents } from '../services/events';
@@ -46,7 +49,14 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
     const d = asDevice(request);
     await db.query(`UPDATE registers SET last_seen_at = now() WHERE register_id = $1`, [d.register_id]);
     // The register's config snapshot also carries who can sign in, so PINs work offline (P3).
-    return { ...(await getCatalogSnapshot(db, d.merchant_id, d.location_id)), staff: await registerStaff(db, d.merchant_id), usuals: await usualsFor(db, d.merchant_id) };
+    // …and the loyalty program with this merchant's salt for the customer ref (P19a): register only.
+    const loyalty = await loyaltyConfig(db, d.merchant_id);
+    return {
+      ...(await getCatalogSnapshot(db, d.merchant_id, d.location_id)),
+      staff: await registerStaff(db, d.merchant_id),
+      usuals: await usualsFor(db, d.merchant_id),
+      loyalty: { settings: loyalty.settings, salt: loyalty.salt },
+    };
   });
 
   /** Cheap staleness check: the register pulls the full snapshot only when this number moves. */
@@ -63,6 +73,20 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
   app.post('/device/usuals/:usualId/remove', async (request) => {
     const { usualId } = z.object({ usualId: z.uuid() }).parse(request.params);
     return removeUsual(db, asDevice(request), usualId, request.logContext.trace_id);
+  });
+
+  // Loyalty (P19a, ADR 0029): the customer's standing, their opt-in to texts, and "text me my receipt".
+  app.get('/device/loyalty/:ref', async (request) => {
+    const { ref } = z.object({ ref: CustomerRefSchema }).parse(request.params);
+    return customerStatus(db, asDevice(request).merchant_id, ref);
+  });
+  app.post('/device/customers/opt-in', async (request) => {
+    const body = z.strictObject({ phone: z.string().max(40), customer_ref: CustomerRefSchema, consent_version: z.string().max(20) }).parse(request.body);
+    return recordOptIn(db, asDevice(request), body, request.logContext.trace_id);
+  });
+  app.post('/device/receipts/text', async (request) => {
+    const body = z.strictObject({ sale_id: z.uuid(), receipt_token: z.uuid(), phone: z.string().max(40) }).parse(request.body);
+    return textReceiptFromRegister(db, deps.messages ?? createMessageSender('log', deps.logger), asDevice(request), body, deps.config.publicBaseUrl, request.logContext.trace_id);
   });
 
   /** An item created at this register from an unknown barcode (P5). Idempotent on its device-minted id. */

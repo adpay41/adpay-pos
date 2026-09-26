@@ -130,6 +130,25 @@ const SaleCompleted = z.strictObject({
   receipt_token: Uuid.optional(),
 });
 
+/**
+ * The customer typed their number on the customer screen (P19a, ADR 0029). Only a keyed hash and the
+ * last four digits: the number itself is never in the event log.
+ */
+const CustomerIdentified = z.strictObject({
+  customer_ref: z.string().regex(/^[0-9a-f]{64}$/),
+  last4: z.string().regex(/^\d{4}$/),
+  /** They ticked "text me deals" (the number goes to the server separately, with the consent). */
+  marketing_opt_in: z.boolean(),
+});
+
+/** A loyalty reward used on this ticket; its line discounts are separate sale.line_discounted events. */
+const LoyaltyRedeemed = z.strictObject({
+  customer_ref: z.string().regex(/^[0-9a-f]{64}$/),
+  /** Visits or points taken from the balance. */
+  cost: z.int().min(1).max(10_000),
+  discount_cents: z.int().min(0).max(10_000),
+});
+
 const SaleVoided = z.strictObject({
   reason: z.string().max(200),
   by_user_id: Uuid.nullable(),
@@ -266,6 +285,8 @@ export const EventPayloads = {
   'sale.refunded': SaleRefunded,
   'sale.suspended': Empty,
   'sale.resumed': Empty,
+  'sale.customer_identified': CustomerIdentified,
+  'sale.loyalty_redeemed': LoyaltyRedeemed,
   'receipt.printed': ReceiptPrinted,
   'drawer.opened': DrawerOpened,
   'drawer.session_opened': DrawerSessionOpened,

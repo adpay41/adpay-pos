@@ -5,6 +5,7 @@
  */
 import {
   DEFAULT_I18N,
+  type LoyaltyStatus,
   languageInfo,
   type Lang,
   WedgeDecoder,
@@ -111,8 +112,16 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const i18n = catalog.i18n ?? DEFAULT_I18N;
   const digital = (catalog.receipt?.digital_receipt ?? false) && !training;
   const [customerLang, setCustomerLang] = useState<Lang>(i18n.default);
-  const ctx = useRef({ language: customerLang, i18n, digital });
-  ctx.current = { language: customerLang, i18n, digital };
+  // Loyalty by phone (P19a): who the ticket is for (hash + last four), and their standing from the server.
+  const loyaltySettings = !training && catalog.loyalty?.settings.enabled ? catalog.loyalty.settings : null;
+  type Cust = { saleId: string; ref: string; last4: string; status: LoyaltyStatus | null; offline: boolean };
+  const [cust, setCust] = useState<Cust | null>(null);
+  const [receiptText, setReceiptText] = useState<DisplayState['receipt_text']>(null);
+  const ctx = useRef({ language: customerLang, i18n, digital, loyaltySettings, cust, receiptText });
+  ctx.current = { language: customerLang, i18n, digital, loyaltySettings, cust, receiptText };
+  const sesRef = useRef(ses);
+  sesRef.current = ses;
+  const lastArgs = useRef<Parameters<typeof show> | null>(null);
   const lastShown = useRef<DisplayState | null>(null);
   const receiptUrl = (token: string) => `${API_URL}/r/${token}`;
   const show = useCallback(
@@ -124,7 +133,18 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         languages: c.i18n.offered,
         overrides: c.i18n.overrides,
         receipt_url: paid && c.digital && s?.receipt_token ? `${API_URL}/r/${s.receipt_token}` : null,
+        loyalty: c.loyaltySettings
+          ? {
+              ask_texts: c.loyaltySettings.ask_for_texts,
+              last4: c.cust && s && c.cust.saleId === s.sale_id ? c.cust.last4 : null,
+              status: c.cust && s && c.cust.saleId === s.sale_id && c.cust.status ? c.cust.status : null,
+              offline: !!(c.cust && c.cust.offline),
+              redeemed: !!s?.loyalty,
+            }
+          : null,
+        receipt_text: paid ? c.receiptText : null,
       };
+      lastArgs.current = [s, paid, card];
       lastShown.current = state;
       display.publish(state);
     },
@@ -141,7 +161,55 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     },
     [display],
   );
-  useEffect(() => display.onCustomer((m) => ctx.current.i18n.offered.includes(m.language) && setLanguage(m.language)), [display, setLanguage]);
+  /** Re-send what the customer screen shows, after the context changed. */
+  const refresh = useCallback(() => {
+    if (lastArgs.current) show(...lastArgs.current);
+  }, [show]);
+  useEffect(
+    () =>
+      display.onCustomer((m) => {
+        if (m.kind === 'customer_language') {
+          if (ctx.current.i18n.offered.includes(m.language)) setLanguage(m.language);
+          return;
+        }
+        if (m.purpose === 'receipt') {
+          // "Text me my receipt" on the paid screen: the digital-receipt link, online only.
+          const done = sesRef.current.state().lastCompleted;
+          if (!done?.receipt_token) return;
+          void rt.loyalty.textReceipt(done.sale_id, done.receipt_token, m.phone).then(
+            (r) => {
+              ctx.current.receiptText = r.delivered ? 'sent' : 'not_delivered';
+              setReceiptText(ctx.current.receiptText);
+              refresh();
+            },
+            () => {
+              ctx.current.receiptText = 'failed';
+              setReceiptText('failed');
+              refresh();
+            },
+          );
+          return;
+        }
+        // Rewards: the ticket carries the keyed hash; the balance comes from the server.
+        const sale = sesRef.current.state().sale;
+        const who = rt.loyalty.identify(m.phone);
+        if (!sale || !who || !ctx.current.loyaltySettings) return;
+        void (async () => {
+          await sesRef.current.identifyCustomer({ ref: who.ref, last4: who.last4, marketing_opt_in: m.marketing_opt_in });
+          const base: Cust = { saleId: sale.sale_id, ref: who.ref, last4: who.last4, status: null, offline: false };
+          ctx.current.cust = base;
+          setCust(base);
+          refresh();
+          if (m.marketing_opt_in) void rt.loyalty.optIn(who);
+          const status = await rt.loyalty.status(who.ref);
+          const next = { ...base, status, offline: !status };
+          ctx.current.cust = next;
+          setCust(next);
+          refresh();
+        })();
+      }),
+    [display, setLanguage, rt, refresh],
+  );
   // A snapshot that stops offering the current language sends the screen back to the default.
   useEffect(() => {
     if (!i18n.offered.includes(customerLang)) setLanguage(i18n.default);
@@ -149,8 +217,10 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   useEffect(() => ses.setCompletionContext({ language: customerLang, digital_receipt: digital }), [ses, customerLang, digital]);
   /** The customer screen goes back to idle: the next customer starts in the default language. */
   const showIdle = () => {
-    ctx.current = { ...ctx.current, language: ctx.current.i18n.default };
+    ctx.current = { ...ctx.current, language: ctx.current.i18n.default, cust: null, receiptText: null };
     setCustomerLang(ctx.current.i18n.default);
+    setCust(null);
+    setReceiptText(null);
     show(null);
   };
 
@@ -654,6 +724,30 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             {/* The customer chose a language on their screen (P18): the cashier knows, and the receipt follows. */}
             {customerLang !== 'en' ? ` · ${t('Customer: {language}', { language: languageInfo(customerLang).name })}` : ''}
           </Text>
+          {/* Loyalty (P19a): the customer typed their number on their screen. A reward needs the server's balance. */}
+          {sale?.customer && loyaltySettings ? (
+            <View style={s.loyaltyRow} accessible accessibilityLabel={t('Rewards customer, phone ending {last4}', { last4: sale.customer.last4 })}>
+              <Text style={s.loyaltyText}>
+                {t('Rewards ···{last4}', { last4: sale.customer.last4 })}
+                {sale.loyalty
+                  ? ` · ${t('reward applied')}`
+                  : cust?.saleId === sale.sale_id && cust.status
+                    ? ` · ${cust.status.kind === 'visits' ? t('{balance}/{needed} visits', { balance: cust.status.balance, needed: cust.status.needed }) : t('{balance} points', { balance: cust.status.balance })}`
+                    : cust?.saleId === sale.sale_id && cust.offline
+                      ? ` · ${t('offline: this visit counts, rewards need a connection')}`
+                      : ''}
+              </Text>
+              {!sale.loyalty && cust?.saleId === sale.sale_id && cust.status && cust.status.rewards_available > 0 ? (
+                <Pressable
+                  style={s.rewardButton}
+                  onPress={() => guarded('loyalty.redeem', sale.sale_id, () => ses.redeemLoyalty(loyaltySettings))}
+                  accessibilityRole="button"
+                >
+                  <Text style={s.rewardButtonText}>{t('Apply reward')}</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
           <ScrollView style={{ flex: 1 }}>
             {!sale || sale.lines.length === 0 ? (
               <Text style={s.mutedSmall}>{t('Tap an item to start a sale.')}</Text>
@@ -1564,6 +1658,10 @@ const s = StyleSheet.create({
 
   ticket: { width: 340, borderLeftWidth: 1, borderLeftColor: C.line, backgroundColor: '#fff', padding: 14 },
   ticketTitle: { fontSize: 13, color: C.muted, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8 },
+  loyaltyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
+  loyaltyText: { color: C.ink, fontWeight: '600' },
+  rewardButton: { backgroundColor: C.green, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5 },
+  rewardButtonText: { color: '#fff', fontWeight: '700' },
   line: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.line, gap: 8 },
   lineName: { color: C.ink, fontWeight: '600' },
   lineAmt: { color: C.black, fontWeight: '700', fontVariant: ['tabular-nums'] },

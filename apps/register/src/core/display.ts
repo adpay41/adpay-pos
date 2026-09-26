@@ -34,17 +34,29 @@ export interface DisplayState {
   overrides: Overrides;
   /** Paid phase: the digital receipt link, shown as a QR (P18). */
   receipt_url: string | null;
+  /**
+   * Loyalty on the customer screen (P19a): offered when the store runs a program. `status` is null
+   * until the server answers (or offline, with `offline`).
+   */
+  loyalty: {
+    ask_texts: boolean;
+    last4: string | null;
+    status: { kind: 'visits' | 'points'; balance: number; needed: number; rewards_available: number; to_next: number } | null;
+    offline: boolean;
+    redeemed: boolean;
+  } | null;
+  /** Paid phase: what happened to "text me my receipt". */
+  receipt_text: 'sent' | 'not_delivered' | 'failed' | null;
 }
 
 /** Language context the register adds to every state it publishes (P18). */
-export type DisplayContext = Pick<DisplayState, 'language' | 'languages' | 'overrides' | 'receipt_url'>;
-const NO_CONTEXT: DisplayContext = { language: 'en', languages: ['en'], overrides: {}, receipt_url: null };
+export type DisplayContext = Pick<DisplayState, 'language' | 'languages' | 'overrides' | 'receipt_url' | 'loyalty' | 'receipt_text'>;
+const NO_CONTEXT: DisplayContext = { language: 'en', languages: ['en'], overrides: {}, receipt_url: null, loyalty: null, receipt_text: null };
 
-/** What the customer screen sends back: the customer picked a language. */
-export interface CustomerMessage {
-  kind: 'customer_language';
-  language: Lang;
-}
+/** What the customer screen sends back: a language, or a phone number for rewards or the receipt (P19a). */
+export type CustomerMessage =
+  | { kind: 'customer_language'; language: Lang }
+  | { kind: 'customer_phone'; purpose: 'loyalty' | 'receipt'; phone: string; marketing_opt_in: boolean };
 
 export function displayFor(
   merchantName: string,
@@ -135,7 +147,8 @@ export function createDisplayChannel(): DisplayChannel {
     onCustomer(fn) {
       const rx = new BC(CHANNEL);
       rx.addEventListener('message', (e: MessageEvent) => {
-        if (e.data && typeof e.data === 'object' && (e.data as CustomerMessage).kind === 'customer_language') fn(e.data as CustomerMessage);
+        const kind = e.data && typeof e.data === 'object' ? (e.data as CustomerMessage).kind : null;
+        if (kind === 'customer_language' || kind === 'customer_phone') fn(e.data as CustomerMessage);
       });
       return () => rx.close();
     },

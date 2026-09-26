@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto';
 import { cents, formatUsd } from '@adpay/shared';
-import type { MerchantUserPrincipal } from '../auth/principal';
+import type { DevicePrincipal, MerchantUserPrincipal } from '../auth/principal';
 import type { Db } from '../db/db';
 import { badRequest, notFound, tooMany } from '../http/errors';
 import { maskRecipient, type Channel, type MessageSender } from '../messaging/sender';
@@ -102,4 +102,41 @@ export async function sendReceipt(
     });
   });
   return { status: result.status, delivered: sender.delivers && result.status === 'sent', to: maskRecipient(to), url };
+}
+
+/**
+ * "Text me my receipt" typed by the customer on the customer screen (P19a). The register sends the
+ * sale's receipt token; the sale may not have synced yet (the link's page then says it's on its way).
+ * A one-off message the customer asked for: no marketing consent is recorded or implied.
+ */
+export async function textReceiptFromRegister(
+  db: Db,
+  sender: MessageSender,
+  device: DevicePrincipal,
+  body: { sale_id: string; receipt_token: string; phone: string },
+  publicBaseUrl: string,
+  traceId: string,
+): Promise<{ status: 'sent' | 'logged' | 'failed'; delivered: boolean; to: string }> {
+  const to = normalizeRecipient('sms', body.phone);
+  if (!to) throw badRequest('That isn’t a US mobile number');
+  const { rows: recent } = await db.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM outbound_messages WHERE sale_id = $1 AND created_at > now() - interval '1 hour'`,
+    [body.sale_id],
+  );
+  if ((recent[0]?.n ?? 0) >= MAX_PER_SALE_PER_HOUR) throw tooMany('That receipt was sent several times this hour');
+  const { rows: m } = await db.query<{ name: string }>('SELECT name FROM merchants WHERE merchant_id = $1', [device.merchant_id]);
+  const url = `${publicBaseUrl.replace(/\/$/, '')}/r/${body.receipt_token}`;
+  const result = await sender.send({ channel: 'sms', to, subject: null, body: `Your receipt from ${m[0]?.name ?? 'the store'}: ${url}` });
+  await db.tx(async (q) => {
+    await q.query(
+      `INSERT INTO outbound_messages (org_id, merchant_id, location_id, channel, purpose, to_masked, to_hash, sale_id, provider, status, provider_ref, error, trace_id)
+       VALUES ($1, $2, $3, 'sms', 'receipt', $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        device.org_id, device.merchant_id, device.location_id, maskRecipient(to), createHash('sha256').update(`${device.merchant_id}:${to}`).digest('hex'),
+        body.sale_id, sender.name, result.status, result.provider_ref, result.error, traceId,
+      ],
+    );
+    await audit(q, { actor: device, action: 'receipt.texted', tenancy: device, target: body.sale_id, details: { to: maskRecipient(to), status: result.status, provider: sender.name }, trace_id: traceId });
+  });
+  return { status: result.status, delivered: sender.delivers && result.status === 'sent', to: maskRecipient(to) };
 }

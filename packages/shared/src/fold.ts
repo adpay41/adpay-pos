@@ -19,6 +19,8 @@ export interface FoldedLine {
   line_id: string;
   item_id: string;
   name: string;
+  /** The item's category when rung (loyalty's qualifying category, P19a). */
+  category_id: string | null;
   qty: number;
   unit_cash_price_cents: Cents;
   unit_card_price_cents: Cents;
@@ -70,6 +72,10 @@ export interface FoldedSale {
   /** Customer language at payment and the digital receipt token (P18), from sale.completed. */
   language: Lang | null;
   receipt_token: string | null;
+  /** Who the sale was for, when the customer typed their number (P19a): a keyed hash, never the number. */
+  customer: { ref: string; last4: string; marketing_opt_in: boolean } | null;
+  /** A loyalty reward used on this ticket. */
+  loyalty: { cost: number; discount_cents: number } | null;
 }
 
 export function toTaxable(lines: FoldedLine[], mode: PriceMode): TaxableLine[] {
@@ -100,6 +106,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   let declared: Totals | null = null;
   let language: Lang | null = null;
   let receiptToken: string | null = null;
+  let customer = null as FoldedSale['customer'];
+  let loyalty = null as FoldedSale['loyalty'];
   let refunded: Cents = ZERO;
   const refundedQty: Record<string, number> = {};
 
@@ -125,6 +133,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           restriction: p.restriction ?? null,
           charges: p.charges ?? [],
           is_fee: p.price_source === 'fee',
+          category_id: p.category_id ?? null,
         });
         break;
       }
@@ -187,6 +196,12 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
       case 'sale.resumed':
         if (status === 'suspended') status = 'open';
         break;
+      case 'sale.customer_identified':
+        customer = { ref: e.payload.customer_ref, last4: e.payload.last4, marketing_opt_in: e.payload.marketing_opt_in };
+        break;
+      case 'sale.loyalty_redeemed':
+        loyalty = { cost: (loyalty?.cost ?? 0) + e.payload.cost, discount_cents: (loyalty?.discount_cents ?? 0) + e.payload.discount_cents };
+        break;
       default:
         break;
     }
@@ -239,6 +254,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
     mismatch,
     language,
     receipt_token: receiptToken,
+    customer,
+    loyalty,
   };
 }
 
