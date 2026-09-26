@@ -22,6 +22,7 @@ import type { Db, Queryable } from '../db/db';
 import { notFound } from '../http/errors';
 import { audit } from './audit';
 import { drawerSessions } from './cash';
+import { expiringDocuments } from './documents';
 
 interface Finding {
   rule: AlertRule;
@@ -388,6 +389,23 @@ async function findings(q: Queryable, now: Date): Promise<Finding[]> {
       org_id: r.org_id,
       merchant_id: r.merchant_id,
       location_id: r.location_id,
+      register_id: null,
+    });
+  }
+
+  // A licence, permit or certificate in the vault expiring within 30 days, or expired (P24b). The key
+  // carries the stage, so "expired" opens its own alert after "expiring"; a renewal archives the
+  // document and the alert resolves.
+  for (const d of await expiringDocuments(q, now.toISOString().slice(0, 10))) {
+    const expired = d.days_left < 0;
+    out.push({
+      rule: 'document_expiring',
+      dedupe_key: `document_expiring:${d.document_id}:${expired ? 'expired' : 'soon'}`,
+      title: expired ? `${d.title} expired on ${d.expires_on}` : d.days_left === 0 ? `${d.title} expires today` : `${d.title} expires in ${d.days_left} day${d.days_left === 1 ? '' : 's'}`,
+      details: { document_id: d.document_id, expires_on: d.expires_on },
+      org_id: d.org_id,
+      merchant_id: d.merchant_id,
+      location_id: d.location_id,
       register_id: null,
     });
   }

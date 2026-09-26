@@ -274,6 +274,7 @@ export const CASHIER_EN = [
   'Start drawer with {amount}',
   'Started {time} by {name} with {amount}',
   'Starting…',
+  'Store documents (licences, permits, insurance)',
   'Store logo',
   'Store supplies',
   'Subtotal',

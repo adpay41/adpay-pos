@@ -43,6 +43,7 @@ export const PERMISSIONS = {
   'staff.manage': { label: 'Manage staff and PINs', where: 'apps' },
   'customers.view': { label: 'See customers and loyalty', where: 'apps' },
   'customers.message': { label: 'Text a promotion to customers', where: 'apps' },
+  'documents.manage': { label: 'Store documents (licences, permits, insurance)', where: 'apps' },
 } as const;
 export type Permission = keyof typeof PERMISSIONS;
 export const PERMISSION_KEYS = Object.keys(PERMISSIONS) as Permission[];

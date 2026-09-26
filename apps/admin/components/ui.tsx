@@ -47,6 +47,7 @@ const NAV = [
   { href: '/support', label: 'Support' },
   { href: '/tickets', label: 'Tickets' },
   { href: '/hardware', label: 'Hardware' },
+  { href: '/rollouts', label: 'Rollouts' },
   { href: '/sales', label: 'Sales' },
   { href: '/money', label: 'Money' },
   { href: '/tax', label: 'Tax' },

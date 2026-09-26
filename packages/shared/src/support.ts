@@ -71,6 +71,7 @@ export const RUNBOOKS: Record<AlertRule, { text: string; action: RemoteActionKin
   big_ticket: { text: 'A big sale went through. Nothing to fix; a heads-up for the owner.', action: null },
   slow_hour: { text: 'Sales well below the usual for this hour. Check the register is up; otherwise, a quiet hour.', action: null },
   late_first_sale: { text: 'No sale yet, well past the usual first sale. Is the store open? Is the register on?', action: 'force_sync' },
+  document_expiring: { text: 'A store document expires within 30 days (or has expired). Remind the owner to renew it and upload the new one in the merchant app → Help → Documents; the alert clears on upload.', action: null },
 };
 
 // --- Hardware inventory & RMA ----------------------------------------------------------------------

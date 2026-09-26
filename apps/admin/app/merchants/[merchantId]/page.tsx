@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { CashPanel } from '../../../components/cash-panel';
 import { CatalogEditor } from '../../../components/catalog-editor';
 import { ConfigPanel } from '../../../components/config-panel';
+import { DocumentsPanel } from '../../../components/documents-panel';
 import { PricingPanel } from '../../../components/pricing-panel';
 import { SalesTable, SummaryView } from '../../../components/sales';
 import { StaffPanel } from '../../../components/staff-panel';
@@ -77,6 +78,7 @@ export default function MerchantPage() {
         <>
           <PricingPanel merchantId={merchantId} />
           <ConfigPanel merchantId={merchantId} />
+          <DocumentsPanel merchantId={merchantId} />
         </>
       )}
     </Shell>

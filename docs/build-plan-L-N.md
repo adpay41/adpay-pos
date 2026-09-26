@@ -192,7 +192,7 @@ section 5.
 | Customer list; text a promo to top 100 with TCPA opt-in (2.7) | 🔶 | Customer list (last four, visits, spend, texts); opt-in on the customer screen with the exact consent stored, number kept only when opted in and matching the hash; promo to top 100 opted-in, once a week, STOP added, through `MessageSender` (P19a). **Deferred:** SMS delivery and inbound STOP (Twilio account + webhook) and counsel review of the consent wording / TCPA posture. | P19 / P-3P |
 | Open/close checklists with photos (2.8) | ⬜ | Photo storage (P2) | P24 |
 | Equipment and hardware tickets (2.8) | ✅ | Merchant app Help → Problems & equipment: report a problem, follow and reply to the thread, installed equipment with serial and warranty (P24a, ADR 0036). | P24 |
-| Documents vault with expiry reminders (2.8) | ⬜ | File storage | P24 |
+| Documents vault with expiry reminders (2.8) | ✅ | Merchant app Help → Documents: PDF/JPEG/PNG (checked by their bytes, 5 MB) by kind and store, expiry date, renewal replaces the old one (kept in history), `document_expiring` alert 30 days ahead and on expiry, runbook; support sees them read-only on the merchant page (opening is audited). Bytes in Postgres behind `DocumentStore` (S3 with the AWS deploy) (P24b, ADR 0037). | P24 |
 | Marketplace: order hardware, paper; enroll in programs (2.8) | ⛔ | Fulfilment/payment for orders (a payment account for AD Pay's own billing) | P-3P |
 
 ### Admin (N)
@@ -204,7 +204,8 @@ section 5.
 | E-sign merchant agreement (3.1) | ⛔ | E-sign vendor account, or a legal review of a click-accept flow; the **agreement text** from counsel | P-3P |
 | Referral / agent tracking, residual split (3.1) | ⬜ | P12 pricing plans; L50 | P25 |
 | Support tickets with SLA timers, canned fixes (3.2) | ✅ | /tickets: first-response SLA counting down (urgent 4 h, normal 24 h), append-only notes, internal notes, canned fixes that queue the remote action on the ticket's register (P24a, ADR 0036). | P24 |
-| Staged rollouts: canary → 10% → all; kill switch (3.2) | ⬜ | P12 flags; OTA build delivery ⛔ (MDM/OTA decision) | P24 |
+| Staged rollouts of features: canary → 10% → all; kill switch (3.2) | ✅ | /rollouts: each flag's platform stage over the per-store switches (fixed per-store bucket, so 10% → all never flips a store off), kill switch beats every store switch, reason + history + audit; every register refreshes over /ws (P24b, ADR 0037). | P24 |
+| Staged rollouts of register **builds** (OTA) (3.2) | ⏸ | Deferred pending the MDM decision (Esper vs own OTA). To finish: pick one; then a build channel per stage reusing the same canary / 10% / all stages and bucket from `flags.ts`, and "roll back build" as a remote action. | P-HW / MDM |
 | Hardware inventory & RMA (3.2) | ✅ | /hardware: units by serial, where installed, warranty; swap in one step (faulty → RMA, stock unit in at the same register); RMA back to stock or retired; append-only history (P24a, ADR 0036). Carrier labels/tracking not built. | P24 |
 | Runbooks with fix buttons (3.2) | ✅ | A runbook per alert rule (typed, so a new rule needs one) on the Alerts page with its fix button and "Open a ticket" (P24a, ADR 0036). Device-only actions stay with P-HW. | P24 |
 | Billing: subscriptions, invoices, dunning (3.3) | ⛔ | A billing/payment account for AD Pay itself (Stripe-class) | P-3P |
@@ -369,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| P24a Support & hardware | #36 | PR open — tickets with first-response SLA, append-only notes, canned fixes that queue remote actions, runbooks with fix buttons on alerts, hardware inventory with swap/RMA and history, merchant equipment tickets. ADR 0036. |
+| P24b Rollouts & documents | #37 | PR open — staged feature rollouts (canary → 10% → all) with a kill switch over per-store switches, documents vault with renewals and a 30-day expiry alert. Build OTA ⏸ (MDM decision). ADR 0037. |
+| P24a Support & hardware | #36 | Merged — tickets with first-response SLA, append-only notes, canned fixes that queue remote actions, runbooks with fix buttons on alerts, hardware inventory with swap/RMA and history, merchant equipment tickets. ADR 0036. |
 | P23b Shrink | #35 | Merged — count variances (expected vs counted) and write-offs by reason, by category and item at cost, with cashier voids / refunds / no-sale; Stock tab Shrink card. ADR 0034. |
 | P23a Ordering | #34 | Merged — vendors, reorder suggestions by weekday until the delivery after next in whole cases, purchase orders sent through `MessageSender`, received at the register against the order, ordered vs received. ADR 0035. |
 | P22b Register inventory | #33 | Merged — receive a delivery by scan, write-offs behind a PIN, low-stock badges on tiles, sell-soon on the cashier's idle screen, /device/stock. ADR 0034. |

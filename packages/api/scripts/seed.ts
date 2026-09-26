@@ -388,6 +388,7 @@ async function main() {
     await ensureDemoInventory(db);
     await ensureDemoVendors(db);
     await ensureDemoSupport(db);
+    await ensureDemoDocuments(db);
 
     // Registers with history are "already paired" devices in the field.
     for (const r of [jc1, jc2, ast1, bay1]) {
@@ -624,12 +625,39 @@ async function ensureDemoSupport(db: Db): Promise<void> {
   );
 }
 
+/** Demo documents (P24b): a tobacco licence expiring in 20 days (opens the reminder) and insurance. */
+async function ensureDemoDocuments(db: Db): Promise<void> {
+  const { rows } = await db.query<{ org_id: string; merchant_id: string; location_id: string; owner: string | null }>(
+    `SELECT m.org_id, m.merchant_id, l.location_id,
+            (SELECT ms.user_id FROM memberships ms WHERE ms.merchant_id = m.merchant_id AND ms.role = 'owner' LIMIT 1) AS owner
+       FROM merchants m JOIN locations l ON l.merchant_id = m.merchant_id
+      WHERE m.name = 'Journal Square Deli & Grocery' AND l.name = 'Jersey City' AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.merchant_id = m.merchant_id)`,
+  );
+  const r = rows[0];
+  if (!r) return;
+  const pdf = (text: string) => {
+    const body = `BT /F1 18 Tf 72 720 Td (${text}) Tj ET`;
+    return Buffer.from(
+      `%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n4 0 obj << /Length ${body.length} >> stream\n${body}\nendstream endobj\n5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`,
+    );
+  };
+  for (const [kind, title, days] of [['tobacco_licence', 'Tobacco retail licence (demo)', 20], ['insurance', 'General liability insurance (demo)', 200]] as const) {
+    const bytes = pdf(title);
+    await db.query(
+      `INSERT INTO documents (org_id, merchant_id, location_id, kind, title, expires_on, content_type, byte_size, sha256, bytes, uploaded_by, trace_id)
+       VALUES ($1, $2, $3, $4, $5, current_date + $6::int, 'application/pdf', $7, md5($8::bytea::text), $8, $9, 'seed')`,
+      [r.org_id, r.merchant_id, r.location_id, kind, title, days, bytes.length, bytes, r.owner],
+    );
+  }
+}
+
 async function printLogins(db: Db) {
   await ensureDemoLoyalty(db);
   await ensureDemoPromotion(db);
   await ensureDemoInventory(db);
   await ensureDemoVendors(db);
   await ensureDemoSupport(db);
+  await ensureDemoDocuments(db);
   const pins = await ensureDemoStaff(db);
   const { rows } = await db.query<{ register_id: string; label: string }>(
     `SELECT r.register_id, m.name || ' · ' || l.name || ' · ' || r.name AS label

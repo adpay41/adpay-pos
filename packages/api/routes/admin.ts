@@ -1,7 +1,7 @@
 /**
  * Admin (AD Pay staff) routes. Cross-tenant by role; every write is audited.
  */
-import { CannedFixKeySchema, HardwareInput, TICKET_STATUSES, TicketInput, LangSchema, LANGUAGE_STATUSES, MessageKeySchema, ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
+import { FEATURE_FLAG_KEYS, FlagRolloutInput, type FeatureFlag, CannedFixKeySchema, HardwareInput, TICKET_STATUSES, TicketInput, LangSchema, LANGUAGE_STATUSES, MessageKeySchema, ComplianceSettingsInput, localDate, taxRateOn, ProcessorCostInput, StatementInput, FeatureFlagOverridesInput, KYB_STATUSES, ONBOARDING_STATUSES, OnboardingInput, PACK_IDS, PricingPlanInput, SupportMessageInput } from '@adpay/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { asAdmin, requireAdmin } from '../http/auth-hooks';
@@ -27,6 +27,8 @@ import { merchantConfig, postSupportMessage, setFeatureFlags, setPacks, supportI
 import { addPricingPlan, installKit, onboardMerchant, onboardingList, pricingPlans, updateOnboarding } from '../services/merchant-setup';
 import { recentSales, salesSummary } from '../services/reports';
 import { addHardware, addTicketNote, closeRma, createTicket, hardwareHistory, installHardware, listHardware, listTickets, swapHardware, ticketDetail } from '../services/support';
+import { rolloutOverview, setRollout } from '../services/rollouts';
+import { adminDocumentFile, listDocuments } from '../services/documents';
 import { setLanguageStatus, setTranslation, translationsOverview, translationStrings } from '../services/i18n';
 
 const Ppm = z.int().min(0).max(1_000_000);
@@ -109,6 +111,20 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps): Promise<
   app.put('/admin/merchants/:merchantId/flags', async (request) => {
     const { merchantId } = MerchantParams.parse(request.params);
     return setFeatureFlags(db, asAdmin(request), merchantId, FeatureFlagOverridesInput.parse(request.body), request.logContext.trace_id);
+  });
+  // Staged rollouts and the kill switch, platform-wide over the per-merchant flags (P24b).
+  app.get('/admin/rollouts', async () => ({ flags: await rolloutOverview(db) }));
+  app.put('/admin/rollouts/:flag', async (request) => {
+    const { flag } = z.object({ flag: z.enum(FEATURE_FLAG_KEYS as [FeatureFlag, ...FeatureFlag[]]) }).parse(request.params);
+    return setRollout(db, asAdmin(request), flag, FlagRolloutInput.parse(request.body), request.logContext.trace_id);
+  });
+  // A store's documents vault, read-only for support (P24b); opening a file is audited.
+  app.get('/admin/merchants/:merchantId/documents', async (request) => ({ documents: await listDocuments(db, MerchantParams.parse(request.params).merchantId) }));
+  app.get('/admin/documents/:documentId/file', async (request, reply) => {
+    const { documentId } = z.object({ documentId: z.uuid() }).parse(request.params);
+    const doc = await adminDocumentFile(db, asAdmin(request), documentId, request.logContext.trace_id);
+    reply.header('content-type', doc.content_type).header('cache-control', 'private, no-store');
+    return reply.send(doc.bytes);
   });
   app.put('/admin/merchants/:merchantId/packs', async (request) => {
     const { merchantId } = MerchantParams.parse(request.params);
