@@ -75,7 +75,9 @@ export function UnknownItemForm({
   categories,
   dualRatePpm,
   lookup,
+  search,
   onCreate,
+  onAttach,
   onCancel,
 }: {
   code: string;
@@ -84,6 +86,9 @@ export function UnknownItemForm({
   /** The global UPC library (P25c): fills the name and category if other stores have it. Online only. */
   lookup?: (code: string) => Promise<UpcSuggestion | null>;
   onCreate: (v: { name: string; cash: Cents; category_id: string | null }) => void;
+  /** Scan-to-attach (ADR 0043): the catalog search, for "it's an item we already have". */
+  search?: (query: string) => CatalogItem[];
+  onAttach?: (item: CatalogItem) => void;
   onCancel: () => void;
 }) {
   const t = useT();
@@ -92,6 +97,7 @@ export function UnknownItemForm({
   const [category, setCategory] = useState<string | null>(categories[0]?.category_id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<UpcSuggestion | null>(null);
+  const [existing, setExisting] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     void lookup?.(code).then((sug) => {
@@ -120,6 +126,30 @@ export function UnknownItemForm({
   };
   // One sentence for translators; split at {code} so the barcode keeps its monospace style.
   const [beforeCode, afterCode = ''] = t('Barcode {code} isn’t in the catalog yet. Add it once, and it rings up on every register from now on.').split('{code}');
+  if (existing !== null && search && onAttach) {
+    const hits = existing.trim() ? search(existing).slice(0, 8) : [];
+    return (
+      <>
+        <Text style={s.title}>{t('Which item is it?')}</Text>
+        <Text style={s.muted}>
+          {t('This barcode will ring the item you pick, on every register.')} <Text style={s.mono}>{code}</Text>
+        </Text>
+        <TextInput style={s.input} value={existing} onChangeText={setExisting} placeholder={t('Search by name')} autoFocus />
+        {hits.map((i) => (
+          <Pressable key={i.item_id} style={[s.ghost, s.row, { justifyContent: 'space-between' }]} onPress={() => onAttach(i)}>
+            <Text style={s.body}>{i.name}</Text>
+            <Text style={s.muted}>{i.open_price ? t('open') : usd(i.cash_price_cents)}</Text>
+          </Pressable>
+        ))}
+        {existing.trim() && hits.length === 0 ? <Text style={s.muted}>{t('Nothing matches. Try fewer letters.')}</Text> : null}
+        <View style={s.row}>
+          <Pressable style={s.ghost} onPress={() => setExisting(null)}>
+            <Text>{t('Back')}</Text>
+          </Pressable>
+        </View>
+      </>
+    );
+  }
   return (
     <>
       <Text style={s.title}>{t('New item')}</Text>
@@ -153,6 +183,11 @@ export function UnknownItemForm({
         ))}
       </View>
       {error ? <Text style={s.error}>{error}</Text> : null}
+      {search && onAttach ? (
+        <Pressable style={s.ghost} onPress={() => setExisting('')}>
+          <Text>{t('It’s an item we already have')}</Text>
+        </Pressable>
+      ) : null}
       <View style={s.row}>
         <Pressable style={s.ghost} onPress={onCancel}>
           <Text>{t('Cancel')}</Text>

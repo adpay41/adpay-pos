@@ -1,7 +1,7 @@
 /**
  * Register routes. Identity and tenancy come from the device token alone.
  */
-import { CustomerRefSchema, DeviceItemCreateInput, EventBatchSchema, MEDIA_MAX_BYTES, MEDIA_TYPES, UsualInput } from '@adpay/shared';
+import { CustomerRefSchema, DeviceBarcodeAttachInput, DeviceItemCreateInput, EventBatchSchema, MEDIA_MAX_BYTES, MEDIA_TYPES, UsualInput } from '@adpay/shared';
 import { badRequest } from '../http/errors';
 import { validateImage } from '../services/media';
 import { salesCompare } from '../services/reports';
@@ -15,7 +15,7 @@ import { textReceiptFromRegister } from '../services/messaging';
 import { stockLevels } from '../services/inventory';
 import { purchaseOrders } from '../services/ordering';
 import { getCatalogSnapshot } from '../services/catalog';
-import { catalogVersion, createItemFromDevice, uploadMedia } from '../services/catalog-write';
+import { attachBarcodeFromDevice, catalogVersion, createItemFromDevice, uploadMedia } from '../services/catalog-write';
 import { ingestEvents } from '../services/events';
 import { deviceIdentity } from '../services/onboarding';
 import { cardRefund, terminalCharge } from '../services/payments';
@@ -116,6 +116,12 @@ export async function deviceRoutes(app: FastifyInstance, deps: AppDeps): Promise
   app.post('/device/items', async (request) => {
     const d = asDevice(request);
     return createItemFromDevice(db, d, DeviceItemCreateInput.parse(request.body), request.logContext.trace_id);
+  });
+
+  // Scan-to-attach (ADR 0043): an unknown barcode goes onto an item the cashier picked.
+  app.post('/device/items/barcodes', async (request) => {
+    const d = asDevice(request);
+    return attachBarcodeFromDevice(db, d, DeviceBarcodeAttachInput.parse(request.body), request.logContext.trace_id);
   });
 
   // Card payments (P9): amounts and ids only; the provider drives the terminal. Idempotent by the

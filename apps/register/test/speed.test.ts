@@ -9,6 +9,8 @@ import {
   lookupBarcode,
   type CatalogItem,
   type CatalogSnapshot,
+  type DeviceBarcodeAttach,
+  type DeviceBarcodeAttachResult,
   type DeviceItemCreate,
   type DeviceItemResult,
 } from '@adpay/shared';
@@ -174,5 +176,65 @@ describe('items created at the register', () => {
     await outbox.add(c);
     const later = { ...snapshot, items: [...snapshot.items, { ...SODA, item_id: c.item_id, name: 'Goya Adobo (from server)' }] };
     expect(outbox.overlay(later).items.filter((i) => i.item_id === c.item_id).map((i) => i.name)).toEqual(['Goya Adobo (from server)']);
+  });
+});
+
+describe('scan-to-attach (ADR 0043)', () => {
+  const NO_CODE = { ...SODA, item_id: 'a0000000-0000-4000-8000-00000000a771', name: 'Doritos Nacho', upc: null, barcodes: [] };
+  const snapshot: CatalogSnapshot = {
+    merchant_id: tenancy.merchant_id, location_id: tenancy.location_id, catalog_version: 3, dual_price_rate_ppm: 40_000, tax_rate_ppm: 66_250,
+    generated_at: '', items: [SODA, NO_CODE], quick_keys: [], categories: [],
+  };
+  const attach = (barcode: string, item_id = NO_CODE.item_id): DeviceBarcodeAttach => ({ attach_id: randomUUID(), item_id, barcode, attached_by_user_id: null, attached_at: new Date().toISOString() });
+  class FakeApi {
+    online = true;
+    calls: string[] = [];
+    async createItem(c: DeviceItemCreate): Promise<DeviceItemResult> {
+      this.calls.push(`item ${c.name}`);
+      return { item_id: c.item_id, status: 'created', catalog_version: 4 };
+    }
+    async attachBarcode(a: DeviceBarcodeAttach): Promise<DeviceBarcodeAttachResult> {
+      if (!this.online) throw new Error('network unreachable');
+      this.calls.push(`barcode ${a.barcode}`);
+      return { item_id: a.item_id, status: 'attached', catalog_version: 5 };
+    }
+  }
+
+  it('the scanned barcode rings the picked item at once: as its UPC when it has none, else as an extra', async () => {
+    const outbox = new NewItemOutbox(new MemoryEventStore(), new FakeApi());
+    await outbox.attach(attach('028400090858'));
+    await outbox.attach(attach('028400090865'));
+    const idx = barcodeIndex(outbox.overlay(snapshot));
+    expect(lookupBarcode(idx, '028400090858')).toMatchObject({ item: { name: 'Doritos Nacho' }, matched: 'upc' });
+    expect(lookupBarcode(idx, '0028400090865')).toMatchObject({ item: { name: 'Doritos Nacho' }, matched: 'barcode' });
+    // A barcode the catalog already rings is never moved onto another item.
+    await outbox.attach(attach(SODA.upc!));
+    expect(lookupBarcode(barcodeIndex(outbox.overlay(snapshot)), SODA.upc!)!.item.item_id).toBe(SODA.item_id);
+  });
+
+  it('waits offline and survives a restart; new items go to the server before barcodes', async () => {
+    const store = new MemoryEventStore();
+    const api = new FakeApi();
+    api.online = false;
+    const outbox = new NewItemOutbox(store, api);
+    await outbox.attach(attach('028400090858'));
+    await outbox.add({ item_id: randomUUID(), name: 'Goya Adobo', category_id: null, cash_price_cents: 349, upc: '041331021636', created_by_user_id: null, created_at: new Date().toISOString() });
+    expect(outbox.size()).toBe(2);
+    await expect(outbox.flush()).rejects.toThrow('network unreachable');
+
+    const restarted = new NewItemOutbox(store, api);
+    await restarted.load();
+    expect(restarted.size()).toBe(1);
+    api.online = true;
+    await restarted.flush();
+    expect(api.calls).toEqual(['item Goya Adobo', 'barcode 028400090858']);
+    expect(restarted.size()).toBe(0);
+  });
+
+  it('once the snapshot carries the barcode, the overlay adds nothing twice', async () => {
+    const outbox = new NewItemOutbox(new MemoryEventStore(), new FakeApi());
+    await outbox.attach(attach('028400090858'));
+    const later = { ...snapshot, items: [SODA, { ...NO_CODE, upc: '028400090858' }] };
+    expect(outbox.overlay(later).items.find((i) => i.item_id === NO_CODE.item_id)).toMatchObject({ upc: '028400090858', barcodes: [] });
   });
 });

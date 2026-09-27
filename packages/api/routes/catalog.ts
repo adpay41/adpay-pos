@@ -28,6 +28,7 @@ import {
   QuickKeysInput,
   ReceiptSettingsInput,
   parseCatalogCsv,
+  parseNrsPricebook,
 } from '@adpay/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { languageStatuses } from '../services/i18n';
@@ -332,6 +333,40 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       if (!body.dry_run && parsed.errors.length && !body.skip_errors) throw badRequest(`${parsed.errors.length} lines have problems: fix them or import the rest with skip_errors`);
       const result = await bulkUpsert(db, actor, merchantId, parsed.rows, { dryRun: body.dry_run, source: 'csv' }, trace(r));
       return { parse: { ...parsed, rows: parsed.rows.slice(0, 20) }, result };
+    });
+
+    // NRS price book migration (ADR 0043, docs/nrs-migration-method.md): the portal's items as JSON
+    // (real barcodes) or its CSV export (encrypted barcodes). Preview = the same write, rolled back.
+    s.post(`${p}/catalog/import/nrs`, { bodyLimit: 16 * 1024 * 1024 }, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const Dept = z.strictObject({ taxable: z.boolean(), min_age: z.number().int().min(0).max(99).nullable(), restriction: z.enum(['tobacco', 'vape', 'alcohol']).nullable() });
+      const body = z
+        .strictObject({ file: z.string().min(1).max(15_000_000), dry_run: z.boolean().default(true), skip_errors: z.boolean().default(false), departments: z.record(z.string().max(60), Dept).default({}) })
+        .parse(r.body);
+      const parsed = parseNrsPricebook(body.file);
+      const { rows: existing } = await db.query<{ name: string; taxable: boolean; min_age: number | null; restriction: string | null }>(
+        'SELECT name, taxable, min_age, restriction FROM categories WHERE merchant_id = $1',
+        [merchantId],
+      );
+      const have = new Map(existing.map((c) => [c.name.toLowerCase(), c]));
+      // Each department: the owner's choice, else our suggestion; an existing category keeps its own settings.
+      const departments = parsed.departments.map((d) => {
+        const own = have.get(d.name.toLowerCase());
+        const chosen = body.departments[d.name];
+        return own
+          ? { ...d, exists: true, taxable: own.taxable, min_age: own.min_age, restriction: own.restriction as typeof d.restriction }
+          : { ...d, exists: false, ...(chosen ?? {}) };
+      });
+      const parse = { ...parsed, rows: undefined, departments, errors: parsed.errors.slice(0, 50), error_count: parsed.errors.length };
+      if (parsed.rows.length === 0) return { parse, result: null };
+      if (!body.dry_run && parsed.errors.length && !body.skip_errors) throw badRequest(`${parsed.errors.length} lines have problems: fix them or import the rest with skip_errors`);
+      const settings = new Map(departments.map((d) => [d.name.toLowerCase(), d]));
+      const rows = parsed.rows.map((row) => {
+        const d = row.category ? settings.get(row.category.toLowerCase()) : undefined;
+        return d ? { ...row, category_defaults: { taxable: d.taxable, min_age: d.min_age, restriction: d.restriction, color: null } } : row;
+      });
+      const result = await bulkUpsert(db, actor, merchantId, rows, { dryRun: body.dry_run, source: parsed.format, renames: true }, trace(r));
+      return { parse, result };
     });
 
     // Tax & compliance rule set for a location (P10, ADR 0018).

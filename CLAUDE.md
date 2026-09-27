@@ -112,6 +112,7 @@ purpose: support is one person for the first 200 stores.
 | [0040](docs/decisions/0040-agents-residual-split.md) | Agents: dated append-only terms (margin or revenue share, bounty) and store assignments (referral code at onboarding); statements computed from the residual report at month end, rounded down, pending without cost, never stored |
 | [0041](docs/decisions/0041-upc-library-cohorts-investor-pack.md) | UPC library = stores' catalogs deduped on read by `barcode_key` (real GTINs only; typical price from 3+ stores; suggests name / category, never price); cohorts by first-sale month and the investor pack from the monthly residual report, printed from the browser |
 | [0042](docs/decisions/0042-tester-feedback-shift-tax-pin-codes.md) | Sign-in starts the shift, Clock out ends it and signs out; tax by category (owner toggles Taxed / No tax), admin Tax page removed; PIN pad stops at the recorded PIN length; demo setup codes reusable (install-kit codes single-use) |
+| [0043](docs/decisions/0043-nrs-price-book-import.md) | NRS price book import: portal JSON with real barcodes (primary) or the CSV export (scrambled, NRS key); batched bulk write, match barcode → key → name without duplicating; owner confirms department tax/age; NRS flags kept in `attrs.nrs`; scan-to-attach on the register |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

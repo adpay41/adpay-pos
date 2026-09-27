@@ -301,7 +301,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const dropNeed = drawerSession ? dropSuggestion(drawerSession.expected_cents, drawerSession.float_cents, catalog.cash_settings?.drop_over_cents ?? 0) : { needed: false, suggest_cents: 0 };
   // Items created here but not yet in a server snapshot are overlaid, so they ring up offline (P5).
   const [pendingCount, setPendingCount] = useState(0);
-  useEffect(() => rt.items.subscribe((p) => setPendingCount(p.length)), [rt]);
+  useEffect(() => rt.items.subscribe(() => setPendingCount(rt.items.size())), [rt]);
   // pendingCount is the change signal: the outbox mutates in place, so the memo keys on its size.
   const shown = useMemo(() => rt.items.overlay(catalog), [rt, catalog, pendingCount]);
   const index = useMemo(() => barcodeIndex(shown), [shown]);
@@ -460,6 +460,15 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     rt.log.info('item created at the register', { name: v.name, code });
     setModal({ kind: 'none' });
     ring(pendingItem(catalog, cmd), { entry: 'new_item' });
+    rt.sync.kick();
+  }
+
+  // Scan-to-attach (ADR 0043): the barcode goes on the item the cashier picked, and it rings now.
+  async function attachUnknown(code: string, item: CatalogItem) {
+    await rt.items.attach({ attach_id: rt.uuid(), item_id: item.item_id, barcode: code, attached_by_user_id: ses.actorId(), attached_at: new Date().toISOString() });
+    rt.log.info('barcode attached at the register', { name: item.name, code });
+    setModal({ kind: 'none' });
+    ring(item, { entry: 'scan' });
     rt.sync.kick();
   }
 
@@ -1399,6 +1408,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             lookup={cardOk ? rt.upcLookup : undefined}
             onCancel={() => setModal({ kind: 'none' })}
             onCreate={(v) => void run(() => createUnknown(modal.code, v))}
+            search={(q) => searchCatalog(shown, q, 8).map((h) => h.item)}
+            onAttach={(item) => void run(() => attachUnknown(modal.code, item))}
           />
         </Overlay>
       )}
