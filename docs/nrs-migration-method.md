@@ -6,6 +6,9 @@ real UPCs**, out of the NRS merchant portal, then imports it with the NRS import
 - merchant app → Items → Import;
 - admin → merchant → Catalog → Move from NRS.
 
+The plain-language, step-by-step version for whoever sits with the owner is
+[`nrs-extract-howto.md`](nrs-extract-howto.md).
+
 Found by the founder on the first pilot store (NRS store 45394, 9,284 items), 2026-09-27.
 
 ## Why not the portal's "Export" button
@@ -75,10 +78,13 @@ and changes nothing in NRS.
 For a store with more than 10,000 items, raise the page length in step 3. A very large store
 may be slow to draw.
 
-> Steps 3–5 are the method the founder ran on store 45394, written up here. We haven't run them
-> again ourselves: our only portal access was a login page, and we don't sign in to a merchant's
-> account. The save-as-file snippet is the standard way to download from the console. The first
-> time an installer uses it, check that the file's item count matches the portal.
+> Steps 3–5 are the method the founder ran on store 45394, written up here. **For installers, use
+> the one-paste snippet in [`nrs-extract-howto.md`](nrs-extract-howto.md)**: it finds the table and the
+> store number by itself, clears filters, pages through if the server caps a request, checks the
+> count and barcodes, and saves the file. It was tested against a local mock of the portal
+> (server-side table, 12,345 items, capped and uncapped, a different table id, an active search).
+> We haven't run it on the live portal: our only access was a login page, and we don't sign in to a
+> merchant's account. The first time, check that the file's item count matches the portal.
 
 ## What the file holds, and where each field goes
 
