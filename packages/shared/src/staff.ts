@@ -28,6 +28,7 @@ export const PERMISSIONS = {
   'ticket.void': { label: 'Void an open ticket', where: 'register' },
   'sale.void': { label: 'Void a completed sale', where: 'register' },
   'sale.refund': { label: 'Refund', where: 'register' },
+  'refund.no_receipt': { label: 'Refund without a receipt', where: 'register' },
   'line.discount': { label: 'Discount a line', where: 'register' },
   'ticket.discount': { label: 'Discount the whole ticket', where: 'register' },
   'ticket.tax_exempt': { label: 'Make a sale tax-free', where: 'register' },

@@ -110,3 +110,32 @@ describe('check and other tenders on the server (ADR 0050)', () => {
     expect(s).toMatchObject({ sale_count: 1, gross_cents: 2_133 });
   });
 });
+
+describe('refund without a receipt on the server (ADR 0051)', () => {
+  it('a return ticket is a refund in every report, with its tax taken back, and lists as returned', async () => {
+    const { salesSummary, recentSales } = await import('../services/reports');
+    const u = await createTenant(db, 'Returns', '201-555-2163');
+    const sale_id = randomUUID();
+    const line_id = randomUUID();
+    let seq = 0;
+    const at = new Date().toISOString();
+    const ev = (type: string, payload: unknown) => ({
+      event_id: randomUUID(), schema_version: 1, sale_id, device_seq: seq++, occurred_at: at,
+      org_id: u.org_id, merchant_id: u.merchant_id, location_id: u.location_id, register_id: u.register_id, trace_id: 't', type, payload,
+    });
+    const device = { kind: 'device' as const, org_id: u.org_id, merchant_id: u.merchant_id, location_id: u.location_id, register_id: u.register_id };
+    const r = await ingestEvents(db, device, [
+      ev('sale.opened', { cashier_user_id: null, catalog_version: 1, kind: 'return', reason: 'Defective' }),
+      ev('sale.line_added', { line_id, item_id: randomUUID(), name: 'Soda', category_id: null, qty: 1, unit_cash_price_cents: 299, unit_card_price_cents: 311, taxable: true, tax_rate_ppm: 66_250, min_age: null }),
+      ev('sale.refunded', { refund_id: randomUUID(), tender_type: 'cash', amount_cents: 319, reason: 'Defective', by_user_id: null, card: null, lines: [{ line_id, qty: 1 }] }),
+      ev('drawer.opened', { reason: 'refund', by_user_id: null }),
+    ]);
+    expect(r.rejected).toEqual([]);
+    const day = at.slice(0, 10);
+    const tax = await salesTaxReport(db, u.merchant_id, day, day);
+    expect(tax.total).toMatchObject({ sales_count: 0, gross_sales_cents: 0, refunds_cents: 319, refunds_tax_cents: 20, net_tax_cents: -20 });
+    expect(await salesSummary(db, u.merchant_id, 'today')).toMatchObject({ sale_count: 0, gross_cents: 0, refunds_cents: 319 });
+    const listed = (await recentSales(db, u.merchant_id)).find((x) => x.sale_id === sale_id);
+    expect(listed).toMatchObject({ status: 'returned', total_cents: -319 });
+  });
+});

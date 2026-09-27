@@ -120,6 +120,7 @@ purpose: support is one person for the first 200 stores.
 | [0048](docs/decisions/0048-basket-discount.md) | Basket discount: one `sale.basket_discounted` event (percent or cash amount + reason), spread over goods lines by the fold (largest remainder), card side scaled; `lineDiscount` everywhere; `ticket.discount` permission |
 | [0049](docs/decisions/0049-tax-free-sale.md) | Tax-free sale: `sale.tax_exempted` (reason + certificate); the fold untaxes every line, tax-inclusive prices drop to pre-tax; tax report lists exempt sales; `ticket.tax_exempt` permission |
 | [0050](docs/decisions/0050-check-and-other-tenders.md) | Check and other tenders (EBT, gift card, house account): at the cash price, no change, reference on the tender; only card + non-card is split; drawer counts cash only; Z, summary and journal break them out; refunds in cash |
+| [0051](docs/decisions/0051-refund-without-receipt.md) | Refund without a receipt: a return ticket (`sale.opened.kind = return` + reason), items rung at today's price, closed by a cash `sale.refunded` and folded `returned`; never a sale; `refund.no_receipt` permission |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

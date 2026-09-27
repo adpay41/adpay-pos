@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| Check and other tenders | #53 | Open — check / EBT / gift card / house account / other at the cash price with a reference; Z, sales summary and journal break them out; drawer stays cash-only. ADR 0050. |
+| Refund without a receipt | #54 | Open — return ticket rung like a sale, refunded in cash, never counted as a sale; drawer, Z, tax report and summary treat it as a refund; manager override. ADR 0051. |
+| Check and other tenders | #53 | Merged — check / EBT / gift card / house account / other at the cash price with a reference; Z, sales summary and journal break them out; drawer stays cash-only. ADR 0050. |
 | Tax-free sale | #52 | Merged — whole-ticket exemption with reason and certificate, tax-inclusive prices drop to pre-tax, exempt sales in the tax report, manager override. ADR 0049. |
 | Basket discount | #51 | Merged — whole-ticket percent or amount with a reason, one event spread over the lines by the fold; tax, refunds, receipt, Z and profit agree; manager override for cashiers. ADR 0048. |
 | Key pages, @ and PLU | #50 | Merged — owner-named register tabs with item and department-amount keys (merchant app editor, snapshot), @ quantity and PLU keys on the pad. ADR 0047. |

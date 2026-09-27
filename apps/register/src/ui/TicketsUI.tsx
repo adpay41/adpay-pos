@@ -15,7 +15,7 @@ import { C, usd } from './theme';
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-const STATUS: Record<FoldedSale['status'], CashierKey> = { open: tk('open'), suspended: tk('suspended'), completed: tk('completed'), voided: tk('voided') };
+const STATUS: Record<FoldedSale['status'], CashierKey> = { open: tk('open'), suspended: tk('suspended'), completed: tk('completed'), voided: tk('voided'), returned: tk('returned') };
 // Stored in the refund event in English; translated only where shown.
 const REFUND_REASONS = [tk('Returned'), tk('Damaged'), tk('Wrong item'), tk('Price error')];
 

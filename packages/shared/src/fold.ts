@@ -14,7 +14,8 @@ import { isEmptyBasket, spreadBasket, type BasketDiscount } from './basket';
 /** How a completed sale was paid: at the cash price, the card price, or split between them (P9). */
 export type CompletionMode = PriceMode | 'split';
 
-export type SaleStatus = 'open' | 'suspended' | 'completed' | 'voided';
+/** `returned`: a return ticket (refund without a receipt, ADR 0051) once its money went back. */
+export type SaleStatus = 'open' | 'suspended' | 'completed' | 'voided' | 'returned';
 
 export interface FoldedLine {
   line_id: string;
@@ -68,6 +69,9 @@ export interface FoldedTender {
 export interface FoldedSale {
   sale_id: string;
   status: SaleStatus;
+  /** A sale, or a return rung without a receipt (ADR 0051), with why. */
+  kind: 'sale' | 'return';
+  return_reason: string | null;
   lines: FoldedLine[];
   /** Both price modes, so the customer screen can show cash and card side by side. */
   cash: Totals;
@@ -148,6 +152,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   let loyalty = null as FoldedSale['loyalty'];
   let basket: BasketDiscount | null = null;
   let exempt: FoldedSale['tax_exempt'] = null;
+  let kind: FoldedSale['kind'] = 'sale';
+  let returnReason: string | null = null;
   let refunded: Cents = ZERO;
   const refundedQty: Record<string, number> = {};
 
@@ -155,6 +161,10 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
     if (seen.has(e.event_id)) continue;
     seen.add(e.event_id);
     switch (e.type) {
+      case 'sale.opened':
+        kind = e.payload.kind ?? 'sale';
+        returnReason = e.payload.reason ?? null;
+        break;
       case 'sale.line_added': {
         const p = e.payload;
         lines.set(p.line_id, {
@@ -240,6 +250,11 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
         break;
       case 'sale.refunded':
         refunded = add(refunded, cents(e.payload.amount_cents));
+        // A return ticket's money going back is what closes it, at the cash price.
+        if (kind === 'return') {
+          status = 'returned';
+          priceMode = 'cash';
+        }
         for (const l of e.payload.lines) refundedQty[l.line_id] = (refundedQty[l.line_id] ?? 0) + l.qty;
         break;
       case 'sale.suspended':
@@ -327,6 +342,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   return {
     sale_id: saleId,
     status,
+    kind,
+    return_reason: returnReason,
     lines: active,
     cash,
     card,
@@ -349,8 +366,9 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   };
 }
 
-/** Net money a completed sale brought in (after refunds); zero for voided or unfinished sales. */
+/** Net money a completed sale brought in (after refunds); what a return paid out, negative; zero otherwise. */
 export function saleNetCents(sale: FoldedSale): Cents {
+  if (sale.status === 'returned') return cents(-sale.refunded_cents);
   if (sale.status !== 'completed') return ZERO;
   return sub(sale.paid_cents, sale.refunded_cents);
 }
