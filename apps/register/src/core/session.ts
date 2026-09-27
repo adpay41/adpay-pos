@@ -8,6 +8,7 @@
  */
 import {
   isDepartmentItem,
+  TAX_EXEMPT_REASONS,
   type BasketDiscount,
   type Lang,
   type Promotion,
@@ -405,6 +406,21 @@ export class SaleSession {
       const sale = this.current();
       await this.emit('sale.voided', { reason, by_user_id: this.actor }, sale.sale_id);
       await this.clearOpen();
+      this.notify();
+      return this.state();
+    });
+  }
+
+  /**
+   * Make the open ticket tax-free (ADR 0049), or null to charge tax again. The caller checks
+   * `ticket.tax_exempt` (or gets a manager's override); the event records who was signed in.
+   */
+  setTaxExempt(x: { reason: (typeof TAX_EXEMPT_REASONS)[number]; certificate: string | null } | null): Promise<SessionState> {
+    return this.serial(async () => {
+      const sale = this.current();
+      if (sale.status !== 'open') throw new SaleError('Only an open ticket can be made tax-free');
+      await this.emit('sale.tax_exempted', x ? { exempt: true, reason: x.reason, certificate: x.certificate } : { exempt: false, reason: null, certificate: null }, sale.sale_id);
+      await this.reprice();
       this.notify();
       return this.state();
     });

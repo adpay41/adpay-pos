@@ -105,6 +105,19 @@ const BasketDiscounted = z
   })
   .refine((d) => (d.kind === 'percent' ? d.amount_cents === null : d.percent_ppm === null), { message: 'A percent or an amount, not both' });
 
+/** Why a ticket is tax-free (ADR 0049). */
+export const TAX_EXEMPT_REASONS = ['resale', 'nonprofit', 'government', 'diplomat', 'other'] as const;
+
+/**
+ * The whole ticket is tax-free (ADR 0049), with why and the buyer's certificate number when there is
+ * one. The latest wins; `exempt: false` puts the tax back.
+ */
+const TaxExempted = z.strictObject({
+  exempt: z.boolean(),
+  reason: z.enum(TAX_EXEMPT_REASONS).nullable(),
+  certificate: z.string().trim().max(40).nullable(),
+});
+
 const AgeVerified = z.strictObject({
   line_id: Uuid,
   /** 'id_scan' (P16b): the licence barcode was read and passed; manual = the cashier looked. */
@@ -340,6 +353,7 @@ export const EventPayloads = {
   'sale.line_qty_changed': LineQtyChanged,
   'sale.line_discounted': LineDiscounted,
   'sale.basket_discounted': BasketDiscounted,
+  'sale.tax_exempted': TaxExempted,
   'sale.age_verified': AgeVerified,
   'sale.tender_added': TenderAdded,
   'sale.card_attempt': CardAttempt,

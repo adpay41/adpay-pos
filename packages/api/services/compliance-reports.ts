@@ -21,7 +21,7 @@ const ENVELOPE = `e.event_id, e.schema_version, e.sale_id, e.device_seq, e.occur
                   e.register_id, e.trace_id, e.actor_user_id, e.type, e.payload`;
 
 function period(): SalesTaxPeriod {
-  return { period: '', sales_count: 0, gross_sales_cents: 0, taxable_cents: 0, non_taxable_cents: 0, tax_cents: 0, by_rate: [], deposits_fees_cents: 0, refunds_cents: 0, refunds_tax_cents: 0, net_tax_cents: 0 };
+  return { period: '', sales_count: 0, gross_sales_cents: 0, taxable_cents: 0, non_taxable_cents: 0, tax_cents: 0, by_rate: [], deposits_fees_cents: 0, exempt_sales_cents: 0, exempt_count: 0, refunds_cents: 0, refunds_tax_cents: 0, net_tax_cents: 0 };
 }
 
 export async function salesTaxReport(q: Queryable, merchantId: string, from: string, to: string, locationId: string | null = null): Promise<SalesTaxReport> {
@@ -85,6 +85,10 @@ export async function salesTaxReport(q: Queryable, merchantId: string, from: str
         p.non_taxable_cents += gross - taxable;
         p.tax_cents += tax;
         p.deposits_fees_cents += saleCharges(s);
+        if (s.tax_exempt) {
+          p.exempt_sales_cents += gross;
+          p.exempt_count++;
+        }
         addRates(p, groups);
       }
     }

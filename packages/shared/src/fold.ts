@@ -5,7 +5,7 @@
  */
 import type { RegisterEvent } from './events';
 import type { Lang } from './i18n';
-import { add, cents, sub, sum, ZERO, type Cents } from './money';
+import { add, cents, includedTaxHalfUp, sub, sum, ZERO, type Cents } from './money';
 import { computeTotals, lineNet, type PriceMode, type TaxableLine, type Totals } from './pricing';
 import type { LineCharge } from './compliance';
 import { coverForCard, splitTotals } from './split';
@@ -88,6 +88,8 @@ export interface FoldedSale {
   customer: { ref: string; last4: string; marketing_opt_in: boolean } | null;
   /** A loyalty reward used on this ticket. */
   loyalty: { cost: number; discount_cents: number } | null;
+  /** The ticket is tax-free (ADR 0049): why, and the buyer's certificate. */
+  tax_exempt: { reason: string | null; certificate: string | null } | null;
   /** The whole-ticket discount (ADR 0048) and what it takes off in each price mode. */
   basket: (BasketDiscount & { cash_cents: Cents; card_cents: Cents }) | null;
 }
@@ -142,6 +144,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   let customer = null as FoldedSale['customer'];
   let loyalty = null as FoldedSale['loyalty'];
   let basket: BasketDiscount | null = null;
+  let exempt: FoldedSale['tax_exempt'] = null;
   let refunded: Cents = ZERO;
   const refundedQty: Record<string, number> = {};
 
@@ -242,6 +245,9 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
       case 'sale.customer_identified':
         customer = { ref: e.payload.customer_ref, last4: e.payload.last4, marketing_opt_in: e.payload.marketing_opt_in };
         break;
+      case 'sale.tax_exempted':
+        exempt = e.payload.exempt ? { reason: e.payload.reason, certificate: e.payload.certificate } : null;
+        break;
       case 'sale.basket_discounted':
         basket = isEmptyBasket(e.payload) ? null : { kind: e.payload.kind, percent_ppm: e.payload.percent_ppm, amount_cents: e.payload.amount_cents, reason: e.payload.reason };
         break;
@@ -254,6 +260,19 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   }
 
   const active = [...lines.values()];
+  // A tax-free ticket (ADR 0049): every line folds untaxed, and a tax-inclusive price drops to its price
+  // before tax, so the buyer pays neither added nor hidden tax. The events keep what was rung.
+  if (exempt) {
+    for (const l of active) {
+      if (l.taxable && l.tax_included && l.tax_rate_ppm > 0) {
+        l.unit_cash_price_cents = sub(l.unit_cash_price_cents, includedTaxHalfUp(l.unit_cash_price_cents, l.tax_rate_ppm));
+        l.unit_card_price_cents = sub(l.unit_card_price_cents, includedTaxHalfUp(l.unit_card_price_cents, l.tax_rate_ppm));
+      }
+      l.taxable = false;
+      l.tax_included = false;
+      l.charges = l.charges.map((c) => ({ ...c, taxable: false }));
+    }
+  }
   // The basket discount over the goods (never a fee line or a deposit), after each line's own discount.
   const goods = active.filter((l) => !l.is_fee && l.qty > 0);
   const shares = spreadBasket(
@@ -317,6 +336,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
     receipt_token: receiptToken,
     customer,
     loyalty,
+    tax_exempt: exempt,
     basket: basket
       ? { ...basket, cash_cents: sum(active.map((l) => l.basket_cash_cents)), card_cents: sum(active.map((l) => l.basket_card_cents)) }
       : null,

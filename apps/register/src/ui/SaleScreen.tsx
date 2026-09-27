@@ -66,6 +66,7 @@ import { CardPanel, type CardPhase } from './TenderUI';
 import { HeldTickets, TicketBrowser } from './TicketsUI';
 import { findByPlu, padCents, padQty } from '../core/pad';
 import { BasketPanel } from './BasketUI';
+import { TAX_EXEMPT_LABEL, TaxFreePanel } from './TaxFreeUI';
 import { RegisterPad } from './RegisterPad';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
@@ -107,7 +108,8 @@ type Modal =
   | { kind: 'receive' }
   | { kind: 'write_off' }
   | { kind: 'checklist' }
-  | { kind: 'basket' };
+  | { kind: 'basket' }
+  | { kind: 'tax_free' };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
   const t = useT();
@@ -975,7 +977,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             {/* Items at their marked prices; tax already inside a price isn't added again (ADR 0044). */}
             {sale?.basket ? <Row label={t('Ticket discount')} value={-sale.basket.cash_cents} /> : null}
             <Row label={t('Subtotal')} value={ticketTotals?.items_cents ?? 0} />
-            <Row label={t('Tax')} value={ticketTotals?.added_tax_cents ?? 0} />
+            <Row label={sale?.tax_exempt ? t('Tax (tax-free: {why})', { why: t(TAX_EXEMPT_LABEL[(sale.tax_exempt.reason ?? 'other') as keyof typeof TAX_EXEMPT_LABEL]) }) : t('Tax')} value={ticketTotals?.added_tax_cents ?? 0} />
             {ticketTotals && ticketTotals.included_tax_cents > 0 ? <Row label={t('Tax included in prices')} value={ticketTotals.included_tax_cents} /> : null}
             <View style={s.dual}>
               <View style={s.dualBox}>
@@ -1083,6 +1085,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         ) : null}
         <Pressable style={[s.ghost, !sale?.lines.length && s.disabled, sale?.basket && s.ghostOn]} disabled={!sale?.lines.length} onPress={() => setModal({ kind: 'basket' })}>
           <Text style={sale?.basket ? { color: '#fff' } : undefined}>{sale?.basket ? t('Discount on') : t('Discount')}</Text>
+        </Pressable>
+        <Pressable style={[s.ghost, !sale?.lines.length && s.disabled, sale?.tax_exempt && s.ghostOn]} disabled={!sale?.lines.length} onPress={() => setModal({ kind: 'tax_free' })}>
+          <Text style={sale?.tax_exempt ? { color: '#fff' } : undefined}>{t('Tax-free')}</Text>
         </Pressable>
         {session.parked.length ? (
           <Pressable style={[s.ghost, s.ghostOn]} onPress={() => setModal({ kind: 'held' })}>
@@ -1211,6 +1216,23 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Text style={s.primaryText}>{t('ID checked — {age}+', { age: modal.batch.min_age ?? '' })}</Text>
             </Pressable>
           </View>
+        </Overlay>
+      )}
+
+      {modal.kind === 'tax_free' && sale && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <TaxFreePanel
+            sale={sale}
+            onCancel={() => setModal({ kind: 'none' })}
+            onRemove={() => {
+              setModal({ kind: 'none' });
+              guarded('ticket.tax_exempt', sale.sale_id, () => ses.setTaxExempt(null));
+            }}
+            onApply={(x) => {
+              setModal({ kind: 'none' });
+              guarded('ticket.tax_exempt', sale.sale_id, () => ses.setTaxExempt(x));
+            }}
+          />
         </Overlay>
       )}
 

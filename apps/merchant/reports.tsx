@@ -92,6 +92,11 @@ export function TaxCompliance({ token }: { token: string }) {
           <Text style={s.muted}>
             Gross sales {usd(tax.total.gross_sales_cents)} · non-taxable {usd(tax.total.non_taxable_cents)} · deposits & fees {usd(tax.total.deposits_fees_cents)}
           </Text>
+          {tax.total.exempt_count ? (
+            <Text style={s.muted}>
+              Tax-free sales (certificates) {tax.total.exempt_count} · {usd(tax.total.exempt_sales_cents)}, part of non-taxable
+            </Text>
+          ) : null}
           <Text style={s.muted}>
             Tax refunded {usd(tax.total.refunds_tax_cents)} · net tax {usd(tax.total.net_tax_cents)}
           </Text>

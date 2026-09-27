@@ -44,11 +44,11 @@ describe('sales-tax report helpers', () => {
     expect(refundTax(sale(), [{ line_id: L2, qty: 1 }])).toBe(0);
   });
   it('CSV: a column pair per rate, a row per month and a total', () => {
-    const p = { sales_count: 1, gross_sales_cents: 1_612, taxable_cents: 597, non_taxable_cents: 1_015, tax_cents: 53, by_rate: [{ rate_ppm: 88_750, taxable_cents: 597, tax_cents: 53 }], deposits_fees_cents: 15, refunds_cents: 0, refunds_tax_cents: 0, net_tax_cents: 53 };
+    const p = { sales_count: 1, gross_sales_cents: 1_612, taxable_cents: 597, non_taxable_cents: 1_015, tax_cents: 53, by_rate: [{ rate_ppm: 88_750, taxable_cents: 597, tax_cents: 53 }], deposits_fees_cents: 15, exempt_sales_cents: 0, exempt_count: 0, refunds_cents: 0, refunds_tax_cents: 0, net_tax_cents: 53 };
     const csv = salesTaxCsv({ from: '2026-07-01', to: '2026-09-30', location_name: null, total: { ...p, period: '2026-07-01 – 2026-09-30' }, by_month: [{ ...p, period: '2026-09' }] });
     const [head, sep, total] = csv.trim().split('\n');
-    expect(head).toBe('Period,Sales,Gross sales,Taxable,Non-taxable,Taxable @8.875%,Tax @8.875%,Tax collected,Deposits & fees,Refunds,Tax refunded,Net tax');
-    expect(sep).toBe('2026-09,1,16.12,5.97,10.15,5.97,0.53,0.53,0.15,0.00,0.00,0.53');
+    expect(head).toBe('Period,Sales,Gross sales,Taxable,Non-taxable,Taxable @8.875%,Tax @8.875%,Tax collected,Exempt sales,Deposits & fees,Refunds,Tax refunded,Net tax');
+    expect(sep).toBe('2026-09,1,16.12,5.97,10.15,5.97,0.53,0.53,0.00,0.15,0.00,0.00,0.53');
     expect(total!.startsWith('2026-07-01 – 2026-09-30,1,16.12')).toBe(true);
   });
   it('compliance CSV quotes names and says how the age was checked', () => {
