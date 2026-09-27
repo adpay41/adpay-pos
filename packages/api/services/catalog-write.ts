@@ -11,6 +11,8 @@ import type {
   CategoryCreateInput,
   ComplianceSettings,
   CategoryUpdateInput,
+  DeviceBarcodeAttach,
+  DeviceBarcodeAttachResult,
   DeviceItemCreate,
   DeviceItemResult,
   ItemCreate,
@@ -530,6 +532,48 @@ export async function createItemFromDevice(
       trace_id: traceId,
     });
     return { item_id: input.item_id, status: 'created', catalog_version: v };
+  });
+}
+
+/**
+ * Scan-to-attach (ADR 0043): a barcode the register didn't know goes onto an item the cashier picked.
+ * An item with no barcode (imported from a scrambled NRS CSV, or typed in) gets it as its UPC; one
+ * that has a UPC gets it as an extra barcode. A barcode another item already has changes nothing.
+ */
+export async function attachBarcodeFromDevice(db: Db, d: DevicePrincipal, input: DeviceBarcodeAttach, traceId: string): Promise<DeviceBarcodeAttachResult> {
+  return db.tx(async (q) => {
+    const m = await merchantFor(q, d.merchant_id);
+    // The item may be one this register minted and the server merged into another (ADR 0013).
+    const { rows: found } = await q.query<{ item_id: string; upc: string | null }>(
+      `SELECT item_id, upc FROM items
+        WHERE merchant_id = $1 AND item_id = coalesce((SELECT item_id FROM item_aliases WHERE alias_item_id = $2 AND merchant_id = $1), $2)`,
+      [d.merchant_id, input.item_id],
+    );
+    const item = found[0];
+    if (!item) throw notFound('No such item');
+    const { rows: owner } = await q.query<{ item_id: string }>(
+      `SELECT item_id FROM items WHERE merchant_id = $1 AND upc IS NOT NULL AND barcode_key(upc) = barcode_key($2)
+       UNION ALL SELECT item_id FROM item_barcodes WHERE merchant_id = $1 AND barcode_key(barcode) = barcode_key($2) LIMIT 1`,
+      [d.merchant_id, input.barcode],
+    );
+    if (owner[0]) {
+      return { status: owner[0].item_id === item.item_id ? 'already' : 'taken', item_id: owner[0].item_id, catalog_version: await catalogVersion(q, d.merchant_id) };
+    }
+    if (item.upc === null) {
+      await q.query('UPDATE items SET upc = $3, updated_at = now() WHERE item_id = $1 AND merchant_id = $2', [item.item_id, d.merchant_id, input.barcode]);
+    } else {
+      await q.query('INSERT INTO item_barcodes (org_id, merchant_id, item_id, barcode, pack_qty) VALUES ($1, $2, $3, $4, 1)', [m.org_id, m.merchant_id, item.item_id, input.barcode]);
+    }
+    const v = await bumpCatalogVersion(q, d.merchant_id);
+    await audit(q, {
+      actor: d,
+      action: 'catalog.barcode_attached_at_register',
+      tenancy: d,
+      target: item.item_id,
+      details: { barcode: input.barcode, as: item.upc === null ? 'upc' : 'extra_barcode', by_user_id: input.attached_by_user_id, catalog_version: v },
+      trace_id: traceId,
+    });
+    return { status: 'attached', item_id: item.item_id, catalog_version: v };
   });
 }
 

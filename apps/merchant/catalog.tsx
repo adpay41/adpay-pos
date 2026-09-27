@@ -28,6 +28,7 @@ import { api, apiUrl } from './api';
 import { captureAndUpload, type PhotoSource } from './photo';
 import { ReceiptEditor } from './receipt';
 import { BulkPrice, PriceHistory } from './pricing-tools';
+import { NrsImport } from './nrs-import';
 import { Labels } from './labels';
 import { C, dollars, usd } from './theme';
 
@@ -40,7 +41,7 @@ interface LocationSummary {
 }
 
 type Screen = { kind: 'list' } | { kind: 'edit'; item: CatalogItem | null };
-type Section = 'items' | 'favorites' | 'categories' | 'pricing' | 'bulk' | 'tags' | 'receipt';
+type Section = 'items' | 'favorites' | 'categories' | 'pricing' | 'bulk' | 'import' | 'tags' | 'receipt';
 
 const PUSHED = 'Registers update within 15 seconds.';
 
@@ -106,7 +107,7 @@ export function CatalogTab({ token }: { token: string }) {
         />
       ) : null}
       <View style={s.segment}>
-        {(['items', 'favorites', 'categories', 'pricing', 'bulk', 'tags', 'receipt'] as const).map((k) => (
+        {(['items', 'favorites', 'categories', 'pricing', 'bulk', 'import', 'tags', 'receipt'] as const).map((k) => (
           <Pressable key={k} onPress={() => setSection(k)} style={[s.segmentItem, section === k && s.segmentActive]}>
             <Text style={[s.segmentText, section === k && { color: '#fff' }]}>{k[0]!.toUpperCase() + k.slice(1)}</Text>
           </Pressable>
@@ -119,6 +120,7 @@ export function CatalogTab({ token }: { token: string }) {
       {section === 'categories' && <Categories token={token} catalog={catalog} onSaved={saved} />}
       {section === 'pricing' && <Pricing token={token} catalog={catalog} location={loc} onSaved={saved} />}
       {section === 'bulk' && <BulkPrice token={token} catalog={catalog} onSaved={saved} />}
+      {section === 'import' && <NrsImport token={token} onSaved={saved} />}
       {section === 'tags' && <Labels token={token} catalog={catalog} locationId={locationId} />}
       {section === 'receipt' && <ReceiptEditor token={token} catalog={catalog} location={loc} onSaved={saved} />}
     </ScrollView>

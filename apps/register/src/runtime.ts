@@ -3,7 +3,7 @@
  * Everything the register needs to sell is local; the network only ever adds freshness.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { CatalogSnapshot, DeviceIdentity, DeviceItemResult, HeartbeatResponse, UpcSuggestion } from '@adpay/shared';
+import type { CatalogSnapshot, DeviceIdentity, DeviceBarcodeAttachResult, DeviceItemResult, HeartbeatResponse, UpcSuggestion } from '@adpay/shared';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
@@ -206,7 +206,10 @@ export async function boot(token: string): Promise<Runtime> {
   const staff = new StaffGate(store, session);
   await staff.restore(catalog.staff);
   // Items created at this register go to the server ahead of the sales that use them (P5).
-  const items = new NewItemOutbox(store, { createItem: (cmd) => call<DeviceItemResult>('/device/items', token, cmd) }, (cmd, why) =>
+  const items = new NewItemOutbox(
+    store,
+    { createItem: (cmd) => call<DeviceItemResult>('/device/items', token, cmd), attachBarcode: (cmd) => call<DeviceBarcodeAttachResult>('/device/items/barcodes', token, cmd) },
+    (cmd, why) =>
     log.warn('new item refused by the server', { name: cmd.name, upc: cmd.upc, reason: why.slice(0, 200) }),
   );
   await items.load();

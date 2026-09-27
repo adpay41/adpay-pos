@@ -29,6 +29,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { API_URL, api, shrinkPhoto, upload } from '../lib/api';
 import { CompliancePanel } from './compliance-panel';
 import { ImportPanel } from './import-panel';
+import { NrsImportPanel } from './nrs-import-panel';
 import { ReceiptPanel } from './receipt-panel';
 import { ErrorBox, Money, When, useLoad } from './ui';
 
@@ -98,6 +99,7 @@ export function CatalogEditor({ merchantId, merchantName = 'Your store' }: { mer
           {catalog.data.compliance && (
             <CompliancePanel base={base} loc={loc} categories={catalog.data.categories} current={catalog.data.compliance} onSaved={saved} />
           )}
+          <NrsImportPanel base={base} onSaved={saved} />
           <ImportPanel base={base} onSaved={saved} />
           <Categories base={base} categories={catalog.data.categories} items={catalog.data.items} onSaved={saved} />
           <Favorites base={base} catalog={catalog.data} locationName={loc.name} onSaved={saved} />

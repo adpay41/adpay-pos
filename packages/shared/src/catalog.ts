@@ -188,6 +188,27 @@ export const DeviceItemCreateInput = z.strictObject({
 });
 export type DeviceItemCreate = z.infer<typeof DeviceItemCreateInput>;
 
+/**
+ * A barcode the register met that belongs to an item already in the catalog (ADR 0043): the cashier
+ * picks the item once and the barcode rings it from then on, on every register. Queued offline like
+ * a new item; applying it twice changes nothing.
+ */
+export const DeviceBarcodeAttachInput = z.strictObject({
+  attach_id: z.uuid(),
+  item_id: z.uuid(),
+  barcode: Barcode,
+  attached_by_user_id: z.uuid().nullable(),
+  attached_at: z.iso.datetime({ offset: true }),
+});
+export type DeviceBarcodeAttach = z.infer<typeof DeviceBarcodeAttachInput>;
+
+export interface DeviceBarcodeAttachResult {
+  /** attached: now on the item; already: it was; taken: another item has it, so nothing changed. */
+  status: 'attached' | 'already' | 'taken';
+  item_id: string;
+  catalog_version: number;
+}
+
 export interface DeviceItemResult {
   /** The id the catalog uses: the device's own, or the existing item it was merged into. */
   item_id: string;
