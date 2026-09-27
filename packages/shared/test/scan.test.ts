@@ -61,6 +61,50 @@ describe('search', () => {
     expect(names('3850')).toEqual(['Marlboro Gold Pack']);
   });
 
+  it('a typed barcode says what matched, and the whole code ranks above code endings', () => {
+    const hits = searchCatalog(catalog, '0049000042566'); // EAN-13 form of the Coke UPC
+    expect(hits[0]).toMatchObject({ item: { name: 'Coke Zero 20 oz' }, match: 'barcode', code: '049000042566' });
+    // An extra (case) barcode is found too, and read back as that code.
+    expect(searchCatalog(catalog, '028200003850')[0]).toMatchObject({ item: { name: 'Marlboro Gold Pack' }, match: 'barcode', code: '028200003850' });
+    expect(searchCatalog(catalog, '3850')[0]).toMatchObject({ match: 'barcode_end', code: '028200003850' });
+    expect(searchCatalog(catalog, '4011')[0]).toMatchObject({ match: 'plu', code: '4011' });
+    // A name search still reads back the item's barcode; none when it has none.
+    expect(searchCatalog(catalog, 'coke')[0]).toMatchObject({ match: 'name', code: '049000042566' });
+    expect(searchCatalog(catalog, 'bananas')[0]).toMatchObject({ match: 'name', code: null });
+    // Whole barcode first, then items whose barcode only ends in the typed digits.
+    const big = {
+      items: [
+        item('Ends-in item', { upc: '100049000042566' }),
+        item('Exact item', { upc: '049000042566' }),
+      ],
+    };
+    expect(searchCatalog(big, '049000042566').map((h) => [h.item.name, h.match])).toEqual([
+      ['Exact item', 'barcode'],
+      ['Ends-in item', 'barcode_end'],
+    ]);
+  });
+
+  it('stays fast on a 10,000-item price book', () => {
+    const items = Array.from({ length: 10_000 }, (_, i) =>
+      item(`Item ${i} ${['Coke', 'Chips', 'Milk', 'Bread'][i % 4]} ${i % 97}oz`, { upc: String(40_000_000_000 + i * 13).padStart(12, '0') }),
+    );
+    const big = { items };
+    // The fastest of several runs per query: a busy machine (tests in parallel, CI) only makes some
+    // runs slow, while a real slowdown (no cache, fuzzy work on every word) makes all of them slow.
+    const fastest = (q: string) => {
+      let best = Infinity;
+      for (let i = 0; i < 8; i++) {
+        const t0 = performance.now();
+        searchCatalog(big, q, 40);
+        best = Math.min(best, performance.now() - t0);
+      }
+      return best;
+    };
+    const worst = Math.max(...['040000064961', '4961', 'coke 12', 'chps', 'mil'].map(fastest));
+    expect(searchCatalog(big, '040000064961')[0]).toMatchObject({ match: 'barcode', code: '040000064961' });
+    expect(worst).toBeLessThan(80); // ~5–17 ms here on a 9,284-item real price book
+  });
+
   it('every query word must match; inactive items never show', () => {
     expect(names('coke gold')).toEqual([]);
     expect(names('classic')).toEqual([]);
