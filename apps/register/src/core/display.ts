@@ -6,7 +6,7 @@
  *
  * Spec: the customer sees cash price and card price side by side before tender, every sale.
  */
-import { lineTotal, type FoldedSale, type Lang, type Overrides } from '@adpay/shared';
+import { lineAmount, type FoldedSale, type Lang, type Overrides } from '@adpay/shared';
 
 /**
  * The customer screen's states (Bible 1.5): idle → cart → card ("tap on the card machine") →
@@ -95,8 +95,8 @@ function base(merchantName: string, sale: FoldedSale): DisplayState {
       line_id: l.line_id,
       name: l.name,
       qty: l.qty,
-      cash_cents: lineTotal(l, 'cash'),
-      card_cents: lineTotal(l, 'card'),
+      cash_cents: lineAmount(l, 'cash'),
+      card_cents: lineAmount(l, 'card'),
       deal: l.discount_promo_id && l.discount_reason ? { kind: 'promo', name: l.discount_reason.replace(/^Promo: /, '') } : l.discount_reason === 'Loyalty reward' ? { kind: 'reward' } : null,
     })),
     cash_total_cents: sale.cash.total_cents,

@@ -51,13 +51,17 @@ export function splitTotals(cash: Totals, card: Totals, portions: readonly Tende
   const cardCover = portions.filter((p) => p.tender_type === 'card').reduce((n, p) => n + p.covers_cash_cents, 0);
   const C = cash.total_cents;
   const tax = C > 0 ? divHalfUp(cash.tax_cents * cashCover + card.tax_cents * cardCover, C) : 0;
-  return { subtotal_cents: cents(total - tax), tax_cents: cents(tax), total_cents: cents(total) };
+  // The tax inside tax-inclusive prices (ADR 0044) is blended the same way; never more than the tax.
+  const inc = C > 0 ? Math.min(tax, divHalfUp((cash.included_tax_cents ?? 0) * cashCover + (card.included_tax_cents ?? 0) * cardCover, C)) : 0;
+  return { subtotal_cents: cents(total - tax), tax_cents: cents(tax), total_cents: cents(total), included_tax_cents: cents(inc) };
 }
 
 export interface RateGroup {
   rate_ppm: number;
   taxable_cents: Cents;
   tax_cents: Cents;
+  included_tax_cents?: Cents;
+  added_base_cents?: Cents;
 }
 
 /**
@@ -78,7 +82,14 @@ export function splitTaxGroups(
   const blend = (a: number, b: number) => divHalfUp(a * cashCover + b * cardCover, cashTotal);
   const out = cashGroups.map((g) => {
     const k = cardGroups.find((c) => c.rate_ppm === g.rate_ppm) ?? g;
-    return { rate_ppm: g.rate_ppm, taxable_cents: cents(blend(g.taxable_cents, k.taxable_cents)), tax_cents: cents(blend(g.tax_cents, k.tax_cents)) };
+    const tax = cents(blend(g.tax_cents, k.tax_cents));
+    return {
+      rate_ppm: g.rate_ppm,
+      taxable_cents: cents(blend(g.taxable_cents, k.taxable_cents)),
+      tax_cents: tax,
+      included_tax_cents: cents(Math.min(tax, blend(g.included_tax_cents ?? 0, k.included_tax_cents ?? 0))),
+      added_base_cents: cents(blend(g.added_base_cents ?? g.taxable_cents, k.added_base_cents ?? k.taxable_cents)),
+    };
   });
   const drift = declaredTax - out.reduce((n, g) => n + g.tax_cents, 0);
   if (drift !== 0 && out.length > 0) {

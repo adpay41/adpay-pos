@@ -84,6 +84,8 @@ describe('NRS price book (built-in fixture)', () => {
     expect(by('200000000004')).toMatchObject({ plu: null, nrs: { short_code: '00' } });
     expect(by('052000044003').open_price).toBe(true);
     expect(by('028200003843').nrs.price_includes_tax).toBe(true);
+    const { rows: incl } = await db.query<{ name: string }>('SELECT name FROM items WHERE merchant_id = $1 AND tax_included', [t.merchant_id]);
+    expect(incl.map((x) => x.name)).toEqual(['Marlboro Red']);
     const { rows: cats } = await db.query<{ name: string; taxable: boolean; min_age: number | null; restriction: string | null }>(
       'SELECT name, taxable, min_age, restriction FROM categories WHERE merchant_id = $1',
       [t.merchant_id],
@@ -179,6 +181,9 @@ describe.skipIf(!existsSync(FULL))('NRS price book (the store\'s full 9,284-item
       [t.merchant_id],
     );
     expect(rows[0]).toEqual({ items: 9284, with_upc: 9284, cats: 21 });
+    // NRS "includes taxes" → tax-inclusive items (ADR 0044), with nothing for the owner to do.
+    const { rows: incl } = await db.query<{ n: number }>("SELECT count(*)::int AS n FROM items WHERE merchant_id = $1 AND tax_included AND attrs ? 'nrs'", [t.merchant_id]);
+    expect(incl[0]!.n).toBe(582);
 
     const again = await nrs(owner, file, { dry_run: false });
     expect(again.result).toMatchObject({ created: 0, updated: 0, unchanged: 9284 });

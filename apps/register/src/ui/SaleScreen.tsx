@@ -27,7 +27,8 @@ import {
   dropSuggestion,
   type IdCheck,
   hhmm,
-  lineTotal,
+  lineAmount,
+  shownTotals,
   pctChangeText,
   resolveFlags,
   localDate,
@@ -295,6 +296,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   }, [session.sale, modal.kind, show]);
 
   const sale = session.sale;
+  const ticketTotals = sale ? shownTotals(sale.cash) : null;
   // Feature flags for this merchant (P12b); an older snapshot without them means everything on.
   const flags = resolveFlags(catalog.flags ?? {});
   const cardOk = sync?.online ?? false;
@@ -824,7 +826,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                       {l.name}
                     </Text>
                     <Text style={s.mutedSmall}>
-                      {t('card {amount}', { amount: usd(lineTotal(l, 'card')) })}
+                      {t('card {amount}', { amount: usd(lineAmount(l, 'card')) })}
                       {l.charges.map((c) => ` · ${t('incl. {label}', { label: c.label })}`).join('')}
                       {l.min_age ? ` · ${t('{age}+ checked', { age: l.min_age })}` : ''}
                       {!l.taxable ? ` · ${t('no tax')}` : ''}
@@ -836,7 +838,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                       </Text>
                     ) : null}
                   </View>
-                  <Text style={s.lineAmt}>{usd(lineTotal(l, 'cash'))}</Text>
+                  <Text style={s.lineAmt}>{usd(lineAmount(l, 'cash'))}</Text>
                   <Pressable onPress={() => void run(() => ses.removeLine(l.line_id))} style={s.remove} accessibilityLabel={t('Remove {name}', { name: l.name })}>
                     <Text style={s.removeText}>×</Text>
                   </Pressable>
@@ -845,8 +847,10 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             )}
           </ScrollView>
           <View style={s.totals}>
-            <Row label={t('Subtotal')} value={sale?.cash.subtotal_cents ?? 0} />
-            <Row label={t('Tax')} value={sale?.cash.tax_cents ?? 0} />
+            {/* Items at their marked prices; tax already inside a price isn't added again (ADR 0044). */}
+            <Row label={t('Subtotal')} value={ticketTotals?.items_cents ?? 0} />
+            <Row label={t('Tax')} value={ticketTotals?.added_tax_cents ?? 0} />
+            {ticketTotals && ticketTotals.included_tax_cents > 0 ? <Row label={t('Tax included in prices')} value={ticketTotals.included_tax_cents} /> : null}
             <View style={s.dual}>
               <View style={s.dualBox}>
                 <Text style={s.dualLabel}>{t('Cash')}</Text>

@@ -14,7 +14,7 @@ import { ppmToPercent } from './catalog';
 import { toTaxable, type FoldedSale } from './fold';
 import { cellWidth, sliceCells, translator, type Lang, type Overrides } from './i18n';
 import { add, cents, formatUsd, mulQty } from './money';
-import { taxByRate } from './pricing';
+import { shownTotals, taxByRate } from './pricing';
 import { splitTaxGroups } from './split';
 import type { ReceiptSettings } from './receipt-settings';
 
@@ -131,7 +131,9 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
     const unit = mode === 'card' ? line.unit_card_price_cents : line.unit_cash_price_cents;
     const discount = mode === 'card' ? line.card_discount_cents : line.cash_discount_cents;
     const qtyPrefix = line.qty > 1 ? `${line.qty} x ` : '';
-    push(pad(`${qtyPrefix}${line.name}${line.taxable ? '' : ' N'}`, money(mulQty(unit, line.qty))));
+    // " N": no tax; " *": the price already includes the tax (ADR 0044), noted under the totals.
+    const mark = !line.taxable ? ' N' : line.tax_included && line.tax_rate_ppm > 0 ? ' *' : '';
+    push(pad(`${qtyPrefix}${line.name}${mark}`, money(mulQty(unit, line.qty))));
     if (line.qty > 1) push(`   ${t('r_each', { price: money(unit) })}`);
     if (discount > 0) {
       const why = line.discount_promo_id && line.discount_reason ? line.discount_reason.replace(/^Promo: /, '') : line.discount_reason === 'Loyalty reward' ? t('r_reward') : t('r_discount');
@@ -146,7 +148,9 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
   }
 
   push(rule());
-  push(pad(t('r_subtotal'), money(totals.subtotal_cents)));
+  // Items at their marked prices: tax already inside a price is not added again (ADR 0044).
+  const shown = shownTotals(totals);
+  push(pad(t('r_subtotal'), money(shown.items_cents)));
   // Tax itemized by rate (Bible 1.6), one line per rate; they add up to the total tax exactly.
   const groupsAt = (m: 'cash' | 'card') => taxByRate(toTaxable(sale.lines, m));
   const groups =
@@ -159,9 +163,25 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
           totals.tax_cents,
         )
       : groupsAt(mode);
-  if (groups.length === 0) push(pad(t('r_tax'), money(totals.tax_cents)));
-  for (const g of groups) push(pad(t('r_tax_rate', { rate: ppmToPercent(g.rate_ppm), amount: money(g.taxable_cents) }), money(g.tax_cents)));
-  push(pad(t('r_total'), money(totals.total_cents)), 'bold');
+  if (shown.included_tax_cents === 0) {
+    if (groups.length === 0) push(pad(t('r_tax'), money(totals.tax_cents)));
+    for (const g of groups) push(pad(t('r_tax_rate', { rate: ppmToPercent(g.rate_ppm), amount: money(g.taxable_cents) }), money(g.tax_cents)));
+    push(pad(t('r_total'), money(totals.total_cents)), 'bold');
+  } else {
+    // Tax added on top, per rate, then the total; then what was inside the marked prices, and the
+    // ticket's whole tax, so the customer never sees tax added to a price that already had it.
+    const withIncluded = groups.map((g) => ({ ...g, inc: g.included_tax_cents ?? 0 }));
+    for (const g of withIncluded) {
+      const added = g.tax_cents - g.inc;
+      if (added > 0) push(pad(t('r_tax_rate', { rate: ppmToPercent(g.rate_ppm), amount: money(g.added_base_cents ?? g.taxable_cents) }), money(added)));
+    }
+    push(pad(t('r_total'), money(totals.total_cents)), 'bold');
+    for (const g of withIncluded) {
+      if (g.inc > 0) push(pad(`* ${t('r_tax_included_rate', { rate: ppmToPercent(g.rate_ppm), amount: money(g.taxable_cents - (g.added_base_cents ?? g.taxable_cents)) })}`, money(g.inc)));
+    }
+    push(pad(t('r_tax_total'), money(totals.tax_cents)));
+    push(t('r_tax_included_note'));
+  }
   // Promotions and rewards, added up (P20a): the customer sees what the deal was worth.
   const saved = sale.lines.reduce((n, l) => n + (mode === 'card' ? l.card_discount_cents : l.cash_discount_cents), 0);
   if (saved > 0) push(center(t('r_saved', { amount: money(saved) })), 'center');

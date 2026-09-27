@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| NRS price book import | #46 | Open — portal items JSON (real barcodes) or CSV export, preview with department tax/age to confirm and what can't be carried over, batched import (9,284 items ≈ 2 s), idempotent re-upload, merchant app + admin, scan-to-attach on the register. Method: docs/nrs-migration-method.md. ADR 0043. |
+| Tax-inclusive prices | #47 | Open — item flag (merchant app toggle, set by the NRS import), line event records it, tax backed out per rate group, total = pre-tax subtotal + tax with included tax, receipt shows marked prices and incl. tax; tested on mixed tickets, refunds and split tender. ADR 0044. |
+| NRS price book import | #46 | Merged — portal items JSON (real barcodes) or CSV export, preview with department tax/age to confirm and what can't be carried over, batched import (9,284 items ≈ 2 s), idempotent re-upload, merchant app + admin, scan-to-attach on the register. Method: docs/nrs-migration-method.md. ADR 0043. |
 | P25c UPC library, cohorts, investor pack | #41 | Merged — global UPC library deduped across stores (register + merchant app suggestions), cohorts by first-sale month, printable investor / bank pack with CSV. ADR 0041. |
 | P25b Agents & residual split | #40 | Merged — agents / referral partners with codes and dated terms, stores assigned at onboarding or by hand, monthly statements from the residual report with bounties, CSV. ADR 0040. |
 | P25a Partner API & webhooks | #39 | Merged — per-store read-only API keys with scopes on /v1, signed webhooks queued with the sale and retried on schedule, admin Partners page, partner docs. ADR 0039. |

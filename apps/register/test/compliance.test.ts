@@ -49,7 +49,7 @@ describe('compliance at ring time', () => {
     expect(sale.lines[0]!.charges).toEqual([{ rule_id: deposit.rule_id, kind: 'deposit', label: 'NY bottle deposit', unit_cash_cents: 5, unit_card_cents: 5, taxable: false }]);
     expect(sale.lines[0]!.tax_rate_ppm).toBe(88_750);
     // 1194 + 30 deposit; tax 8.875% of 1194 → 106
-    expect(sale.cash).toEqual({ subtotal_cents: 1_224, tax_cents: 106, total_cents: 1_330 });
+    expect(sale.cash).toEqual({ subtotal_cents: 1_224, tax_cents: 106, total_cents: 1_330, included_tax_cents: 0 });
   });
 
   it('a new rate takes effect on its day by the store clock, even with no server', async () => {

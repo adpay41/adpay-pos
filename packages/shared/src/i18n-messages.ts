@@ -40,6 +40,12 @@ export const EN = {
   r_subtotal: 'Subtotal',
   r_tax: 'Tax',
   r_tax_rate: 'Tax {rate}% on {amount}',
+
+  r_tax_included_rate: 'Incl. tax {rate}% on {amount}',
+
+  r_tax_total: 'Total tax',
+
+  r_tax_included_note: '* Price includes tax',
   r_total: 'TOTAL',
   r_cash_applied: 'Cash price applied',
   r_card_applied: 'Card price applied',
@@ -113,6 +119,12 @@ const es: Messages = {
   r_subtotal: 'Subtotal',
   r_tax: 'Impuesto',
   r_tax_rate: 'Impuesto {rate}% sobre {amount}',
+
+  r_tax_included_rate: 'Imp. incluido {rate}% sobre {amount}',
+
+  r_tax_total: 'Impuesto total',
+
+  r_tax_included_note: '* Precio con impuesto incluido',
   r_total: 'TOTAL',
   r_cash_applied: 'Precio en efectivo aplicado',
   r_card_applied: 'Precio con tarjeta aplicado',
@@ -180,6 +192,12 @@ const zh: Messages = {
   r_subtotal: '小计',
   r_tax: '税',
   r_tax_rate: '税 {rate}%，应税 {amount}',
+
+  r_tax_included_rate: '含税 {rate}%，应税 {amount}',
+
+  r_tax_total: '税额合计',
+
+  r_tax_included_note: '* 价格已含税',
   r_total: '总计',
   r_cash_applied: '按现金价结算',
   r_card_applied: '按刷卡价结算',
@@ -247,6 +265,12 @@ const ko: Messages = {
   r_subtotal: '소계',
   r_tax: '세금',
   r_tax_rate: '세금 {rate}% (과세 {amount})',
+
+  r_tax_included_rate: '포함 세금 {rate}% (과세 {amount})',
+
+  r_tax_total: '세금 합계',
+
+  r_tax_included_note: '* 세금 포함 가격',
   r_total: '합계',
   r_cash_applied: '현금 가격 적용',
   r_card_applied: '카드 가격 적용',
@@ -314,6 +338,12 @@ const ar: Messages = {
   r_subtotal: 'المجموع الفرعي',
   r_tax: 'الضريبة',
   r_tax_rate: 'ضريبة {rate}% على {amount}',
+
+  r_tax_included_rate: 'ضريبة مشمولة {rate}% على {amount}',
+
+  r_tax_total: 'إجمالي الضريبة',
+
+  r_tax_included_note: '* السعر يشمل الضريبة',
   r_total: 'الإجمالي',
   r_cash_applied: 'تم تطبيق سعر النقد',
   r_card_applied: 'تم تطبيق سعر البطاقة',
@@ -381,6 +411,12 @@ const hi: Messages = {
   r_subtotal: 'उप-योग',
   r_tax: 'टैक्स',
   r_tax_rate: 'टैक्स {rate}% ({amount} पर)',
+
+  r_tax_included_rate: 'शामिल टैक्स {rate}% ({amount} पर)',
+
+  r_tax_total: 'कुल टैक्स',
+
+  r_tax_included_note: '* कीमत में टैक्स शामिल है',
   r_total: 'कुल',
   r_cash_applied: 'नकद कीमत लागू',
   r_card_applied: 'कार्ड कीमत लागू',
@@ -448,6 +484,12 @@ const bn: Messages = {
   r_subtotal: 'উপমোট',
   r_tax: 'ট্যাক্স',
   r_tax_rate: 'ট্যাক্স {rate}% ({amount}-এর উপর)',
+
+  r_tax_included_rate: 'অন্তর্ভুক্ত ট্যাক্স {rate}% ({amount}-এর উপর)',
+
+  r_tax_total: 'মোট ট্যাক্স',
+
+  r_tax_included_note: '* দামে ট্যাক্স অন্তর্ভুক্ত',
   r_total: 'মোট',
   r_cash_applied: 'নগদ দাম প্রযোজ্য',
   r_card_applied: 'কার্ডের দাম প্রযোজ্য',
@@ -515,6 +557,12 @@ const gu: Messages = {
   r_subtotal: 'પેટા સરવાળો',
   r_tax: 'ટેક્સ',
   r_tax_rate: 'ટેક્સ {rate}% ({amount} પર)',
+
+  r_tax_included_rate: 'સમાવિષ્ટ ટેક્સ {rate}% ({amount} પર)',
+
+  r_tax_total: 'કુલ ટેક્સ',
+
+  r_tax_included_note: '* કિંમતમાં ટેક્સ સામેલ છે',
   r_total: 'કુલ',
   r_cash_applied: 'રોકડ ભાવ લાગુ',
   r_card_applied: 'કાર્ડ ભાવ લાગુ',
@@ -582,6 +630,12 @@ const ht: Messages = {
   r_subtotal: 'Sou-total',
   r_tax: 'Taks',
   r_tax_rate: 'Taks {rate}% sou {amount}',
+
+  r_tax_included_rate: 'Taks enkli {rate}% sou {amount}',
+
+  r_tax_total: 'Total taks',
+
+  r_tax_included_note: '* Pri a gen taks ladan l',
   r_total: 'TOTAL',
   r_cash_applied: 'Pri kach aplike',
   r_card_applied: 'Pri kat aplike',

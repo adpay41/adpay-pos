@@ -280,6 +280,8 @@ export class SaleSession {
           tax_class: comp.tax_class,
           restriction: item.restriction ?? null,
           charges: comp.charges,
+          // A tax-inclusive price (ADR 0044) rings at exactly the marked price; the fold backs the tax out.
+          tax_included: item.tax_included ?? false,
           sell_unit: item.sell_unit,
           pack_qty: item.pack_qty,
           price_source: opts.fee ? 'fee' : opts.price ? 'open' : 'catalog',
@@ -423,9 +425,11 @@ export class SaleSession {
           ? sale.card
           : splitTotals(sale.cash, sale.card, approved.map((t) => ({ tender_type: t.tender_type, amount_cents: t.amount_cents, covers_cash_cents: t.covers_cash_cents })));
     const { language, digital_receipt } = this.completion;
+    // Included tax (ADR 0044) only when the ticket has some, so an ordinary sale's event is unchanged.
+    const { included_tax_cents, ...declared } = totals;
     await this.emit(
       'sale.completed',
-      { price_mode: mode, ...totals, ...(language !== 'en' ? { language } : {}), ...(digital_receipt ? { receipt_token: this.deps.uuid() } : {}) },
+      { price_mode: mode, ...declared, ...(included_tax_cents ? { included_tax_cents } : {}), ...(language !== 'en' ? { language } : {}), ...(digital_receipt ? { receipt_token: this.deps.uuid() } : {}) },
       saleId,
     );
     const done = this.current();

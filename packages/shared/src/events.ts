@@ -68,6 +68,12 @@ const LineAdded = z.strictObject({
   tax_class: z.string().max(24).nullable().default(null),
   restriction: z.enum(['tobacco', 'vape', 'alcohol', 'lottery']).nullable().default(null),
   charges: z.array(LineChargeSchema).max(10).default([]),
+  /**
+   * Both unit prices already contain the sales tax at `tax_rate_ppm` (ADR 0044): the line rings at
+   * the marked price and the fold backs the tax out, so the split is always rebuilt from this event.
+   * Additive: older events default to false (tax added on top).
+   */
+  tax_included: z.boolean().default(false),
 });
 
 const LineRemoved = z.strictObject({ line_id: Uuid });
@@ -126,6 +132,8 @@ const SaleCompleted = z.strictObject({
   subtotal_cents: CentsSchema,
   tax_cents: CentsSchema,
   total_cents: CentsSchema,
+  /** The part of tax_cents that was inside tax-inclusive prices (ADR 0044). Additive. */
+  included_tax_cents: NonNegCents.optional(),
   /** The customer screen's language at payment (P18): the receipt prints in it. Absent = English. */
   language: LangSchema.optional(),
   /** Random id for the digital receipt link (P18); unguessable, never derived from the sale id. */

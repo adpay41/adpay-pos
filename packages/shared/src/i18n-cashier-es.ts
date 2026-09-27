@@ -63,6 +63,7 @@ export const CASHIER_ES: Partial<Record<CashierKey, string>> = {
   'Clock in': 'Marcar entrada',
   'Clock out · {time}': 'Marcar salida · {time}',
   'Clock out and sign out': 'Marcar salida y cerrar sesión',
+  'Tax included in prices': 'Impuesto incluido en los precios',
   'Which item is it?': '¿Qué artículo es?',
   'This barcode will ring the item you pick, on every register.': 'Este código de barras marcará el artículo que elija, en todas las cajas.',
   'Search by name': 'Buscar por nombre',

@@ -45,3 +45,18 @@ describe('tax by category', () => {
     expect((await rate()).tax_rate_ppm).toBeGreaterThan(0);
   });
 });
+
+describe('tax-inclusive items (ADR 0044)', () => {
+  it('the owner sets and clears "price includes tax" on an item; the register gets it in the snapshot', async () => {
+    const res = await app.inject({ method: 'POST', url: '/merchant/items', headers: auth(owner), payload: { name: 'Newport 100s', category_id: null, cash_price_cents: 1_150, tax_included: true } });
+    expect(res.statusCode, res.body).toBe(201);
+    const made = res.json();
+    const itemId = (made.item_id ?? made.item?.item_id) as string;
+    const flag = async () => (await snapshot()).items.find((i) => i.item_id === itemId)!.tax_included;
+    expect(await flag()).toBe(true);
+    expect((await app.inject({ method: 'PATCH', url: `/merchant/items/${itemId}`, headers: auth(owner), payload: { tax_included: false } })).statusCode).toBe(200);
+    expect(await flag()).toBe(false);
+    await app.inject({ method: 'PATCH', url: `/merchant/items/${itemId}`, headers: auth(owner), payload: { tax_included: true } });
+    expect(await flag()).toBe(true);
+  });
+});

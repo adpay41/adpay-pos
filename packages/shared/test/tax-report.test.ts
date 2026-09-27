@@ -35,7 +35,7 @@ describe('sales-tax report helpers', () => {
     const s = sale();
     // waters 597 + deposits 15 + lottery 1000 = 1612; tax 8.875% of 597 = 52.98 → 53
     expect(saleSubtotal(s)).toBe(1_612);
-    expect(saleTaxGroups(s)).toEqual([{ rate_ppm: 88_750, taxable_cents: 597, tax_cents: 53 }]);
+    expect(saleTaxGroups(s)).toEqual([{ rate_ppm: 88_750, taxable_cents: 597, tax_cents: 53, included_tax_cents: 0, added_base_cents: 597 }]);
     expect(saleCharges(s)).toBe(15);
   });
   it('tax inside a refund of one unit', () => {

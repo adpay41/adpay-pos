@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import type { FoldedSale } from './fold';
 import { applyRateHalfUp, cents } from './money';
+import { lineIncludedTax } from './pricing';
 
 export const BulkPriceInput = z
   .strictObject({
@@ -92,7 +93,9 @@ export function marginReport(
       if (kept <= 0) continue;
       const unit = mode === 'card' ? l.unit_card_price_cents : l.unit_cash_price_cents;
       const discount = mode === 'card' ? l.card_discount_cents : l.cash_discount_cents;
-      const gross = unit * l.qty - discount; // goods only, before per-unit charges
+      const marked = unit * l.qty - discount; // goods only, before per-unit charges
+      // Revenue is before tax: a tax-inclusive price (ADR 0044) has its tax taken out.
+      const gross = marked - lineIncludedTax({ qty: l.qty, unit_price_cents: unit, discount_cents: discount, taxable: l.taxable, tax_rate_ppm: l.tax_rate_ppm, tax_included: l.tax_included });
       const revenue = kept === l.qty ? gross : Math.floor((gross * kept * 2 + l.qty) / (2 * l.qty));
       const unitCost = costAt(l.item_id, s.occurred_at);
       const catKey = l.category_id ?? 'none';

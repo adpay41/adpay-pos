@@ -73,7 +73,7 @@ describe('tax', () => {
       { qty: 1, unit_price_cents: 200, discount_cents: 0, taxable: false, tax_rate_ppm: 66_250 },
     ]);
     // taxable net 1698 * 6.625% = 112.49 -> 112
-    expect(totals).toEqual({ subtotal_cents: 1898, tax_cents: 112, total_cents: 2010 });
+    expect(totals).toEqual({ subtotal_cents: 1898, tax_cents: 112, total_cents: 2010, included_tax_cents: 0 });
   });
 });
 
@@ -92,5 +92,21 @@ describe('parse / format at the edge', () => {
     expect(formatUsd(cents(5))).toBe('$0.05');
     expect(formatUsd(cents(123_456_789))).toBe('$1,234,567.89');
     expect(formatUsd(cents(-250))).toBe('-$2.50');
+  });
+});
+
+describe('tax inside a tax-inclusive price (ADR 0044)', () => {
+  it('backs the base out half-up once; base + tax is exactly the marked price', async () => {
+    const { includedTaxHalfUp } = await import('../src/money');
+    expect(includedTaxHalfUp(cents(1_000), 66_250)).toBe(62); // 1000 ÷ 1.06625 = 937.87 → 938
+    expect(includedTaxHalfUp(cents(100), 88_750)).toBe(8); // 100 ÷ 1.08875 = 91.85 → 92
+    expect(includedTaxHalfUp(cents(3_000), 66_250)).toBe(186); // once on the sum, not 3 × 62
+    expect(includedTaxHalfUp(cents(0), 66_250)).toBe(0);
+    expect(includedTaxHalfUp(cents(-1_000), 66_250)).toBe(-62);
+    for (const g of [1, 7, 99, 1_234, 99_999]) {
+      const tax = includedTaxHalfUp(cents(g), 66_250);
+      expect(tax).toBeGreaterThanOrEqual(0);
+      expect(tax).toBeLessThan(g + 1);
+    }
   });
 });

@@ -94,6 +94,21 @@ export function applyRateHalfUp(amount: Cents, rate: RatePpm): Cents {
   return checked(Number(negative ? -rounded : rounded));
 }
 
+/**
+ * The tax inside a tax-inclusive amount (ADR 0044): the pre-tax base is gross ÷ (1 + rate), rounded
+ * half-up once to a whole cent, and the tax is the rest, so base + tax is exactly the gross.
+ */
+export function includedTaxHalfUp(gross: Cents, rate: RatePpm): Cents {
+  const g = BigInt(cents(gross));
+  const unit = BigInt(PPM_PER_UNIT);
+  const d = unit + BigInt(assertRatePpm(rate));
+  const negative = g < 0n;
+  const abs = negative ? -g : g;
+  const base = (2n * abs * unit + d) / (2n * d);
+  const tax = abs - base;
+  return checked(Number(negative ? -tax : tax));
+}
+
 /** Parse a user-typed dollar string ("13.49", "$1,299.5", "-2") into cents without floats. */
 export function parseUsdToCents(input: string): Cents {
   const s = input.trim().replace(/^\$/, '').replace(/,/g, '');

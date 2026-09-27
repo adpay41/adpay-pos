@@ -6,7 +6,7 @@
 import type { RegisterEvent } from './events';
 import type { Lang } from './i18n';
 import { add, cents, sub, sum, ZERO, type Cents } from './money';
-import { computeTotals, type PriceMode, type TaxableLine, type Totals } from './pricing';
+import { computeTotals, lineNet, type PriceMode, type TaxableLine, type Totals } from './pricing';
 import type { LineCharge } from './compliance';
 import { coverForCard, splitTotals } from './split';
 
@@ -39,6 +39,8 @@ export interface FoldedLine {
   charges: LineCharge[];
   /** A bag fee or other fee rung as its own line (not an item). */
   is_fee: boolean;
+  /** The unit prices already contain the tax (ADR 0044). */
+  tax_included: boolean;
 }
 
 export interface FoldedTender {
@@ -89,12 +91,21 @@ export function toTaxable(lines: FoldedLine[], mode: PriceMode): TaxableLine[] {
     taxable: l.taxable,
     tax_rate_ppm: l.tax_rate_ppm,
     charges: l.charges.map((c) => ({ unit_cents: mode === 'cash' ? c.unit_cash_cents : c.unit_card_cents, taxable: c.taxable })),
+    tax_included: l.tax_included,
   }));
 }
 
-/** What one line costs in a price mode: price × qty − discount + per-unit charges × qty. */
+/**
+ * One line before tax in a price mode: price × qty − discount + per-unit charges × qty, with the tax
+ * taken out of a tax-inclusive price (ADR 0044). What category sales add up.
+ */
 export function lineTotal(line: FoldedLine, mode: PriceMode): Cents {
   return computeTotals(toTaxable([line], mode)).subtotal_cents;
+}
+
+/** One line as the ticket shows it: at its marked price (a tax-inclusive price keeps its tax). */
+export function lineAmount(line: FoldedLine, mode: PriceMode): Cents {
+  return lineNet(toTaxable([line], mode)[0]!);
 }
 
 /** Fold one sale's events. Events are ordered by device_seq; duplicates by event_id are ignored. */
@@ -136,6 +147,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           restriction: p.restriction ?? null,
           charges: p.charges ?? [],
           is_fee: p.price_source === 'fee',
+          tax_included: p.tax_included ?? false,
           category_id: p.category_id ?? null,
           discount_reason: null,
           discount_promo_id: null,
@@ -186,6 +198,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           subtotal_cents: cents(e.payload.subtotal_cents),
           tax_cents: cents(e.payload.tax_cents),
           total_cents: cents(e.payload.total_cents),
+          ...(e.payload.included_tax_cents !== undefined ? { included_tax_cents: cents(e.payload.included_tax_cents) } : {}),
         };
         language = e.payload.language ?? null;
         receiptToken = e.payload.receipt_token ?? null;

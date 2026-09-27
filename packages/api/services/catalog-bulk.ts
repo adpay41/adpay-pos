@@ -23,6 +23,8 @@ export interface BulkRow extends Omit<ImportRow, 'line'> {
   pack_qty?: number;
   /** From an NRS price book (ADR 0043). */
   open_price?: boolean;
+  /** The price already includes the tax (ADR 0044); NRS `includes_taxes`. */
+  tax_included?: boolean;
   active?: boolean;
   nrs?: NrsAttrs;
   unit_upc?: string | null;
@@ -79,6 +81,7 @@ interface Existing {
   cost_cents: number | null;
   category_id: string | null;
   open_price: boolean;
+  tax_included: boolean;
   nrs: NrsAttrs | null;
 }
 
@@ -90,7 +93,7 @@ async function apply(q: Queryable, actor: CatalogActor, merchantId: string, rows
   const catByName = new Map(cats.map((c) => [c.name.toLowerCase(), c.category_id]));
   const { rows: items } = await q.query<Existing>(
     `SELECT item_id, name, upc, plu, cash_price_cents::int AS cash_price_cents, card_price_cents::int AS card_price_cents, cost_cents::int AS cost_cents,
-            category_id, open_price, attrs->'nrs' AS nrs
+            category_id, open_price, tax_included, attrs->'nrs' AS nrs
        FROM items WHERE merchant_id = $1`,
     [merchantId],
   );
@@ -126,7 +129,7 @@ async function apply(q: Queryable, actor: CatalogActor, merchantId: string, rows
   const nextSort = new Map(sorts.map((s) => [s.category_id ?? '', Number(s.next)]));
   // Planned in memory, written in batches: a 9,000-item price book is a handful of statements.
   const creates: (Existing & { sku: string | null; sell_unit: string; pack_qty: number; sort: number; active: boolean })[] = [];
-  const updates: { id: string; cash_price_cents: number; card_price_cents: number | null; cost_cents: number | null; category_id: string | null; upc: string | null; name: string; open_price: boolean; nrs: string | null; plu: string | null }[] = [];
+  const updates: { id: string; cash_price_cents: number; card_price_cents: number | null; cost_cents: number | null; category_id: string | null; upc: string | null; name: string; open_price: boolean; tax_included: boolean; nrs: string | null; plu: string | null }[] = [];
   const prices: { id: string; cash_price_cents: number; card_price_cents: number | null; cost_cents: number | null }[] = [];
 
   const result: BulkResult = { dry_run: opts.dryRun, created: 0, updated: 0, unchanged: 0, categories_created: [], sample: [], catalog_version: opts.dryRun ? null : version };
@@ -170,10 +173,11 @@ async function apply(q: Queryable, actor: CatalogActor, merchantId: string, rows
       };
       const name = opts.renames ? r.name : hit.name;
       const openPrice = r.open_price ?? hit.open_price;
+      const taxIncluded = r.tax_included ?? hit.tax_included;
       const nrs = r.nrs ?? hit.nrs;
       const priceChanged = next.cash_price_cents !== hit.cash_price_cents || next.card_price_cents !== hit.card_price_cents || next.cost_cents !== hit.cost_cents;
       const moved = categoryId !== null && categoryId !== hit.category_id;
-      const otherChanged = name !== hit.name || openPrice !== hit.open_price || !sameNrs(nrs, hit.nrs) || (!!r.upc && !hit.upc);
+      const otherChanged = name !== hit.name || openPrice !== hit.open_price || taxIncluded !== hit.tax_included || !sameNrs(nrs, hit.nrs) || (!!r.upc && !hit.upc);
       if (!priceChanged && !moved && !otherChanged) {
         result.unchanged++;
         note({ line: r.line ?? null, name: hit.name, action: 'unchanged', from_cents: hit.cash_price_cents, to_cents: r.cash_price_cents });
@@ -181,10 +185,10 @@ async function apply(q: Queryable, actor: CatalogActor, merchantId: string, rows
       }
       const plu = !hit.plu && r.plu && !usedPlu.has(r.plu) ? r.plu : null;
       if (plu) usedPlu.add(plu);
-      updates.push({ id: hit.item_id, ...next, category_id: categoryId, upc: r.upc, name, open_price: openPrice, nrs: nrs ? JSON.stringify(nrs) : null, plu });
+      updates.push({ id: hit.item_id, ...next, category_id: categoryId, upc: r.upc, name, open_price: openPrice, tax_included: taxIncluded, nrs: nrs ? JSON.stringify(nrs) : null, plu });
       if (priceChanged) prices.push({ id: hit.item_id, ...next });
       note({ line: r.line ?? null, name, action: 'update', from_cents: hit.cash_price_cents === next.cash_price_cents ? null : hit.cash_price_cents, to_cents: r.cash_price_cents });
-      Object.assign(hit, next, { name, open_price: openPrice, nrs, upc: hit.upc ?? r.upc }, moved ? { category_id: categoryId } : {});
+      Object.assign(hit, next, { name, open_price: openPrice, tax_included: taxIncluded, nrs, upc: hit.upc ?? r.upc }, moved ? { category_id: categoryId } : {});
       result.updated++;
     } else {
       const plu = r.plu && !usedPlu.has(r.plu) ? r.plu : null;
@@ -194,7 +198,7 @@ async function apply(q: Queryable, actor: CatalogActor, merchantId: string, rows
       nextSort.set(sortKey, sort + 1);
       const created: Existing = {
         item_id: randomUUID(), name: r.name, upc: r.upc, plu, cash_price_cents: r.cash_price_cents, card_price_cents: r.card_price_cents, cost_cents: r.cost_cents,
-        category_id: categoryId, open_price: r.open_price ?? false, nrs: r.nrs ?? null,
+        category_id: categoryId, open_price: r.open_price ?? false, tax_included: r.tax_included ?? false, nrs: r.nrs ?? null,
       };
       creates.push({ ...created, sku: r.sku, sell_unit: r.sell_unit ?? 'each', pack_qty: r.pack_qty ?? 1, sort, active: r.active ?? true });
       prices.push({ id: created.item_id, cash_price_cents: r.cash_price_cents, card_price_cents: r.card_price_cents, cost_cents: r.cost_cents });
@@ -212,17 +216,18 @@ async function apply(q: Queryable, actor: CatalogActor, merchantId: string, rows
   for (const c of chunks(creates)) {
     await q.query(
       `INSERT INTO items (item_id, org_id, merchant_id, category_id, name, sku, upc, plu, cash_price_cents, card_price_cents, cost_cents, sell_unit, pack_qty,
-                          updated_by, sort, open_price, active, attrs)
+                          updated_by, sort, open_price, active, attrs, tax_included)
        SELECT t.id, $1, $2, t.cat, t.name, t.sku, t.upc, t.plu, t.cash, t.card, t.cost, t.unit, t.pack, $3, t.sort, t.open, t.active,
-              CASE WHEN t.nrs IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('nrs', t.nrs) END
+              CASE WHEN t.nrs IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('nrs', t.nrs) END, t.incl
          FROM unnest($4::uuid[], $5::uuid[], $6::text[], $7::text[], $8::text[], $9::text[], $10::bigint[], $11::bigint[], $12::bigint[], $13::text[], $14::int[],
-                     $15::int[], $16::bool[], $17::bool[], $18::jsonb[])
-           AS t(id, cat, name, sku, upc, plu, cash, card, cost, unit, pack, sort, open, active, nrs)`,
+                     $15::int[], $16::bool[], $17::bool[], $18::jsonb[], $19::bool[])
+           AS t(id, cat, name, sku, upc, plu, cash, card, cost, unit, pack, sort, open, active, nrs, incl)`,
       [
         m.org_id, merchantId, actor.user_id,
         c.map((x) => x.item_id), c.map((x) => x.category_id), c.map((x) => x.name), c.map((x) => x.sku), c.map((x) => x.upc), c.map((x) => x.plu),
         c.map((x) => x.cash_price_cents), c.map((x) => x.card_price_cents), c.map((x) => x.cost_cents), c.map((x) => x.sell_unit), c.map((x) => x.pack_qty),
         c.map((x) => x.sort), c.map((x) => x.open_price), c.map((x) => x.active), c.map((x) => (x.nrs ? JSON.stringify(x.nrs) : null)),
+        c.map((x) => x.tax_included),
       ],
     );
   }
@@ -231,14 +236,15 @@ async function apply(q: Queryable, actor: CatalogActor, merchantId: string, rows
       `UPDATE items i SET cash_price_cents = t.cash, card_price_cents = t.card, cost_cents = t.cost, category_id = coalesce(t.cat, i.category_id),
                           upc = coalesce(i.upc, t.upc), updated_by = $2, updated_at = now(), name = t.name, open_price = t.open,
                           attrs = CASE WHEN t.nrs IS NULL THEN i.attrs ELSE i.attrs || jsonb_build_object('nrs', t.nrs) END,
-                          plu = coalesce(i.plu, t.plu)
-         FROM unnest($3::uuid[], $4::bigint[], $5::bigint[], $6::bigint[], $7::uuid[], $8::text[], $9::text[], $10::bool[], $11::jsonb[], $12::text[])
-           AS t(id, cash, card, cost, cat, upc, name, open, nrs, plu)
+                          plu = coalesce(i.plu, t.plu), tax_included = t.incl
+         FROM unnest($3::uuid[], $4::bigint[], $5::bigint[], $6::bigint[], $7::uuid[], $8::text[], $9::text[], $10::bool[], $11::jsonb[], $12::text[], $13::bool[])
+           AS t(id, cash, card, cost, cat, upc, name, open, nrs, plu, incl)
         WHERE i.item_id = t.id AND i.merchant_id = $1`,
       [
         merchantId, actor.user_id,
         c.map((x) => x.id), c.map((x) => x.cash_price_cents), c.map((x) => x.card_price_cents), c.map((x) => x.cost_cents), c.map((x) => x.category_id),
         c.map((x) => x.upc), c.map((x) => x.name), c.map((x) => x.open_price), c.map((x) => x.nrs), c.map((x) => x.plu),
+        c.map((x) => x.tax_included),
       ],
     );
   }

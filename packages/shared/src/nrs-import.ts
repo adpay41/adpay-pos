@@ -36,6 +36,8 @@ export interface NrsAttrs {
 
 export interface NrsImportRow extends ImportRow {
   open_price: boolean;
+  /** NRS `includes_taxes`: rung at the marked price with the tax inside it (ADR 0044). */
+  tax_included: boolean;
   active: boolean;
   nrs: NrsAttrs;
   /** A pack whose single unit is another item: stock is counted on the unit (case-break). */
@@ -89,7 +91,7 @@ export interface NrsParse {
 }
 
 const FLAG_LABELS: Record<NrsFlagKey, string> = {
-  price_includes_tax: 'Price already includes tax in NRS: we add tax on top by category, so check these shelf prices',
+  price_includes_tax: 'Price includes tax in NRS: imported tax-inclusive, rung at the marked price with the tax inside it',
   price_includes_fees: 'Price already includes a fee (deposit etc.) in NRS: we add per-unit charges by tax class',
   fee_multiplier: 'Fee multiplier other than 1 (not carried over)',
   by_weight: 'Marked by-weight in NRS: rung per each here (no scale yet)',
@@ -325,6 +327,7 @@ function build(format: NrsFormat, input: { line: number; item: NrsJsonItem }[], 
         plu,
         sku: null,
         open_price: openPrice,
+        tax_included: inclTax,
         active,
         unit_upc: text(item.unit_upc),
         unit_count: unitCount !== null && unitCount > 1 ? unitCount : null,
@@ -360,6 +363,9 @@ function build(format: NrsFormat, input: { line: number; item: NrsJsonItem }[], 
 }
 
 // ─────────────────────────────────────────────────────────── preview / report ──
+
+/** Flags that are carried over as they are (kept, or mapped to a setting): not in "couldn't carry over". */
+const MAPPED_FLAGS = new Set<NrsFlagKey>(['ebt', 'price_includes_tax']);
 
 /** What `POST …/catalog/import/nrs` answers, for the merchant app and admin. */
 export interface NrsImportResponse {
@@ -400,7 +406,9 @@ export function nrsImportReport(r: NrsImportResponse): { headline: string; lines
   if (x?.packs_linked) lines.push(`Packs: ${x.packs_linked} packs tied to their single unit for stock.`);
   const unmapped = [
     ...(p.error_count ? [`${p.error_count} lines couldn't be read (${p.errors.slice(0, 3).map((e) => `line ${e.line}: ${e.message}`).join('; ')}${p.error_count > 3 ? '…' : ''})`] : []),
-    ...p.flags.filter((f) => f.key !== 'ebt').map((f) => `${f.count} × ${f.label}`),
+    ...p.flags.filter((f) => !MAPPED_FLAGS.has(f.key)).map((f) => `${f.count} × ${f.label}`),
   ];
+  const incl = p.flags.find((f) => f.key === 'price_includes_tax');
+  if (incl) lines.push(`Tax-inclusive prices: ${incl.count} items ring at their marked price, tax inside.`);
   return { headline, lines, unmapped };
 }

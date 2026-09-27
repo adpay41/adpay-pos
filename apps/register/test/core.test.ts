@@ -90,7 +90,7 @@ describe('SaleSession', () => {
     const sale = s.sale!;
     expect(sale.lines).toHaveLength(2);
     // cash: 1198 + 225 = 1423, tax 6.625% = 94.27 -> 94, total 1517
-    expect(sale.cash).toEqual({ subtotal_cents: 1423, tax_cents: 94, total_cents: 1517 });
+    expect(sale.cash).toEqual({ subtotal_cents: 1423, tax_cents: 94, total_cents: 1517, included_tax_cents: 0 });
     // card: 1246 + 234 = 1480, tax 98.05 -> 98, total 1578
     expect(sale.card.total_cents).toBe(1578);
     expect(store.snapshot().map((e) => e.type)).toEqual(['sale.opened', 'sale.line_added', 'sale.line_added']);

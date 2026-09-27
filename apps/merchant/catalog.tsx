@@ -170,6 +170,7 @@ function ItemList({ catalog, onEdit }: { catalog: CatalogSnapshot; onEdit: (i: C
                 {catalog.categories.find((c) => c.category_id === i.category_id)?.name ?? 'Uncategorized'}
                 {i.active ? '' : ' · hidden'}
                 {i.open_price ? ' · open price' : ''}
+                {i.tax_included ? ' · tax included' : ''}
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
@@ -208,6 +209,7 @@ function ItemEditor({
     cost: dollars(item?.cost_cents ?? null),
     upc: item?.upc ?? '',
     open_price: item?.open_price ?? false,
+    tax_included: item?.tax_included ?? false,
     color: (item?.color ?? null) as TileColor | null,
     image: item?.image_url ? { media_id: null as string | null, url: item.image_url } : null,
     active: item?.active ?? true,
@@ -278,6 +280,7 @@ function ItemEditor({
         cost_cents: money('Cost', f.cost, false),
         upc: f.upc.trim() || null,
         open_price: f.open_price,
+        tax_included: f.tax_included,
         color: f.color,
         active: f.active,
       };
@@ -350,6 +353,18 @@ function ItemEditor({
           <Text style={s.lineName}>Open price (type it at the register)</Text>
           <Switch value={f.open_price} onValueChange={(v) => set('open_price', v)} />
         </View>
+      </View>
+
+      <View style={s.card}>
+        <View style={s.rowBetween}>
+          <Text style={s.lineName}>Price includes tax</Text>
+          <Switch value={f.tax_included} onValueChange={(v) => set('tax_included', v)} />
+        </View>
+        <Text style={s.mutedSmall}>
+          {f.tax_included
+            ? 'Rings at exactly this price. The tax inside it is still counted on your tax report.'
+            : 'Tax is added on top of this price at the register (if its category is taxed).'}
+        </Text>
       </View>
 
       <View style={s.row}>
