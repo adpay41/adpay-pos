@@ -3,6 +3,7 @@
  * own dual-price rate and tax rate. Registers pull the result as a versioned snapshot — server wins
  * on catalog (ADR 0002).
  */
+import { keyPagesFor } from './key-pages';
 import {
   AlertSettingsInput,
   ComplianceSettingsInput,
@@ -175,6 +176,7 @@ export async function getCatalogSnapshot(
       };
     }),
     quick_keys: favorites.map((f) => f.item_id),
+    key_pages: await keyPagesFor(q, locationId),
     compliance: { ...compliance, state: loc.state, min_ages: minAges },
     flags: resolveFlags(loc.feature_flags, await currentRollouts(q), merchantId),
     enabled_packs: loc.enabled_packs,

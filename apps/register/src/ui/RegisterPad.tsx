@@ -29,6 +29,7 @@ export function RegisterPad({
   onCard,
   onRejectBill,
   extraKeys,
+  pendingQty,
 }: {
   digits: string;
   onDigits: (d: string) => void;
@@ -46,6 +47,8 @@ export function RegisterPad({
   onRejectBill: () => void;
   /** Keys that use the typed number for something else (@ quantity, PLU, department ring). */
   extraKeys?: ReactNode;
+  /** A count set with @, waiting for the next item (ADR 0047). */
+  pendingQty?: number | null;
 }) {
   const t = useT();
   const typed = padCents(digits);
@@ -67,10 +70,13 @@ export function RegisterPad({
       <View style={s.left}>
         <View style={s.row}>
           <View style={s.display}>
-            <Text style={s.displayValue} accessibilityLabel={t('Typed amount')}>
-              {digits ? usd(typed) : ' '}
-            </Text>
-            {digits ? <Text style={s.displayHint}>{t('Tap a tender, or a key that uses the number')}</Text> : null}
+            <View style={s.displayTop}>
+              {pendingQty ? <Text style={s.qty}>{t('{count} ×', { count: pendingQty })}</Text> : <Text> </Text>}
+              <Text style={s.displayValue} accessibilityLabel={t('Typed amount')}>
+                {digits ? usd(typed) : ' '}
+              </Text>
+            </View>
+            {digits ? <Text style={s.displayHint}>{t('#{digits} · a tender, @, PLU or a department', { digits })}</Text> : pendingQty ? <Text style={s.displayHint}>{t('Now tap, scan or ring the item')}</Text> : null}
           </View>
           <Pressable style={[s.clear, !digits && s.disabled]} disabled={!digits} onPress={() => onDigits('')}>
             <Text style={s.smallText}>{t('Clear')}</Text>
@@ -120,6 +126,8 @@ const s = StyleSheet.create({
   left: { flex: 3, gap: 6 },
   right: { flex: 2, gap: 6 },
   display: { flex: 1, backgroundColor: C.ground, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 4, minHeight: 40, justifyContent: 'center' },
+  displayTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  qty: { fontSize: 18, fontWeight: '800', color: C.black, backgroundColor: '#fff', borderRadius: 6, paddingHorizontal: 8 },
   displayValue: { fontSize: 22, fontWeight: '800', color: C.black, textAlign: 'right', fontVariant: ['tabular-nums'] },
   displayHint: { fontSize: 11, color: C.muted, textAlign: 'right' },
   clear: { borderWidth: 1, borderColor: C.line, borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', backgroundColor: '#fff' },

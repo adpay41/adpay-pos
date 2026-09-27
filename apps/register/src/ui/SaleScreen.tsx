@@ -60,11 +60,11 @@ import { LanguageButton } from './LanguageUI';
 import { Qr } from './Qr';
 import { ReceivePanel, WriteOffPanel } from './ReceiveUI';
 import { ChecklistPanel } from './ChecklistUI';
-import { QuickKey } from './QuickKey';
+import { AmountKey, QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
 import { CardPanel, type CardPhase } from './TenderUI';
 import { HeldTickets, TicketBrowser } from './TicketsUI';
-import { padCents } from '../core/pad';
+import { findByPlu, padCents, padQty } from '../core/pad';
 import { RegisterPad } from './RegisterPad';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
@@ -72,6 +72,12 @@ import { C, usd } from './theme';
 import { useT } from './i18n';
 
 const FAVORITES = '__favorites__';
+/** A tile on a named key page: an item, or an amount to a department (ADR 0047). */
+type PageTile =
+  | { kind: 'item'; key: string; item: CatalogItem }
+  | { kind: 'department'; key: string; cat: CatalogSnapshot['categories'][number]; amount: number | null; label: string };
+/** A named key page's tab (ADR 0047): this prefix + its page_id. */
+const PAGE = '__page__:';
 
 type Entry = 'key' | 'scan' | 'search' | 'new_item';
 
@@ -117,6 +123,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const [modal, setModal] = useState<Modal>({ kind: 'none' });
   // What's typed on the register pad (layout A), in cents digits.
   const [pad, setPad] = useState('');
+  // A count set with the @ key (ADR 0047): the next item rings that many times.
+  const [atQty, setAtQty] = useState<number | null>(null);
   const [drawerFlash, setDrawerFlash] = useState(false);
   const display = useRef(createDisplayChannel()).current;
 
@@ -314,9 +322,25 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const [priceCheck, setPriceCheck] = useState(false);
   const favorites = useMemo(() => favoriteKeys(shown), [shown]);
   const results = useMemo(() => (query.trim() ? searchCatalog(shown, query, 40).map((h) => h.item) : null), [shown, query]);
+  // Named key pages (ADR 0047): the owner's own tabs, after Favorites.
+  const pages = shown.key_pages ?? [];
+  const page = category?.startsWith(PAGE) ? (pages.find((p) => PAGE + p.page_id === category) ?? null) : null;
+  const pageTiles = useMemo(() => {
+    if (!page) return null;
+    const byItem = new Map(shown.items.map((i) => [i.item_id, i]));
+    const byCat = new Map(shown.categories.map((c) => [c.category_id, c]));
+    return page.keys.flatMap((k, n): PageTile[] => {
+      if (k.kind === 'item') {
+        const item = byItem.get(k.item_id);
+        return item && item.active ? [{ kind: 'item' as const, key: `${n}`, item }] : [];
+      }
+      const cat = byCat.get(k.category_id);
+      return cat && cat.active !== false ? [{ kind: 'department' as const, key: `${n}`, cat, amount: k.amount_cents, label: k.label ?? cat.name }] : [];
+    });
+  }, [page, shown]);
   const items = useMemo(
-    () => results ?? (category === FAVORITES ? favorites : categoryKeys(shown, category)),
-    [results, shown, category, favorites],
+    () => results ?? (category === FAVORITES ? favorites : page ? [] : categoryKeys(shown, category)),
+    [results, shown, category, favorites, page],
   );
 
   const run = useCallback(
@@ -343,7 +367,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
    * line; open-price items ask for the price.
    */
   const ring = (item: CatalogItem, opts: { qty?: number; entry: Entry; ageConfirmed?: boolean; idCheck?: { age: number; jurisdiction: string | null }; labelPrice?: number }) => {
-    const qty = opts.qty ?? 1;
+    // A count set with @ multiplies the next ring (a case barcode's pack quantity too), then clears.
+    const qty = (opts.qty ?? 1) * (atQty ?? 1);
+    if (atQty !== null) setAtQty(null);
     if (priceCheck) return setModal({ kind: 'price_check', item, showCost: false });
     // The age check keeps a price already known (a price label, or an amount rung to a department).
     if (item.min_age && !opts.ageConfirmed && !ses.wouldMerge(item)) return setModal({ kind: 'age', item, qty, entry: opts.entry, ...(opts.labelPrice !== undefined ? { labelPrice: opts.labelPrice } : {}) });
@@ -358,6 +384,22 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const deptItem = (id: string | null) => {
     const c = catalog.categories.find((x) => x.category_id === id);
     return c ? departmentItem(c, catalog) : null;
+  };
+  // @ (ADR 0047): the typed digits become the count for the next item.
+  const setAt = () => {
+    const n = padQty(pad);
+    if (n === null) return setModal({ kind: 'error', message: t('Type how many (1 to 999), then @') });
+    setAtQty(n);
+    setPad('');
+  };
+  // PLU (ADR 0047): the typed digits as a PLU (then as a barcode), rung like a scan.
+  const ringPlu = () => {
+    const digits = pad;
+    if (!digits) return;
+    setPad('');
+    const hit = findByPlu(index, digits, (code) => lookupBarcode(index, code));
+    if (!hit) return setModal({ kind: 'error', message: t('No item with PLU {plu}.', { plu: digits }) });
+    ring(hit.item, { qty: hit.qty, entry: 'key' });
   };
   const ringDepartment = () => {
     if (!deptTab) return;
@@ -747,6 +789,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 <Text style={[s.catText, category === FAVORITES && { color: '#fff' }]}>{t('★ Favorites')}</Text>
               </Pressable>
             ) : null}
+            {pages.map((p) => (
+              <Pressable key={p.page_id} onPress={() => setCategory(PAGE + p.page_id)} style={[s.dept, s.pageTab, category === PAGE + p.page_id && s.catActive]}>
+                <Text style={[s.catText, category === PAGE + p.page_id && { color: '#fff' }]}>{p.name}</Text>
+              </Pressable>
+            ))}
+            {pages.length ? <View style={s.tabGap} /> : null}
             {catalog.categories.filter((c) => c.active !== false).map((c) => (
               <Pressable key={c.category_id} onPress={() => setCategory(c.category_id)} style={[s.dept, category === c.category_id && s.catActive]}>
                 <Text style={[s.catText, category === c.category_id && { color: '#fff' }]}>{c.name}</Text>
@@ -792,6 +840,22 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             </View>
           ) : null}
           <ScrollView style={{ flex: 1 }} contentContainerStyle={s.grid} keyboardShouldPersistTaps="handled">
+            {!results && pageTiles
+              ? pageTiles.map((k) =>
+                  k.kind === 'item' ? (
+                    <QuickKey key={k.key} item={k.item} badge={rt.stock.badge(k.item)} onPress={addItem} onLongPress={(it) => setModal({ kind: 'add_qty', item: it, entry: 'key' })} />
+                  ) : (
+                    <AmountKey
+                      key={k.key}
+                      label={k.label}
+                      department={k.cat.name}
+                      amount={k.amount}
+                      cardAmount={k.amount !== null ? deriveCardPrice(cents(k.amount), catalog.dual_price_rate_ppm) : null}
+                      onPress={() => ring(departmentItem(k.cat, catalog), { entry: 'key', ...(k.amount !== null ? { labelPrice: k.amount } : {}) })}
+                    />
+                  ),
+                )
+              : null}
             {items.map((i) => (
               <QuickKey key={i.item_id} item={i} badge={rt.stock.badge(i)} onPress={addItem} onLongPress={(it) => setModal({ kind: 'add_qty', item: it, entry: query ? 'search' : 'key' })} />
             ))}
@@ -818,7 +882,14 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               void chargeCard(amount);
             }}
             onRejectBill={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false, counterfeit: true })}
-            extraKeys={<DepartmentKey dept={deptTab} typed={padCents(pad)} onPress={ringDepartment} />}
+            pendingQty={atQty}
+            extraKeys={
+              <>
+                <PadKey label="@" sub={atQty ? t('{count} ×', { count: atQty }) : t('quantity')} onPress={setAt} disabled={!pad} accessibilityLabel={t('Quantity: the typed number times the next item')} />
+                <PadKey label="PLU" sub={pad ? `#${pad}` : t('code')} onPress={ringPlu} disabled={!pad} accessibilityLabel={t('Ring the item with the typed PLU')} />
+                <DepartmentKey dept={deptTab} typed={padCents(pad)} onPress={ringDepartment} />
+              </>
+            }
           />
         </View>
 
@@ -1604,6 +1675,16 @@ function SyncPill({ status, onPress }: { status: SyncStatus | null; onPress: () 
   );
 }
 
+/** A key in the pad's slot next to the digits (@, PLU). */
+function PadKey({ label, sub, onPress, disabled, accessibilityLabel }: { label: string; sub: string; onPress: () => void; disabled: boolean; accessibilityLabel: string }) {
+  return (
+    <Pressable style={[s.padKey, disabled && s.disabled]} disabled={disabled} onPress={onPress} accessibilityLabel={accessibilityLabel}>
+      <Text style={s.padKeyText}>{label}</Text>
+      <Text style={s.padKeySub}>{sub}</Text>
+    </Pressable>
+  );
+}
+
 /** The pad key that rings the typed amount to the department tab on screen (ADR 0046). */
 function DepartmentKey({ dept, typed, onPress }: { dept: CatalogSnapshot['categories'][number] | null; typed: number; onPress: () => void }) {
   const t = useT();
@@ -1741,9 +1822,14 @@ const s = StyleSheet.create({
   deptBar: { flexGrow: 0, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: C.line },
   deptRow: { paddingHorizontal: 8, paddingVertical: 6, gap: 6 },
   dept: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: C.line },
+  padKey: { flex: 1, backgroundColor: C.ground, borderRadius: 8, paddingVertical: 6, alignItems: 'center', justifyContent: 'center' },
+  padKeyText: { color: C.ink, fontWeight: '800', fontSize: 18 },
+  padKeySub: { color: C.muted, fontSize: 11, fontVariant: ['tabular-nums'] },
   deptKey: { flex: 1, backgroundColor: C.black, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   deptKeyText: { color: '#fff', fontWeight: '800', textAlign: 'center' },
   deptKeySub: { color: '#ccc', fontSize: 12, fontVariant: ['tabular-nums'] },
+  pageTab: { borderColor: C.black },
+  tabGap: { width: 1, backgroundColor: C.line, marginHorizontal: 4 },
   shortcutBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line },
   catActive: { backgroundColor: C.black },
   catText: { fontWeight: '700', color: C.ink, fontSize: 15 },

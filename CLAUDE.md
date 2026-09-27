@@ -116,6 +116,7 @@ purpose: support is one person for the first 200 stores.
 | [0044](docs/decisions/0044-tax-inclusive-prices.md) | Tax-inclusive prices: item flag captured on the line (`tax_included`), tax backed out once per rate group, totals keep total = subtotal (pre-tax) + tax with `included_tax_cents`; receipt shows marked prices and "incl. tax"; NRS `includes_taxes` sets it |
 | [0045](docs/decisions/0045-register-layout-a.md) | Register layout A: department tabs on top, grid, the register pad (typed amount, quick cash, Cash/Card) on the main screen instead of a cash modal, ticket on the right, shortcut bar underneath |
 | [0046](docs/decisions/0046-department-ring.md) | Department ring: `sale.line_added.item_id` nullable with `price_source: department`; the department (category) supplies tax, age and name; stock/usuals skip it, profit buckets it, repeat rings it again; pad key rings the typed amount to the tab on screen |
+| [0047](docs/decisions/0047-key-pages-at-plu.md) | Named key pages per store (item or department + fixed amount keys) in the snapshot, edited in the merchant app; pad @ key (count × next ring) and PLU key (leading zeros forgiven, barcode fallback) |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

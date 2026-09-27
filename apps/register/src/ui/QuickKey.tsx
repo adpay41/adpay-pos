@@ -58,7 +58,36 @@ export function QuickKey({
   );
 }
 
+/**
+ * A key on a named page that rings an amount to a department (ADR 0047): "$10 deli", "Medicine $2.00".
+ * With no amount it asks for the price, like the pad's department key.
+ */
+export function AmountKey({ label, department, amount, cardAmount, onPress }: { label: string; department: string; amount: number | null; cardAmount: number | null; onPress: () => void }) {
+  const t = useT();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={amount !== null ? t('Ring {amount} to {department}', { amount: usd(amount), department }) : label}
+      style={({ pressed }) => [s.key, s.amountKey, pressed && s.pressed]}
+    >
+      <View>
+        <Text style={s.name} numberOfLines={2}>
+          {label}
+        </Text>
+        <Text style={s.dept}>{department}</Text>
+      </View>
+      <View>
+        <Text style={s.cash}>{amount !== null ? usd(amount) : t('any amount')}</Text>
+        {cardAmount !== null ? <Text style={s.card}>{t('card {amount}', { amount: usd(cardAmount) })}</Text> : null}
+      </View>
+    </Pressable>
+  );
+}
+
 const s = StyleSheet.create({
+  amountKey: { borderStyle: 'dashed' },
+  dept: { color: C.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginTop: 2 },
   key: {
     width: 140,
     height: 112,
