@@ -114,6 +114,7 @@ purpose: support is one person for the first 200 stores.
 | [0042](docs/decisions/0042-tester-feedback-shift-tax-pin-codes.md) | Sign-in starts the shift, Clock out ends it and signs out; tax by category (owner toggles Taxed / No tax), admin Tax page removed; PIN pad stops at the recorded PIN length; demo setup codes reusable (install-kit codes single-use) |
 | [0043](docs/decisions/0043-nrs-price-book-import.md) | NRS price book import: portal JSON with real barcodes (primary) or the CSV export (scrambled, NRS key); batched bulk write, match barcode → key → name without duplicating; owner confirms department tax/age; NRS flags kept in `attrs.nrs`; scan-to-attach on the register |
 | [0044](docs/decisions/0044-tax-inclusive-prices.md) | Tax-inclusive prices: item flag captured on the line (`tax_included`), tax backed out once per rate group, totals keep total = subtotal (pre-tax) + tax with `included_tax_cents`; receipt shows marked prices and "incl. tax"; NRS `includes_taxes` sets it |
+| [0045](docs/decisions/0045-register-layout-a.md) | Register layout A: department tabs on top, grid, the register pad (typed amount, quick cash, Cash/Card) on the main screen instead of a cash modal, ticket on the right, shortcut bar underneath |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 
