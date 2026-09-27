@@ -465,10 +465,10 @@ async function ensureDemoStaff(db: Db): Promise<string[]> {
       userId = (await db.query<{ user_id: string }>(`INSERT INTO users (kind, name, phone) VALUES ('merchant_user', $1, $2) RETURNING user_id`, [p.name, p.phone])).rows[0]!.user_id;
     }
     if (!found[0]?.has_membership) {
-      await db.query(`INSERT INTO memberships (user_id, org_id, merchant_id, role, pin_hash, pin_set_at) VALUES ($1, $2, $3, $4, $5, now())`, [userId, m[0].org_id, m[0].merchant_id, p.role, hashPin(p.pin)]);
+      await db.query(`INSERT INTO memberships (user_id, org_id, merchant_id, role, pin_hash, pin_length, pin_set_at) VALUES ($1, $2, $3, $4, $5, $6, now())`, [userId, m[0].org_id, m[0].merchant_id, p.role, hashPin(p.pin), p.pin.length]);
       touched.add(m[0].merchant_id);
     } else if (!found[0].pin_hash) {
-      await db.query('UPDATE memberships SET pin_hash = $3, pin_set_at = now() WHERE user_id = $1 AND merchant_id = $2', [userId, m[0].merchant_id, hashPin(p.pin)]);
+      await db.query('UPDATE memberships SET pin_hash = $3, pin_length = $4, pin_set_at = now() WHERE user_id = $1 AND merchant_id = $2', [userId, m[0].merchant_id, hashPin(p.pin), p.pin.length]);
       touched.add(m[0].merchant_id);
     }
     // Report what the database actually holds, checked against the stored hash.
@@ -477,6 +477,11 @@ async function ensureDemoStaff(db: Db): Promise<string[]> {
       [userId, m[0].merchant_id],
     );
     const ok = now[0]?.pin_hash ? verifyPin(p.pin, now[0].pin_hash) : false;
+    // PINs set before lengths were recorded: the demo knows the PIN, so it can fill the length in.
+    if (ok) {
+      const { rows: filled } = await db.query('UPDATE memberships SET pin_length = $3 WHERE user_id = $1 AND merchant_id = $2 AND pin_length IS NULL RETURNING user_id', [userId, m[0].merchant_id, p.pin.length]);
+      if (filled.length) touched.add(m[0].merchant_id);
+    }
     const state = now[0]?.disabled ? 'DISABLED in the app' : ok ? '' : 'PIN was changed in the app';
     lines.push(`    ${p.pin}  ${p.name.padEnd(13)} ${(now[0]?.role ?? p.role).padEnd(8)} ${p.merchant}${state ? `  (${state})` : ''}`);
   }
@@ -488,14 +493,15 @@ async function ensureDemoStaff(db: Db): Promise<string[]> {
 async function armDemoSetupCode(db: Db, registerId: string, code: string) {
   const hash = hashSetupCode(code);
   await db.tx(async (q) => {
-    await q.query(`UPDATE register_setup_codes SET expires_at = now() WHERE register_id = $1 AND used_at IS NULL AND expires_at > now()`, [
+    await q.query(`UPDATE register_setup_codes SET expires_at = now() WHERE register_id = $1 AND (used_at IS NULL OR reusable) AND expires_at > now()`, [
       registerId,
     ]);
     await q.query(`DELETE FROM register_setup_codes WHERE code_hash = $1`, [hash]);
     await q.query(
-      `INSERT INTO register_setup_codes (code_hash, org_id, merchant_id, location_id, register_id, expires_at)
-       SELECT $1, org_id, merchant_id, location_id, register_id, now() + interval '365 days' FROM registers WHERE register_id = $2`,
-      [hash, registerId],
+      // Reusable (dev only): several testers share these codes; each new pairing moves the register.
+      `INSERT INTO register_setup_codes (code_hash, org_id, merchant_id, location_id, register_id, expires_at, reusable)
+       SELECT $1, org_id, merchant_id, location_id, register_id, now() + interval '365 days', $3 FROM registers WHERE register_id = $2`,
+      [hash, registerId, process.env.NODE_ENV !== 'production'],
     );
   });
 }
@@ -682,7 +688,8 @@ async function printLogins(db: Db) {
       `                       Dev mode sends no SMS; the code is always ${DEV_OTP_CODE} (also shown on screen).`,
       '  Register             http://localhost:8082   enter a setup code:',
       ...codes,
-      '                       Codes are re-armed on every `npm run dev` or `npm run logins`.',
+      '                       Codes are re-armed on every `npm run dev` or `npm run logins` and can be used again: pairing a register',
+      '                       on a new browser moves it there (the old one goes back to setup). One tester per register.',
       '  Register PINs        "Who\'s working?" → tap the name, enter the PIN (owner/manager PINs approve overrides):',
       ...pins,
       '──────────────────────────────────────────────────────────────────────────────────────────',

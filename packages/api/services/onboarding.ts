@@ -136,7 +136,7 @@ export async function pairRegister(
   return db.tx(async (q) => {
     const { rows } = await q.query<{ register_id: string; org_id: string; merchant_id: string; location_id: string }>(
       `UPDATE register_setup_codes SET used_at = now()
-        WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()
+        WHERE code_hash = $1 AND (used_at IS NULL OR reusable) AND expires_at > now()
         RETURNING register_id, org_id, merchant_id, location_id`,
       [hashSetupCode(setupCode)],
     );

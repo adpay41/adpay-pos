@@ -617,7 +617,17 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   }
 
   // Nobody signed in (and this store uses PINs): the counter shows "who's working?" and nothing else.
-  if (staff.required && !staff.member) return <SignInScreen gate={rt.staff} storeName={`${rt.identity.merchant_name} · ${rt.identity.location_name}`} />;
+  // Signing in starts the shift (tester feedback: one action, not two); already on the clock, nothing changes.
+  if (staff.required && !staff.member)
+    return (
+      <SignInScreen
+        gate={rt.staff}
+        storeName={`${rt.identity.merchant_name} · ${rt.identity.location_name}`}
+        onSignedIn={async (userId) => {
+          if (!rt.clock.since(userId)) await rt.clock.clockIn(userId);
+        }}
+      />
+    );
 
   return (
     <View style={{ flex: 1 }}>
@@ -636,16 +646,21 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           </Text>
         ) : null}
         {staff.member ? (
+          // Clock out ends the shift and signs out in one tap; Lock hands the register over and keeps the shift running.
           <Pressable
             onPress={() => {
               const m = staff.member!;
-              void run(() => (rt.clock.since(m.user_id) ? rt.clock.clockOut(m.user_id) : rt.clock.clockIn(m.user_id)));
+              void run(async () => {
+                if (!rt.clock.since(m.user_id)) return rt.clock.clockIn(m.user_id);
+                await rt.clock.clockOut(m.user_id);
+                await rt.staff.signOut('manual');
+              });
             }}
             style={[s.who, rt.clock.since(staff.member.user_id) ? s.onClock : null]}
-            accessibilityLabel={rt.clock.since(staff.member.user_id) ? t('Clock out') : t('Clock in')}
+            accessibilityLabel={rt.clock.since(staff.member.user_id) ? t('Clock out and sign out') : t('Clock in')}
           >
             <Text style={s.whoText}>
-              {rt.clock.since(staff.member.user_id) ? t('On the clock {time}', { time: hhmm(rt.clock.minutes(staff.member.user_id)) }) : t('Clock in')}
+              {rt.clock.since(staff.member.user_id) ? t('Clock out · {time}', { time: hhmm(rt.clock.minutes(staff.member.user_id)) }) : t('Clock in')}
             </Text>
           </Pressable>
         ) : null}
