@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Db } from '../db/db';
 import { ingestEvents } from '../services/events';
-import { addStaff, auth, createAdmin, createTenant, createTestApp, createTestDb, merchantLogin, pairDevice, type Tenant } from './helpers';
+import { addStaff, auth, createTenant, createTestApp, createTestDb, merchantLogin, pairDevice, type Tenant } from './helpers';
 
 let db: Db;
 let app: FastifyInstance;
@@ -89,15 +89,5 @@ describe('compliance log', () => {
     expect(entries[0]).toMatchObject({ register_name: 'Register 1', cashier_name: 'Maria Santos', item_name: 'Cigarillos', restriction: 'tobacco', min_age: 21, method: 'id_scan', scanned_age: 34, jurisdiction: 'NJ' });
     const csv = (await app.inject({ method: 'GET', url: '/merchant/reports/compliance.csv?from=2026-07-01&to=2026-09-30', headers: auth(owner) })).body;
     expect(csv.split('\n')[1]).toContain('ID scanned,34,NJ');
-  });
-});
-
-describe('admin tax tables', () => {
-  it('shows each location’s rate in force today and what is scheduled', async () => {
-    await createAdmin(db);
-    const admin = (await app.inject({ method: 'POST', url: '/auth/admin/login', payload: { email: 'admin@test.local', password: 'correct horse battery' } })).json().token;
-    await app.inject({ method: 'PUT', url: `/merchant/locations/${a.location_id}/compliance`, headers: auth(owner), payload: { tax_rates: [{ tax_class: 'standard', rate_ppm: 70_000, effective_from: '2099-01-01' }] } });
-    const { locations } = (await app.inject({ method: 'GET', url: '/admin/tax-tables', headers: auth(admin) })).json();
-    expect(locations.find((l: { location_id: string }) => l.location_id === a.location_id)).toMatchObject({ state: 'NJ', standard_rate_ppm: 66_250, upcoming: [{ tax_class: 'standard', rate_ppm: 70_000, effective_from: '2099-01-01' }] });
   });
 });

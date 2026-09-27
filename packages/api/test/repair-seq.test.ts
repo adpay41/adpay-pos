@@ -65,3 +65,26 @@ describe('re-pairing a register with history', () => {
     expect(r.sessions.find((s) => s.session_id === fresh)?.closed_at).not.toBeNull();
   });
 });
+
+describe('demo setup codes', () => {
+  it('a reusable (demo) code pairs again and moves the register; an install-kit code is single-use', async () => {
+    const { hashSetupCode } = await import('../auth/crypto');
+    const code = 'DEMO-REUSE';
+    await db.query(
+      `INSERT INTO register_setup_codes (code_hash, org_id, merchant_id, location_id, register_id, expires_at, reusable)
+       VALUES ($1, $2, $3, $4, $5, now() + interval '1 day', true)`,
+      [hashSetupCode(code), t.org_id, t.merchant_id, t.location_id, t.register_id],
+    );
+    const pairWith = (c: string) => app.inject({ method: 'POST', url: '/auth/device/pair', payload: { setup_code: c } });
+    const first = await pairWith(code);
+    const second = await pairWith(code);
+    expect([first.statusCode, second.statusCode]).toEqual([200, 200]);
+    // The first device is signed out of the register; the second one has it.
+    expect((await app.inject({ method: 'GET', url: '/device/identity', headers: { authorization: `Bearer ${first.json().device_token}` } })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/device/identity', headers: { authorization: `Bearer ${second.json().device_token}` } })).statusCode).toBe(200);
+
+    const { code: kit } = await db.tx((q) => issueSetupCode(q, t.register_id, null));
+    expect((await pairWith(kit)).statusCode).toBe(200);
+    expect((await pairWith(kit)).statusCode).toBe(400);
+  });
+});

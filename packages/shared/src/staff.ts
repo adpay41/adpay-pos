@@ -132,6 +132,8 @@ export interface RegisterStaffMember {
   name: string;
   role: Role;
   pin_hash: string;
+  /** Digits in the PIN; the keypad stops there and signs in on the last digit. Null: set before lengths were recorded (4 to 6). */
+  pin_length?: number | null;
   permissions: Permission[];
 }
 

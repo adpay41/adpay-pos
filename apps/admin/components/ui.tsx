@@ -54,7 +54,6 @@ const NAV = [
   { href: '/upc-library', label: 'UPC library' },
   { href: '/sales', label: 'Sales' },
   { href: '/money', label: 'Money' },
-  { href: '/tax', label: 'Tax' },
   { href: '/translations', label: 'Translations' },
   { href: '/audit', label: 'Audit log' },
 ];

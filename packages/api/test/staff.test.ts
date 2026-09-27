@@ -119,7 +119,10 @@ describe('staff and register PINs', () => {
     const token = await merchantLogin(app, '201-555-0104');
     const r = await app.inject({ method: 'PUT', url: `/merchant/staff/${id}/pin`, headers: auth(token), payload: { pin: '4826' } });
     expect(r.statusCode, r.body).toBe(200);
-    expect((await snapshot()).staff!.members.some((m) => m.user_id === id)).toBe(true);
+    expect((await snapshot()).staff!.members.find((m) => m.user_id === id)?.pin_length).toBe(4);
+    // The register's keypad stops at the PIN's length: a 6-digit PIN says 6.
+    await app.inject({ method: 'PUT', url: `/merchant/staff/${id}/pin`, headers: auth(token), payload: { pin: '482613' } });
+    expect((await snapshot()).staff!.members.find((m) => m.user_id === id)?.pin_length).toBe(6);
 
     const other = (await db.query<{ user_id: string }>('SELECT user_id FROM memberships WHERE merchant_id = $1 LIMIT 1', [b.merchant_id])).rows[0]!;
     const x = await app.inject({ method: 'PUT', url: `/merchant/staff/${other.user_id}/pin`, headers: auth(ownerA), payload: { pin: '4826' } });

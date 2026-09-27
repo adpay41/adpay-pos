@@ -597,6 +597,11 @@ function Categories({ token, catalog, onSaved }: { token: string; catalog: Catal
                   void patch(c, { restriction: next }, next ? '“' + c.name + '” now asks for an ID check (' + RESTRICTION_LABELS[next] + ').' : '“' + c.name + '” is no longer restricted.');
                 }}
               />
+              {/* Sales tax follows the category: the register taxes an item by its category at ring time. */}
+              <SmallButton
+                label={c.taxable ? 'Taxed' : 'No tax'}
+                onPress={() => void patch(c, { taxable: !c.taxable }, c.taxable ? `“${c.name}” is now not taxed (e.g. medicine, non-taxable grocery).` : `“${c.name}” is now taxed at the store's sales-tax rate.`)}
+              />
               <SmallButton label={c.active ? 'Hide' : 'Show'} onPress={() => void patch(c, { active: !c.active }, `“${c.name}” ${c.active ? 'hidden' : 'shown'}.`)} />
             </View>
           );
@@ -620,7 +625,7 @@ function Categories({ token, catalog, onSaved }: { token: string; catalog: Catal
           }
         />
       </View>
-      <Text style={s.mutedSmall}>Tap the restriction to cycle it: restricted categories ask for an ID check at your state’s age. Tax rates and deposits are set in the back office.</Text>
+      <Text style={s.mutedSmall}>Tap the restriction to cycle it: restricted categories ask for an ID check at your state’s age. Taxed / No tax decides whether the register charges sales tax on everything in that category (medicine, non-taxable grocery: No tax). Your state's rate and deposits are set by AD Pay.</Text>
       {error ? <Text style={s.error}>{error}</Text> : null}
     </>
   );

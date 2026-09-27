@@ -47,20 +47,43 @@ function PeopleGrid({ people, onPick, lockedFor }: { people: RegisterStaffMember
 }
 
 /** Masked PIN entry with a 0–9 keypad. Calls `onSubmit` with the digits; shows its error. */
-export function PinPad({ title, subtitle, onSubmit, onBack }: { title: string; subtitle?: string; onSubmit: (pin: string) => Promise<void>; onBack: () => void }) {
+/**
+ * PIN entry. With the person's PIN length known, the keypad takes exactly that many digits and signs in
+ * on the last one (no Enter needed); otherwise 4 to 6 digits and Enter.
+ */
+export function PinPad({
+  title,
+  subtitle,
+  length,
+  onSubmit,
+  onBack,
+}: {
+  title: string;
+  subtitle?: string;
+  length?: number | null | undefined;
+  onSubmit: (pin: string) => Promise<void>;
+  onBack: () => void;
+}) {
   const t = useT();
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const max = length ?? 6;
+  const min = length ?? 4;
   const press = (k: string) => {
+    if (busy) return;
     setError(null);
-    setPin((p) => (k === '⌫' ? p.slice(0, -1) : (p + k).slice(0, 6)));
+    if (k === '⌫') return setPin((p) => p.slice(0, -1));
+    if (pin.length >= max) return;
+    const next = pin + k;
+    setPin(next);
+    if (length && next.length === length) void enter(next);
   };
-  async function enter() {
-    if (pin.length < 4 || busy) return;
+  async function enter(value = pin) {
+    if (value.length < min || busy) return;
     setBusy(true);
     try {
-      await onSubmit(pin);
+      await onSubmit(value);
     } catch (e) {
       setError(e instanceof PinError || e instanceof Error ? e.message : t('Try again'));
       setPin('');
@@ -73,7 +96,7 @@ export function PinPad({ title, subtitle, onSubmit, onBack }: { title: string; s
       <Text style={s.padTitle}>{title}</Text>
       {subtitle ? <Text style={s.muted}>{subtitle}</Text> : null}
       <View style={s.dots} accessibilityLabel={t('{count} digits entered', { count: pin.length })}>
-        {Array.from({ length: Math.max(4, pin.length) }, (_, i) => (
+        {Array.from({ length: length ?? Math.max(4, pin.length) }, (_, i) => (
           <View key={i} style={[s.dot, i < pin.length && s.dotOn]} />
         ))}
       </View>
@@ -83,7 +106,7 @@ export function PinPad({ title, subtitle, onSubmit, onBack }: { title: string; s
           <Pressable
             key={k}
             onPress={() => (k === ENTER ? void enter() : press(k))}
-            style={[s.key, k === ENTER && s.enter, k === ENTER && (pin.length < 4 || busy) && { opacity: 0.4 }]}
+            style={[s.key, k === ENTER && s.enter, k === ENTER && (pin.length < min || busy) && { opacity: 0.4 }]}
             accessibilityLabel={k === '⌫' ? t('Delete') : k === ENTER ? t('Enter') : k}
           >
             <Text style={[s.keyText, k === ENTER && { color: '#fff', fontSize: 18 }]}>{k === ENTER ? t('Enter') : k}</Text>
@@ -97,8 +120,8 @@ export function PinPad({ title, subtitle, onSubmit, onBack }: { title: string; s
   );
 }
 
-/** Full-screen "who's working?" shown whenever nobody is signed in. */
-export function SignInScreen({ gate, storeName }: { gate: StaffGate; storeName: string }) {
+/** Full-screen "who's working?". Signing in also starts the person's shift (`onSignedIn`), one action. */
+export function SignInScreen({ gate, storeName, onSignedIn }: { gate: StaffGate; storeName: string; onSignedIn?: (userId: string) => Promise<void> }) {
   const t = useT();
   const [who, setWho] = useState<RegisterStaffMember | null>(null);
   return (
@@ -119,7 +142,15 @@ export function SignInScreen({ gate, storeName }: { gate: StaffGate; storeName: 
           />
         </>
       ) : (
-        <PinPad title={t('Hi {name} — enter your PIN', { name: who.name.split(' ')[0]! })} onBack={() => setWho(null)} onSubmit={async (pin) => void (await gate.signIn(who.user_id, pin))} />
+        <PinPad
+          title={t('Hi {name} — enter your PIN', { name: who.name.split(' ')[0]! })}
+          length={who.pin_length}
+          onBack={() => setWho(null)}
+          onSubmit={async (pin) => {
+            await gate.signIn(who.user_id, pin);
+            await onSignedIn?.(who.user_id);
+          }}
+        />
       )}
     </View>
   );
@@ -170,6 +201,7 @@ export function OverridePrompt({
     <PinPad
       title={t('{name}: approve “{permission}”', { name: who.name, permission: t(label) })}
       subtitle={t('Enter your PIN')}
+      length={who.pin_length}
       onBack={() => (approvers.length === 1 ? onCancel() : setWho(null))}
       onSubmit={async (pin) => {
         await gate.override(permission, who.user_id, pin, saleId);

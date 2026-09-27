@@ -61,6 +61,7 @@ interface StaffRow {
   phone: string | null;
   role: Role;
   pin_hash: string | null;
+  pin_length: number | null;
   pin_set_at: Date | string | null;
   disabled: boolean;
 }
@@ -69,7 +70,7 @@ const iso = (v: Date | string | null) => (v === null ? null : v instanceof Date 
 
 async function staffRows(q: Queryable, merchantId: string, userId?: string): Promise<StaffRow[]> {
   const { rows } = await q.query<StaffRow>(
-    `SELECT u.user_id, u.name, u.phone, m.role, m.pin_hash, m.pin_set_at,
+    `SELECT u.user_id, u.name, u.phone, m.role, m.pin_hash, m.pin_length, m.pin_set_at,
             (m.disabled_at IS NOT NULL OR u.disabled_at IS NOT NULL) AS disabled
        FROM memberships m JOIN users u ON u.user_id = m.user_id
       WHERE m.merchant_id = $1 AND ($2::uuid IS NULL OR m.user_id = $2)
@@ -103,7 +104,7 @@ export async function registerStaff(q: Queryable, merchantId: string): Promise<R
     members: rows
       // An accountant never signs in at a register (and has no PIN).
       .filter((r) => !r.disabled && r.pin_hash && r.role !== 'accountant')
-      .map((r) => ({ user_id: r.user_id, name: r.name, role: r.role, pin_hash: r.pin_hash!, permissions: permissionsFor(r.role, overrides) })),
+      .map((r) => ({ user_id: r.user_id, name: r.name, role: r.role, pin_hash: r.pin_hash!, pin_length: r.pin_length, permissions: permissionsFor(r.role, overrides) })),
   };
 }
 
@@ -196,9 +197,9 @@ export async function insertStaff(
       userId = rows[0]!.user_id;
     }
     await q.query(
-      `INSERT INTO memberships (user_id, org_id, merchant_id, role, pin_hash, pin_set_at)
-       VALUES ($1, $2, $3, $4, $5, CASE WHEN $5::text IS NULL THEN NULL ELSE now() END)`,
-      [userId, m.org_id, merchantId, input.role, input.pin ? hashPin(input.pin) : null],
+      `INSERT INTO memberships (user_id, org_id, merchant_id, role, pin_hash, pin_length, pin_set_at)
+       VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $5::text IS NULL THEN NULL ELSE now() END)`,
+      [userId, m.org_id, merchantId, input.role, input.pin ? hashPin(input.pin) : null, input.pin ? input.pin.length : null],
     );
     const version = await bumpCatalogVersion(q, merchantId);
     await audit(q, {
@@ -242,7 +243,7 @@ export async function updateStaff(
       // An accountant signs in to the app by phone, and loses any register PIN.
       const { rows: u } = await q.query<{ phone: string | null }>('SELECT phone FROM users WHERE user_id = $1', [userId]);
       if (!u[0]?.phone) throw badRequest('An accountant needs a phone number to sign in to the app');
-      await q.query('UPDATE memberships SET pin_hash = NULL, pin_set_at = NULL WHERE user_id = $1 AND merchant_id = $2', [userId, merchantId]);
+      await q.query('UPDATE memberships SET pin_hash = NULL, pin_length = NULL, pin_set_at = NULL WHERE user_id = $1 AND merchant_id = $2', [userId, merchantId]);
     }
     if (patch.role !== undefined || patch.disabled !== undefined) {
       await q.query(
@@ -292,10 +293,11 @@ export async function setPin(
     if (rows[0].role === 'accountant') throw badRequest('An accountant doesn’t use the register, so has no PIN');
     const self = actor.kind === 'merchant_user' && actor.user_id === userId;
     if (!self) assertCanManage(actor, rows[0].role === 'owner');
-    await q.query('UPDATE memberships SET pin_hash = $3, pin_set_at = now() WHERE user_id = $1 AND merchant_id = $2', [
+    await q.query('UPDATE memberships SET pin_hash = $3, pin_length = $4, pin_set_at = now() WHERE user_id = $1 AND merchant_id = $2', [
       userId,
       merchantId,
       hashPin(pin),
+      pin.length,
     ]);
     const version = await bumpCatalogVersion(q, merchantId);
     // Never the PIN or its hash in the audit trail: only that it changed and who changed it.
