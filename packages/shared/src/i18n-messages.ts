@@ -48,6 +48,16 @@ export const EN = {
   r_tax_included_note: '* Price includes tax',
 
   r_tax_exempt: 'Tax exempt {certificate}',
+
+  r_check: 'Check',
+
+  r_ebt: 'EBT',
+
+  r_gift_card: 'Gift card',
+
+  r_house_account: 'House account',
+
+  r_other_tender: 'Other tender',
   r_total: 'TOTAL',
   r_cash_applied: 'Cash price applied',
   r_card_applied: 'Card price applied',
@@ -129,6 +139,16 @@ const es: Messages = {
   r_tax_included_note: '* Precio con impuesto incluido',
 
   r_tax_exempt: 'Exento de impuesto {certificate}',
+
+  r_check: 'Cheque',
+
+  r_ebt: 'EBT',
+
+  r_gift_card: 'Tarjeta de regalo',
+
+  r_house_account: 'Cuenta de la casa',
+
+  r_other_tender: 'Otro pago',
   r_total: 'TOTAL',
   r_cash_applied: 'Precio en efectivo aplicado',
   r_card_applied: 'Precio con tarjeta aplicado',
@@ -204,6 +224,16 @@ const zh: Messages = {
   r_tax_included_note: '* 价格已含税',
 
   r_tax_exempt: '免税 {certificate}',
+
+  r_check: '支票',
+
+  r_ebt: 'EBT',
+
+  r_gift_card: '礼品卡',
+
+  r_house_account: '店内账户',
+
+  r_other_tender: '其他付款',
   r_total: '总计',
   r_cash_applied: '按现金价结算',
   r_card_applied: '按刷卡价结算',
@@ -279,6 +309,16 @@ const ko: Messages = {
   r_tax_included_note: '* 세금 포함 가격',
 
   r_tax_exempt: '면세 {certificate}',
+
+  r_check: '수표',
+
+  r_ebt: 'EBT',
+
+  r_gift_card: '기프트 카드',
+
+  r_house_account: '외상 계정',
+
+  r_other_tender: '기타 결제',
   r_total: '합계',
   r_cash_applied: '현금 가격 적용',
   r_card_applied: '카드 가격 적용',
@@ -354,6 +394,16 @@ const ar: Messages = {
   r_tax_included_note: '* السعر يشمل الضريبة',
 
   r_tax_exempt: 'معفى من الضريبة {certificate}',
+
+  r_check: 'شيك',
+
+  r_ebt: 'EBT',
+
+  r_gift_card: 'بطاقة هدية',
+
+  r_house_account: 'حساب المتجر',
+
+  r_other_tender: 'دفع آخر',
   r_total: 'الإجمالي',
   r_cash_applied: 'تم تطبيق سعر النقد',
   r_card_applied: 'تم تطبيق سعر البطاقة',
@@ -429,6 +479,16 @@ const hi: Messages = {
   r_tax_included_note: '* कीमत में टैक्स शामिल है',
 
   r_tax_exempt: 'टैक्स मुक्त {certificate}',
+
+  r_check: 'चेक',
+
+  r_ebt: 'EBT',
+
+  r_gift_card: 'गिफ्ट कार्ड',
+
+  r_house_account: 'दुकान खाता',
+
+  r_other_tender: 'अन्य भुगतान',
   r_total: 'कुल',
   r_cash_applied: 'नकद कीमत लागू',
   r_card_applied: 'कार्ड कीमत लागू',
@@ -504,6 +564,16 @@ const bn: Messages = {
   r_tax_included_note: '* দামে ট্যাক্স অন্তর্ভুক্ত',
 
   r_tax_exempt: 'ট্যাক্স মুক্ত {certificate}',
+
+  r_check: 'চেক',
+
+  r_ebt: 'EBT',
+
+  r_gift_card: 'গিফট কার্ড',
+
+  r_house_account: 'দোকানের হিসাব',
+
+  r_other_tender: 'অন্য পেমেন্ট',
   r_total: 'মোট',
   r_cash_applied: 'নগদ দাম প্রযোজ্য',
   r_card_applied: 'কার্ডের দাম প্রযোজ্য',
@@ -579,6 +649,16 @@ const gu: Messages = {
   r_tax_included_note: '* કિંમતમાં ટેક્સ સામેલ છે',
 
   r_tax_exempt: 'ટેક્સ મુક્ત {certificate}',
+
+  r_check: 'ચેક',
+
+  r_ebt: 'EBT',
+
+  r_gift_card: 'ગિફ્ટ કાર્ડ',
+
+  r_house_account: 'દુકાન ખાતું',
+
+  r_other_tender: 'અન્ય ચુકવણી',
   r_total: 'કુલ',
   r_cash_applied: 'રોકડ ભાવ લાગુ',
   r_card_applied: 'કાર્ડ ભાવ લાગુ',
@@ -654,6 +734,16 @@ const ht: Messages = {
   r_tax_included_note: '* Pri a gen taks ladan l',
 
   r_tax_exempt: 'San taks {certificate}',
+
+  r_check: 'Chèk',
+
+  r_ebt: 'EBT',
+
+  r_gift_card: 'Kat kado',
+
+  r_house_account: 'Kont magazen',
+
+  r_other_tender: 'Lòt peman',
   r_total: 'TOTAL',
   r_cash_applied: 'Pri kach aplike',
   r_card_applied: 'Pri kat aplike',

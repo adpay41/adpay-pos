@@ -99,6 +99,8 @@ export function wrap(text: string, width = RECEIPT_WIDTH): string[] {
   return out;
 }
 
+const OTHER_KEY = { ebt: 'r_ebt', gift_card: 'r_gift_card', house_account: 'r_house_account', other: 'r_other_tender' } as const;
+
 export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
   const { header, sale } = input;
   // A split sale lists items at the cash price and totals what was actually paid (ADR 0017).
@@ -205,6 +207,10 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
     if (tender.tender_type === 'cash') {
       push(pad(t('r_cash'), money(add(tender.amount_cents, tender.change_cents))));
       push(pad(t('r_change'), money(tender.change_cents)), 'bold');
+    } else if (tender.tender_type === 'check' || tender.tender_type === 'other') {
+      // A check or another tender (ADR 0050): what it was and its reference.
+      const what = tender.tender_type === 'check' ? t('r_check') : t(OTHER_KEY[tender.other_kind ?? 'other']);
+      push(pad(`${what}${tender.reference ? ` #${tender.reference}` : ''}`, money(tender.amount_cents)));
     } else {
       // Brand and last four only: the only card facts we ever hold (CLAUDE.md rule 3).
       const card = tender.card ? `${(tender.card.brand ?? t('r_card')).toUpperCase()} ****${tender.card.last4 ?? '----'}` : t('r_card');

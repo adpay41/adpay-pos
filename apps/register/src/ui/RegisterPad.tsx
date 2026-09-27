@@ -28,6 +28,7 @@ export function RegisterPad({
   onCash,
   onCard,
   onRejectBill,
+  onOther,
   extraKeys,
   pendingQty,
 }: {
@@ -45,6 +46,8 @@ export function RegisterPad({
   onCash: (amount: Cents, partial: boolean) => void;
   onCard: (amount: Cents | undefined) => void;
   onRejectBill: () => void;
+  /** Check or another tender (ADR 0050). */
+  onOther: () => void;
   /** Keys that use the typed number for something else (@ quantity, PLU, department ring). */
   extraKeys?: ReactNode;
   /** A count set with @, waiting for the next item (ADR 0047). */
@@ -113,9 +116,14 @@ export function RegisterPad({
           </Pressable>
         ) : null}
         </View>
-        <Pressable style={s.small} onPress={onRejectBill}>
-          <Text style={s.smallText}>{t('Reject a bill')}</Text>
-        </Pressable>
+        <View style={s.row}>
+          <Pressable style={[s.small, !canTender && s.disabled]} disabled={!canTender} onPress={onOther}>
+            <Text style={s.smallText}>{t('Check / other')}</Text>
+          </Pressable>
+          <Pressable style={s.small} onPress={onRejectBill}>
+            <Text style={s.smallText}>{t('Reject a bill')}</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );

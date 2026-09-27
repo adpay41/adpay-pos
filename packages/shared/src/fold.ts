@@ -3,7 +3,7 @@
  * the register, the API and the tests all call it. Totals are never stored and edited; they are
  * recomputed from the immutable events every time (ADR 0002, ADR 0004).
  */
-import type { RegisterEvent } from './events';
+import type { OTHER_TENDER_KINDS, RegisterEvent, TenderType } from './events';
 import type { Lang } from './i18n';
 import { add, cents, includedTaxHalfUp, sub, sum, ZERO, type Cents } from './money';
 import { computeTotals, lineNet, type PriceMode, type TaxableLine, type Totals } from './pricing';
@@ -52,7 +52,10 @@ export interface FoldedLine {
 
 export interface FoldedTender {
   tender_id: string;
-  tender_type: 'cash' | 'card';
+  tender_type: TenderType;
+  /** Check number or other tender's reference, and which other tender (ADR 0050). */
+  reference: string | null;
+  other_kind: (typeof OTHER_TENDER_KINDS)[number] | null;
   amount_cents: Cents;
   change_cents: Cents;
   approved: boolean;
@@ -210,7 +213,10 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           tender_type: p.tender_type,
           amount_cents: cents(p.amount_cents),
           change_cents: cents(p.change_cents ?? 0),
-          approved: p.tender_type === 'cash' || p.card?.status === 'approved',
+          // Only a card can be declined; cash, a check or another tender is taken as handed over.
+          approved: p.tender_type !== 'card' || p.card?.status === 'approved',
+          reference: p.reference ?? null,
+          other_kind: p.other_kind ?? null,
           covers_cash_cents: ZERO, // settled after the loop, once the totals are known
           card: p.card ? { brand: p.card.brand, last4: p.card.last4, provider: p.card.provider, provider_ref: p.card.provider_ref, approval_code: p.card.approval_code } : null,
         });
@@ -298,7 +304,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
     const cover =
       explicit !== null && explicit !== undefined
         ? Math.min(explicit, remaining)
-        : t.tender_type === 'cash'
+        : t.tender_type !== 'card'
           ? Math.min(t.amount_cents, remaining)
           : coverForCard(t.amount_cents, remaining, cash.total_cents, card.total_cents);
     t.covers_cash_cents = cents(cover);

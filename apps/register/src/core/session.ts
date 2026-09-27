@@ -8,6 +8,7 @@
  */
 import {
   isDepartmentItem,
+  OTHER_TENDER_KINDS,
   TAX_EXEMPT_REASONS,
   type BasketDiscount,
   type Lang,
@@ -449,8 +450,11 @@ export class SaleSession {
   private async complete(saleId: string): Promise<FoldedSale> {
     const sale = this.current();
     const approved = sale.tenders.filter((t) => t.approved);
-    const types = new Set(approved.map((t) => t.tender_type));
-    const mode: CompletionMode = types.size > 1 ? 'split' : types.has('card') ? 'card' : 'cash';
+    // Only a card pays at the card price: card with anything else is split; checks and other
+    // tenders pay at the cash price like cash (ADR 0050).
+    const hasCard = approved.some((t) => t.tender_type === 'card');
+    const hasOther = approved.some((t) => t.tender_type !== 'card');
+    const mode: CompletionMode = hasCard && hasOther ? 'split' : hasCard ? 'card' : 'cash';
     const totals =
       mode === 'cash'
         ? sale.cash
@@ -489,7 +493,7 @@ export class SaleSession {
       const change = tendered < left ? cents(0) : changeDue(left, tendered);
       await this.emit(
         'sale.tender_added',
-        { tender_id: this.deps.uuid(), tender_type: 'cash', amount_cents: applied, tendered_cents: tendered, change_cents: change, card: null, covers_cash_cents: applied },
+        { tender_id: this.deps.uuid(), tender_type: 'cash', amount_cents: applied, tendered_cents: tendered, change_cents: change, card: null, covers_cash_cents: applied, reference: null, other_kind: null },
         sale.sale_id,
       );
       if (applied < left) {
@@ -497,6 +501,46 @@ export class SaleSession {
         return { sale: this.current(), change, completed: false };
       }
       return { sale: await this.complete(sale.sale_id), change, completed: true };
+    });
+  }
+
+  /**
+   * A check or another tender (ADR 0050: EBT, gift card, house account…), at the cash price. It
+   * pays exactly what it's for: never more than what's left, no change. Less than what's left pays
+   * part; the rest goes on another tender.
+   */
+  tenderOther(
+    kind: 'check' | 'other',
+    amount: Cents,
+    opts: { reference: string | null; other_kind?: (typeof OTHER_TENDER_KINDS)[number] | null },
+  ): Promise<{ sale: FoldedSale; completed: boolean }> {
+    return this.serial(async () => {
+      const sale = this.current();
+      if (sale.lines.length === 0) throw new SaleError('Nothing to charge');
+      const left = sale.remaining_cash_cents;
+      if (left <= 0) throw new SaleError('This ticket is already paid');
+      if (amount <= 0) throw new SaleError('Enter an amount');
+      if (amount > left) throw new SaleError('That’s more than is due');
+      await this.emit(
+        'sale.tender_added',
+        {
+          tender_id: this.deps.uuid(),
+          tender_type: kind,
+          amount_cents: amount,
+          tendered_cents: null,
+          change_cents: null,
+          card: null,
+          covers_cash_cents: amount,
+          reference: opts.reference,
+          other_kind: kind === 'other' ? (opts.other_kind ?? 'other') : null,
+        },
+        sale.sale_id,
+      );
+      if (amount < left) {
+        this.notify();
+        return { sale: this.current(), completed: false };
+      }
+      return { sale: await this.complete(sale.sale_id), completed: true };
     });
   }
 
@@ -551,6 +595,8 @@ export class SaleSession {
           change_cents: null,
           card: { provider: result.provider, provider_ref: result.provider_ref, status: 'approved', approval_code: result.approval_code, brand: result.brand, last4: result.last4 },
           covers_cash_cents: covers,
+          reference: null,
+          other_kind: null,
         },
         sale.sale_id,
       );

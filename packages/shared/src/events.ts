@@ -21,7 +21,11 @@ const RatePpmSchema = z.int().min(0).max(1_000_000);
 const Qty = z.int().min(1).max(10_000);
 
 export const PriceModeSchema = z.enum(['cash', 'card']);
-export const TenderTypeSchema = z.enum(['cash', 'card']);
+/** How a tender paid (ADR 0050): cash and card, plus checks and other named tenders at the cash price. */
+export const TenderTypeSchema = z.enum(['cash', 'card', 'check', 'other']);
+export type TenderType = z.infer<typeof TenderTypeSchema>;
+/** What an `other` tender is (ADR 0050). */
+export const OTHER_TENDER_KINDS = ['ebt', 'gift_card', 'house_account', 'other'] as const;
 
 const SaleOpened = z.strictObject({
   cashier_user_id: Uuid.nullable(),
@@ -150,6 +154,10 @@ const TenderAdded = z.strictObject({
    * Null on older events: derived by the fold (cash covers what it pays; card covers amount × C/K).
    */
   covers_cash_cents: NonNegCents.nullable().default(null),
+  /** A check number, or a gift-card / EBT / account reference (ADR 0050). Never card data. Additive. */
+  reference: z.string().trim().max(40).nullable().default(null),
+  /** For `other`: which tender it was. Additive. */
+  other_kind: z.enum(OTHER_TENDER_KINDS).nullable().default(null),
 });
 
 const SaleCompleted = z.strictObject({
