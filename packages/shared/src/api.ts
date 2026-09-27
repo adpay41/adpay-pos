@@ -173,7 +173,7 @@ export interface SaleListRow {
   register_name: string;
   location_name: string;
   occurred_at: string;
-  status: 'completed' | 'voided' | 'open' | 'suspended';
+  status: 'completed' | 'voided' | 'open' | 'suspended' | 'returned';
   price_mode: 'cash' | 'card' | 'split' | null;
   total_cents: number;
   item_count: number;

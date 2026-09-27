@@ -30,6 +30,13 @@ export const OTHER_TENDER_KINDS = ['ebt', 'gift_card', 'house_account', 'other']
 const SaleOpened = z.strictObject({
   cashier_user_id: Uuid.nullable(),
   catalog_version: z.int().nonnegative(),
+  /**
+   * `return`: a refund without a receipt (ADR 0051). The items coming back are rung as lines and it
+   * closes with a cash \`sale.refunded\`; it is never a sale. Additive: older events are sales.
+   */
+  kind: z.enum(['sale', 'return']).default('sale'),
+  /** Why, for a return. */
+  reason: z.string().max(200).nullable().default(null),
 });
 
 /** One per-unit charge on a line, in each price mode (a percentage charge differs by mode). */

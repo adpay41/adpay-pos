@@ -161,11 +161,14 @@ export async function recentSales(q: Queryable, merchantId: string | null, limit
             min(e.occurred_at) AS occurred_at,
             CASE WHEN bool_or(e.type = 'sale.voided') THEN 'voided'
                  WHEN bool_or(e.type = 'sale.completed') THEN 'completed'
+                 -- A return without a receipt (ADR 0051), once its money went back.
+                 WHEN bool_or(e.type = 'sale.opened' AND e.payload->>'kind' = 'return') AND bool_or(e.type = 'sale.refunded') THEN 'returned'
                  WHEN (array_agg(e.type ORDER BY e.device_seq DESC)
                          FILTER (WHERE e.type IN ('sale.suspended', 'sale.resumed')))[1] = 'sale.suspended' THEN 'suspended'
                  ELSE 'open' END AS status,
             max(e.payload->>'price_mode') FILTER (WHERE e.type = 'sale.completed') AS price_mode,
-            coalesce(max((e.payload->>'total_cents')::bigint) FILTER (WHERE e.type = 'sale.completed'), 0)::bigint AS total_cents,
+            coalesce(max((e.payload->>'total_cents')::bigint) FILTER (WHERE e.type = 'sale.completed'),
+                     -sum((e.payload->>'amount_cents')::bigint) FILTER (WHERE e.type = 'sale.refunded'), 0)::bigint AS total_cents,
             count(*) FILTER (WHERE e.type = 'sale.line_added') AS item_count,
             (array_agg(u.name ORDER BY e.device_seq DESC) FILTER (WHERE u.name IS NOT NULL))[1] AS cashier_name
        FROM latest

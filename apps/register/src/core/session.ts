@@ -203,14 +203,53 @@ export class SaleSession {
     return event;
   }
 
-  private async ensureOpen(): Promise<string> {
+  private async ensureOpen(ret?: { reason: string }): Promise<string> {
     if (this.saleId) return this.saleId;
     const id = this.deps.uuid();
     this.saleId = id;
     this.events = [];
     await this.deps.store.setMeta(OPEN_SALE_KEY, id);
-    await this.emit('sale.opened', { cashier_user_id: this.actor, catalog_version: this.deps.catalogVersion() }, id);
+    await this.emit(
+      'sale.opened',
+      { cashier_user_id: this.actor, catalog_version: this.deps.catalogVersion(), kind: ret ? 'return' : 'sale', reason: ret?.reason ?? null },
+      id,
+    );
     return id;
+  }
+
+  /**
+   * Start a return without a receipt (ADR 0051): a new ticket where the items coming back are rung
+   * like a sale (at today's price, tax by department), then refunded in cash with `completeReturn`.
+   * The caller checks `refund.no_receipt` (or gets a manager's override). Not over an open sale.
+   */
+  startReturn(reason: string): Promise<SessionState> {
+    return this.serial(async () => {
+      if (this.saleId && this.current().lines.length > 0) throw new SaleError('Finish or hold the ticket on screen first');
+      if (this.saleId) await this.clearOpen();
+      await this.ensureOpen({ reason });
+      this.notify();
+      return this.state();
+    });
+  }
+
+  /** Refund a return ticket in cash: everything rung on it, at its cash total (ADR 0051). */
+  completeReturn(): Promise<{ sale: FoldedSale; amount: Cents }> {
+    return this.serial(async () => {
+      const sale = this.current();
+      if (sale.kind !== 'return') throw new SaleError('This is not a return');
+      if (sale.lines.length === 0) throw new SaleError('Ring what is coming back first');
+      const amount = sale.cash.total_cents;
+      await this.emit(
+        'sale.refunded',
+        { refund_id: this.deps.uuid(), tender_type: 'cash', amount_cents: amount, reason: sale.return_reason ?? 'Return without a receipt', by_user_id: this.actor, card: null, lines: sale.lines.map((l) => ({ line_id: l.line_id, qty: l.qty })) },
+        sale.sale_id,
+      );
+      await this.emit('drawer.opened', { reason: 'refund', by_user_id: this.actor }, sale.sale_id);
+      const done = this.current();
+      await this.clearOpen();
+      this.notify();
+      return { sale: done, amount };
+    });
   }
 
   private async clearOpen() {
@@ -258,7 +297,9 @@ export class SaleSession {
         this.notify();
         return this.state();
       }
-      if (item.min_age && !opts.ageConfirmed) throw new SaleError(`${item.name} needs an age check (${item.min_age}+)`);
+      // Something coming back on a return (ADR 0051) needs no age check, and none is logged.
+      const isReturn = this.saleId !== null && this.current().kind === 'return';
+      if (item.min_age && !opts.ageConfirmed && !isReturn) throw new SaleError(`${item.name} needs an age check (${item.min_age}+)`);
       if (item.open_price && !opts.price) throw new SaleError(`Enter a price for ${item.name}`);
       const saleId = await this.ensureOpen();
       const line_id = this.deps.uuid();
@@ -294,7 +335,7 @@ export class SaleSession {
         },
         saleId,
       );
-      if (item.min_age)
+      if (item.min_age && !isReturn)
         await this.emit(
           'sale.age_verified',
           { line_id, method: opts.idCheck ? 'id_scan' : 'manual', verified_by_user_id: this.actor, id_check: opts.idCheck ?? null },
@@ -315,7 +356,8 @@ export class SaleSession {
     const ctx = this.deps.promotions?.();
     if (!ctx || !this.saleId) return;
     const sale = foldSale(this.saleId, this.events);
-    if (sale.status !== 'open') return;
+    // A return (ADR 0051) comes back at the plain price: no deals.
+    if (sale.status !== 'open' || sale.kind === 'return') return;
     const wanted = applyPromotions(ctx.promotions, sale, { location_id: ctx.location_id, at: this.now(), timezone: ctx.timezone, dual_price_rate_ppm: ctx.dual_price_rate_ppm });
     for (const c of promotionChanges(sale, wanted)) {
       await this.emit('sale.line_discounted', { line_id: c.line_id, cash_discount_cents: c.cash_discount_cents, card_discount_cents: c.card_discount_cents, reason: c.reason, promo_id: c.promo_id }, this.saleId);
@@ -487,6 +529,7 @@ export class SaleSession {
       const sale = this.current();
       if (sale.lines.length === 0) throw new SaleError('Nothing to charge');
       const left = sale.remaining_cash_cents;
+      if (sale.kind === 'return') throw new SaleError('This is a return: refund it instead');
       if (left <= 0) throw new SaleError('This ticket is already paid');
       if (tendered < left && !opts.partial) throw new SaleError('Not enough cash');
       const applied = tendered < left ? tendered : left;
@@ -518,6 +561,7 @@ export class SaleSession {
       const sale = this.current();
       if (sale.lines.length === 0) throw new SaleError('Nothing to charge');
       const left = sale.remaining_cash_cents;
+      if (sale.kind === 'return') throw new SaleError('This is a return: refund it instead');
       if (left <= 0) throw new SaleError('This ticket is already paid');
       if (amount <= 0) throw new SaleError('Enter an amount');
       if (amount > left) throw new SaleError('That’s more than is due');
@@ -553,6 +597,7 @@ export class SaleSession {
     return this.serial(async () => {
       const sale = this.current();
       if (sale.lines.length === 0) throw new SaleError('Nothing to charge');
+      if (sale.kind === 'return') throw new SaleError('This is a return: refund it instead');
       const due = cardAmountFor(sale.remaining_cash_cents, sale.cash.total_cents, sale.card.total_cents);
       const charge = amount ?? due;
       if (charge <= 0) throw new SaleError('This ticket is already paid');

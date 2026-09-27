@@ -67,6 +67,7 @@ import { HeldTickets, TicketBrowser } from './TicketsUI';
 import { findByPlu, padCents, padQty } from '../core/pad';
 import { BasketPanel } from './BasketUI';
 import { OtherTenderPanel } from './OtherTenderUI';
+import { ReturnStartPanel } from './ReturnUI';
 import { TAX_EXEMPT_LABEL, TaxFreePanel } from './TaxFreeUI';
 import { RegisterPad } from './RegisterPad';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
@@ -111,7 +112,8 @@ type Modal =
   | { kind: 'checklist' }
   | { kind: 'basket' }
   | { kind: 'tax_free' }
-  | { kind: 'other_tender' };
+  | { kind: 'other_tender' }
+  | { kind: 'return_start' };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
   const t = useT();
@@ -314,6 +316,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
 
   const sale = session.sale;
   const ticketTotals = sale ? shownTotals(sale.cash) : null;
+  // A return without a receipt (ADR 0051): the items coming back, then a cash refund. No tenders.
+  const isReturn = sale?.kind === 'return';
   // Feature flags for this merchant (P12b); an older snapshot without them means everything on.
   const flags = resolveFlags(catalog.flags ?? {});
   const cardOk = sync?.online ?? false;
@@ -378,7 +382,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     if (atQty !== null) setAtQty(null);
     if (priceCheck) return setModal({ kind: 'price_check', item, showCost: false });
     // The age check keeps a price already known (a price label, or an amount rung to a department).
-    if (item.min_age && !opts.ageConfirmed && !ses.wouldMerge(item)) return setModal({ kind: 'age', item, qty, entry: opts.entry, ...(opts.labelPrice !== undefined ? { labelPrice: opts.labelPrice } : {}) });
+    if (item.min_age && !opts.ageConfirmed && !ses.wouldMerge(item) && !isReturn) return setModal({ kind: 'age', item, qty, entry: opts.entry, ...(opts.labelPrice !== undefined ? { labelPrice: opts.labelPrice } : {}) });
     // A price-embedded label (P21) carries the price: no need to ask.
     const price = opts.labelPrice !== undefined ? { cash: cents(opts.labelPrice), card: deriveCardPrice(cents(opts.labelPrice), catalog.dual_price_rate_ppm) } : undefined;
     if (item.open_price && !price) return setModal({ kind: 'open_price', item, qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed });
@@ -616,6 +620,18 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     pendingCash.current = null;
     setModal({ kind: 'none' });
     if (p) void tender(p.amount, p.partial);
+  }
+
+  async function refundReturn() {
+    await run(async () => {
+      const r = await ses.completeReturn();
+      rt.log.info('return without receipt', { sale: r.sale.sale_id.slice(0, 8), amount_cents: r.amount, lines: r.sale.lines.length });
+      if (!training) await hardware.kickDrawer();
+      await hardware.printReceipt(receiptFor(r.sale, 'original', `RETURN - ${usd(r.amount)} refunded`));
+      await rt.drawer.refresh();
+      rt.sync.kick();
+      setModal({ kind: 'error', message: t('Refunded {amount} in cash.', { amount: usd(r.amount) }), done: true });
+    });
   }
 
   async function tender(amount: number, partial = false) {
@@ -878,7 +894,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onDigits={setPad}
             dueCash={sale?.remaining_cash_cents ?? 0}
             dueCard={sale ? cardAmountFor(sale.remaining_cash_cents, sale.cash.total_cents, sale.card.total_cents) : 0}
-            canTender={!!sale?.lines.length}
+            canTender={!!sale?.lines.length && !isReturn}
             cardShown={flags.card_payments && !training}
             cardOk={cardOk}
             allowPart={cardOk && flags.card_payments && !training}
@@ -978,6 +994,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           </ScrollView>
           <View style={s.totals}>
             {/* Items at their marked prices; tax already inside a price isn't added again (ADR 0044). */}
+            {isReturn ? (
+              <View style={s.returnBanner}>
+                <Text style={s.returnText}>{t('RETURN — no receipt')}{sale?.return_reason ? ` · ${sale.return_reason}` : ''}</Text>
+                <Text style={s.returnSub}>{t('Ring what is coming back: it is refunded at today’s price, in cash.')}</Text>
+              </View>
+            ) : null}
             {sale?.basket ? <Row label={t('Ticket discount')} value={-sale.basket.cash_cents} /> : null}
             <Row label={t('Subtotal')} value={ticketTotals?.items_cents ?? 0} />
             <Row label={sale?.tax_exempt ? t('Tax (tax-free: {why})', { why: t(TAX_EXEMPT_LABEL[(sale.tax_exempt.reason ?? 'other') as keyof typeof TAX_EXEMPT_LABEL]) }) : t('Tax')} value={ticketTotals?.added_tax_cents ?? 0} />
@@ -992,6 +1014,12 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 <Text style={s.dualValue}>{usd(sale?.card.total_cents ?? 0)}</Text>
               </View>
             </View>
+            {isReturn ? (
+              // Black, not red: it carries an amount.
+              <Pressable style={[s.refundBtn, !sale?.lines.length && s.disabled]} disabled={!sale?.lines.length} onPress={() => void refundReturn()}>
+                <Text style={s.refundText}>{t('Refund {amount} in cash', { amount: usd(sale?.cash.total_cents ?? 0) })}</Text>
+              </Pressable>
+            ) : null}
             {sale && sale.tenders.some((t) => t.approved) ? (
               <View style={s.partPaid}>
                 <Text style={s.partPaidText}>
@@ -1089,6 +1117,11 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         <Pressable style={[s.ghost, !sale?.lines.length && s.disabled, sale?.basket && s.ghostOn]} disabled={!sale?.lines.length} onPress={() => setModal({ kind: 'basket' })}>
           <Text style={sale?.basket ? { color: '#fff' } : undefined}>{sale?.basket ? t('Discount on') : t('Discount')}</Text>
         </Pressable>
+        {!training ? (
+          <Pressable style={[s.ghost, isReturn && s.ghostOn, !!sale?.lines.length && !isReturn && s.disabled]} disabled={!!sale?.lines.length && !isReturn} onPress={() => setModal({ kind: 'return_start' })}>
+            <Text style={isReturn ? { color: '#fff' } : undefined}>{t('Return (no receipt)')}</Text>
+          </Pressable>
+        ) : null}
         <Pressable style={[s.ghost, !sale?.lines.length && s.disabled, sale?.tax_exempt && s.ghostOn]} disabled={!sale?.lines.length} onPress={() => setModal({ kind: 'tax_free' })}>
           <Text style={sale?.tax_exempt ? { color: '#fff' } : undefined}>{t('Tax-free')}</Text>
         </Pressable>
@@ -1219,6 +1252,18 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Text style={s.primaryText}>{t('ID checked — {age}+', { age: modal.batch.min_age ?? '' })}</Text>
             </Pressable>
           </View>
+        </Overlay>
+      )}
+
+      {modal.kind === 'return_start' && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <ReturnStartPanel
+            onCancel={() => setModal({ kind: 'none' })}
+            onStart={(reason) => {
+              setModal({ kind: 'none' });
+              guarded('refund.no_receipt', null, () => ses.startReturn(reason));
+            }}
+          />
         </Overlay>
       )}
 
@@ -1656,7 +1701,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onCashBack={async (sale, amount, what) => {
               rt.log.info(what === 'void' ? 'completed sale voided' : 'refund', { sale: sale.sale_id.slice(0, 8), amount_cents: amount });
               // Only cash coming back opens the drawer; a card refund goes to the card.
-              if (amount > 0 && sale.tenders.some((t) => t.tender_type === 'cash')) await hardware.kickDrawer();
+              // Anything not paid by card (cash, a check, EBT…) comes back as cash (ADR 0050).
+              if (amount > 0 && sale.tenders.some((t) => t.approved && t.tender_type !== 'card')) await hardware.kickDrawer();
               await hardware.printReceipt(receiptFor(sale, 'reprint', what === 'void' ? `VOID - ${usd(amount)} returned` : `REFUND - ${usd(amount)} returned`));
               await rt.drawer.refresh();
               rt.sync.kick();
@@ -1902,6 +1948,11 @@ const s = StyleSheet.create({
   deptKeySub: { color: '#ccc', fontSize: 12, fontVariant: ['tabular-nums'] },
   pageTab: { borderColor: C.black },
   tabGap: { width: 1, backgroundColor: C.line, marginHorizontal: 4 },
+  returnBanner: { backgroundColor: C.black, borderRadius: 8, padding: 10, gap: 2 },
+  returnText: { color: '#fff', fontWeight: '800' },
+  returnSub: { color: '#ddd', fontSize: 12 },
+  refundBtn: { backgroundColor: C.black, borderRadius: 10, paddingVertical: 16, alignItems: 'center' },
+  refundText: { color: '#fff', fontWeight: '800', fontSize: 18 },
   shortcutBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line },
   catActive: { backgroundColor: C.black },
   catText: { fontWeight: '700', color: C.ink, fontSize: 15 },
