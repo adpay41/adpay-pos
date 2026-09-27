@@ -92,6 +92,19 @@ const LineDiscounted = z.strictObject({
   promo_id: Uuid.nullable().optional(),
 });
 
+/**
+ * One discount on the whole ticket (ADR 0048): a percent or a cash-price amount, with a reason. The
+ * latest one wins; one that takes nothing off removes it. The fold spreads it over the lines.
+ */
+const BasketDiscounted = z
+  .strictObject({
+    kind: z.enum(['percent', 'amount']),
+    percent_ppm: z.int().min(0).max(1_000_000).nullable(),
+    amount_cents: NonNegCents.nullable(),
+    reason: z.string().max(200).nullable(),
+  })
+  .refine((d) => (d.kind === 'percent' ? d.amount_cents === null : d.percent_ppm === null), { message: 'A percent or an amount, not both' });
+
 const AgeVerified = z.strictObject({
   line_id: Uuid,
   /** 'id_scan' (P16b): the licence barcode was read and passed; manual = the cashier looked. */
@@ -326,6 +339,7 @@ export const EventPayloads = {
   'sale.line_removed': LineRemoved,
   'sale.line_qty_changed': LineQtyChanged,
   'sale.line_discounted': LineDiscounted,
+  'sale.basket_discounted': BasketDiscounted,
   'sale.age_verified': AgeVerified,
   'sale.tender_added': TenderAdded,
   'sale.card_attempt': CardAttempt,

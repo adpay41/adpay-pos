@@ -65,6 +65,7 @@ import { DrawerPanel } from './DrawerUI';
 import { CardPanel, type CardPhase } from './TenderUI';
 import { HeldTickets, TicketBrowser } from './TicketsUI';
 import { findByPlu, padCents, padQty } from '../core/pad';
+import { BasketPanel } from './BasketUI';
 import { RegisterPad } from './RegisterPad';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
@@ -105,7 +106,8 @@ type Modal =
   | { kind: 'remove_usual'; usual: CashierUsual }
   | { kind: 'receive' }
   | { kind: 'write_off' }
-  | { kind: 'checklist' };
+  | { kind: 'checklist' }
+  | { kind: 'basket' };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
   const t = useT();
@@ -971,6 +973,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
           </ScrollView>
           <View style={s.totals}>
             {/* Items at their marked prices; tax already inside a price isn't added again (ADR 0044). */}
+            {sale?.basket ? <Row label={t('Ticket discount')} value={-sale.basket.cash_cents} /> : null}
             <Row label={t('Subtotal')} value={ticketTotals?.items_cents ?? 0} />
             <Row label={t('Tax')} value={ticketTotals?.added_tax_cents ?? 0} />
             {ticketTotals && ticketTotals.included_tax_cents > 0 ? <Row label={t('Tax included in prices')} value={ticketTotals.included_tax_cents} /> : null}
@@ -1078,6 +1081,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             <Text>{t('Hold')}</Text>
           </Pressable>
         ) : null}
+        <Pressable style={[s.ghost, !sale?.lines.length && s.disabled, sale?.basket && s.ghostOn]} disabled={!sale?.lines.length} onPress={() => setModal({ kind: 'basket' })}>
+          <Text style={sale?.basket ? { color: '#fff' } : undefined}>{sale?.basket ? t('Discount on') : t('Discount')}</Text>
+        </Pressable>
         {session.parked.length ? (
           <Pressable style={[s.ghost, s.ghostOn]} onPress={() => setModal({ kind: 'held' })}>
             <Text style={{ color: '#fff' }}>{t('Held ({count})', { count: session.parked.length })}</Text>
@@ -1205,6 +1211,25 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Text style={s.primaryText}>{t('ID checked — {age}+', { age: modal.batch.min_age ?? '' })}</Text>
             </Pressable>
           </View>
+        </Overlay>
+      )}
+
+      {modal.kind === 'basket' && sale && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <BasketPanel
+            sale={sale}
+            typedCents={padCents(pad)}
+            onCancel={() => setModal({ kind: 'none' })}
+            onRemove={() => {
+              setModal({ kind: 'none' });
+              guarded('ticket.discount', sale.sale_id, () => ses.discountTicket(null));
+            }}
+            onApply={(d) => {
+              setModal({ kind: 'none' });
+              if (d.kind === 'amount') setPad('');
+              guarded('ticket.discount', sale.sale_id, () => ses.discountTicket(d));
+            }}
+          />
         </Overlay>
       )}
 

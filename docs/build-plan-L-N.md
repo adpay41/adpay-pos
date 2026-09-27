@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| Key pages, @ and PLU | #50 | Open — owner-named register tabs with item and department-amount keys (merchant app editor, snapshot), @ quantity and PLU keys on the pad. ADR 0047. |
+| Basket discount | #51 | Open — whole-ticket percent or amount with a reason, one event spread over the lines by the fold; tax, refunds, receipt, Z and profit agree; manager override for cashiers. ADR 0048. |
+| Key pages, @ and PLU | #50 | Merged — owner-named register tabs with item and department-amount keys (merchant app editor, snapshot), @ quantity and PLU keys on the pad. ADR 0047. |
 | Department ring | #49 | Merged — amount straight to a department with no item: nullable item_id on the line event, the department supplies tax/age/name, every consumer handles it; pad key → Department. ADR 0046. |
 | Register layout A | #48 | Merged — department tabs across the top, the register pad (digits, quick cash, Cash/Card, reject a bill) on the main screen replacing the cash modal, ticket on the right, shortcut bar underneath. ADR 0045. |
 | Tax-inclusive prices | #47 | Merged — item flag (merchant app toggle, set by the NRS import), line event records it, tax backed out per rate group, total = pre-tax subtotal + tax with included tax, receipt shows marked prices and incl. tax; tested on mixed tickets, refunds and split tender. ADR 0044. |

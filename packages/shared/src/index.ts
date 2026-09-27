@@ -39,6 +39,7 @@ export * from './catalog-import';
 export * from './nrs-import';
 export * from './department';
 export * from './key-pages';
+export * from './basket';
 export * from './timeclock';
 export * from './zreport';
 export * from './idscan';
