@@ -1,6 +1,8 @@
 /**
- * Department ring (ADR 0046): the server takes a sale line with no item (`item_id: null`,
- * `price_source: 'department'`) and every report folds it by its department. Real Postgres in CI.
+ * Sale variants on the server, real Postgres in CI:
+ * - department ring (ADR 0046): a line with no item (`item_id: null`, `price_source: 'department'`),
+ *   folded by its department in every report;
+ * - tax-free sale (ADR 0049): no tax, and listed as exempt in the sales-tax report.
  */
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
@@ -52,5 +54,30 @@ describe('department ring on the server', () => {
     const day = at.slice(0, 10);
     const report = await salesTaxReport(db, t.merchant_id, day, day);
     expect(report.total).toMatchObject({ sales_count: 1, gross_sales_cents: 350, taxable_cents: 350, tax_cents: 23 });
+  });
+});
+
+describe('tax-free sale on the server (ADR 0049)', () => {
+  it('the sales-tax report lists it as exempt, with no tax', async () => {
+    const u = await createTenant(db, 'Tax Free', '201-555-2161');
+    const sale_id = randomUUID();
+    let seq = 0;
+    const at = new Date().toISOString();
+    const ev = (type: string, payload: unknown) => ({
+      event_id: randomUUID(), schema_version: 1, sale_id, device_seq: seq++, occurred_at: at,
+      org_id: u.org_id, merchant_id: u.merchant_id, location_id: u.location_id, register_id: u.register_id, trace_id: 't', type, payload,
+    });
+    const device = { kind: 'device' as const, org_id: u.org_id, merchant_id: u.merchant_id, location_id: u.location_id, register_id: u.register_id };
+    const r = await ingestEvents(db, device, [
+      ev('sale.opened', { cashier_user_id: null, catalog_version: 1 }),
+      ev('sale.line_added', { line_id: randomUUID(), item_id: randomUUID(), name: 'Soda', category_id: null, qty: 1, unit_cash_price_cents: 299, unit_card_price_cents: 311, taxable: true, tax_rate_ppm: 66_250, min_age: null }),
+      ev('sale.tax_exempted', { exempt: true, reason: 'resale', certificate: 'ST3-00417' }),
+      ev('sale.tender_added', { tender_id: randomUUID(), tender_type: 'cash', amount_cents: 299, tendered_cents: 299, change_cents: 0, card: null }),
+      ev('sale.completed', { price_mode: 'cash', subtotal_cents: 299, tax_cents: 0, total_cents: 299 }),
+    ]);
+    expect(r.rejected).toEqual([]);
+    const day = at.slice(0, 10);
+    const report = await salesTaxReport(db, u.merchant_id, day, day);
+    expect(report.total).toMatchObject({ sales_count: 1, gross_sales_cents: 299, taxable_cents: 0, non_taxable_cents: 299, tax_cents: 0, exempt_sales_cents: 299, exempt_count: 1 });
   });
 });

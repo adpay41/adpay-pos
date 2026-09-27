@@ -70,6 +70,9 @@ export interface SalesTaxPeriod {
   by_rate: RateLine[];
   /** Deposits and fees included in gross sales (not sales tax; listed for the filing). */
   deposits_fees_cents: number;
+  /** Sales made tax-free on a certificate (ADR 0049): part of non-taxable, listed for the filing. */
+  exempt_sales_cents: number;
+  exempt_count: number;
   refunds_cents: number;
   refunds_tax_cents: number;
   /** tax − tax refunded: what the period owes, before the accountant's adjustments. */
@@ -87,10 +90,10 @@ export interface SalesTaxReport {
 export function salesTaxCsv(r: SalesTaxReport): string {
   const money = (c: number) => `${c < 0 ? '-' : ''}${Math.trunc(Math.abs(c) / 100)}.${String(Math.abs(c) % 100).padStart(2, '0')}`;
   const rates = [...new Set([r.total, ...r.by_month].flatMap((p) => p.by_rate.map((x) => x.rate_ppm)))].sort((a, b) => a - b);
-  const head = ['Period', 'Sales', 'Gross sales', 'Taxable', 'Non-taxable', ...rates.flatMap((x) => [`Taxable @${ppmToPercent(x)}%`, `Tax @${ppmToPercent(x)}%`]), 'Tax collected', 'Deposits & fees', 'Refunds', 'Tax refunded', 'Net tax'];
+  const head = ['Period', 'Sales', 'Gross sales', 'Taxable', 'Non-taxable', ...rates.flatMap((x) => [`Taxable @${ppmToPercent(x)}%`, `Tax @${ppmToPercent(x)}%`]), 'Tax collected', 'Exempt sales', 'Deposits & fees', 'Refunds', 'Tax refunded', 'Net tax'];
   const row = (p: SalesTaxPeriod) => {
     const at = (rate: number) => p.by_rate.find((x) => x.rate_ppm === rate);
-    return [p.period, String(p.sales_count), money(p.gross_sales_cents), money(p.taxable_cents), money(p.non_taxable_cents), ...rates.flatMap((x) => [money(at(x)?.taxable_cents ?? 0), money(at(x)?.tax_cents ?? 0)]), money(p.tax_cents), money(p.deposits_fees_cents), money(p.refunds_cents), money(p.refunds_tax_cents), money(p.net_tax_cents)].join(',');
+    return [p.period, String(p.sales_count), money(p.gross_sales_cents), money(p.taxable_cents), money(p.non_taxable_cents), ...rates.flatMap((x) => [money(at(x)?.taxable_cents ?? 0), money(at(x)?.tax_cents ?? 0)]), money(p.tax_cents), money(p.exempt_sales_cents), money(p.deposits_fees_cents), money(p.refunds_cents), money(p.refunds_tax_cents), money(p.net_tax_cents)].join(',');
   };
   return [head.join(','), ...r.by_month.map(row), row(r.total)].join('\n') + '\n';
 }

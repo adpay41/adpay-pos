@@ -118,6 +118,7 @@ purpose: support is one person for the first 200 stores.
 | [0046](docs/decisions/0046-department-ring.md) | Department ring: `sale.line_added.item_id` nullable with `price_source: department`; the department (category) supplies tax, age and name; stock/usuals skip it, profit buckets it, repeat rings it again; pad key rings the typed amount to the tab on screen |
 | [0047](docs/decisions/0047-key-pages-at-plu.md) | Named key pages per store (item or department + fixed amount keys) in the snapshot, edited in the merchant app; pad @ key (count × next ring) and PLU key (leading zeros forgiven, barcode fallback) |
 | [0048](docs/decisions/0048-basket-discount.md) | Basket discount: one `sale.basket_discounted` event (percent or cash amount + reason), spread over goods lines by the fold (largest remainder), card side scaled; `lineDiscount` everywhere; `ticket.discount` permission |
+| [0049](docs/decisions/0049-tax-free-sale.md) | Tax-free sale: `sale.tax_exempted` (reason + certificate); the fold untaxes every line, tax-inclusive prices drop to pre-tax; tax report lists exempt sales; `ticket.tax_exempt` permission |
 
 Design docs per build step live in `docs/design/` (step 1: [`step-1-foundation.md`](docs/design/step-1-foundation.md)).
 

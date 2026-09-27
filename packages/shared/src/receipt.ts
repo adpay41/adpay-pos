@@ -153,6 +153,8 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
     const pct = sale.basket.kind === 'percent' && sale.basket.percent_ppm ? ` ${ppmToPercent(sale.basket.percent_ppm)}%` : '';
     if (off > 0) push(pad(`${t('r_discount')}${pct}`, `-${money(off)}`));
   }
+  // A tax-free ticket (ADR 0049) says so, with the buyer's certificate.
+  if (sale.tax_exempt) push(t('r_tax_exempt', { certificate: sale.tax_exempt.certificate ? `#${sale.tax_exempt.certificate}` : '' }).trim());
   push(rule());
   // Items at their marked prices: tax already inside a price is not added again (ADR 0044).
   const shown = shownTotals(totals);
