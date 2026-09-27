@@ -303,6 +303,7 @@ export const CASHIER_EN = [
   'Take Z & print',
   'Tap an item to start a sale.',
   'Tax',
+  'Tax included in prices',
   'Test page printed',
   'Text a promotion to customers',
   'The card machine didn’t answer.',

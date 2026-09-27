@@ -76,6 +76,7 @@ interface ItemRow {
   card_price_cents: number | null;
   cost_cents: number | null;
   open_price: boolean;
+  tax_included: boolean;
   sell_unit: 'each' | 'pack';
   pack_qty: number;
   active: boolean;
@@ -112,7 +113,7 @@ export async function getCatalogSnapshot(
   );
   const { rows: items } = await q.query<ItemRow>(
     `SELECT i.item_id, i.category_id, i.name, i.sku, i.upc, i.plu, i.cash_price_cents, i.card_price_cents,
-            i.cost_cents, i.open_price, i.sell_unit, i.pack_qty, i.active, i.track_stock, i.reorder_point, i.stock_of, i.stock_ratio, i.perishable, c.taxable, c.min_age, c.tax_class, c.restriction, i.color, i.image_id, i.sort,
+            i.cost_cents, i.open_price, i.tax_included, i.sell_unit, i.pack_qty, i.active, i.track_stock, i.reorder_point, i.stock_of, i.stock_ratio, i.perishable, c.taxable, c.min_age, c.tax_class, c.restriction, i.color, i.image_id, i.sort,
             (SELECT jsonb_agg(jsonb_build_object('barcode', b.barcode, 'pack_qty', b.pack_qty) ORDER BY b.barcode)
                FROM item_barcodes b WHERE b.item_id = i.item_id) AS barcodes
        FROM items i LEFT JOIN categories c ON c.category_id = i.category_id
@@ -153,6 +154,7 @@ export async function getCatalogSnapshot(
         card_price_cents: price.card,
         card_price_override: i.card_price_cents !== null,
         open_price: i.open_price,
+        tax_included: i.tax_included,
         cost_cents: i.cost_cents,
         taxable,
         tax_rate_ppm: taxable ? taxRateOn(compliance.tax_rates, i.tax_class, today, loc.tax_rate_ppm) : 0,

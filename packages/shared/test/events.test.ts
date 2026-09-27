@@ -96,7 +96,7 @@ describe('foldSale', () => {
 
     const folded = foldSale(sale, events);
     // taxable cash net = 899 + 498 = 1397 -> 6.625% = 92.55 -> 93
-    expect(folded.cash).toEqual({ subtotal_cents: 2847, tax_cents: 93, total_cents: 2940 });
+    expect(folded.cash).toEqual({ subtotal_cents: 2847, tax_cents: 93, total_cents: 2940, included_tax_cents: 0 });
     expect(folded.card.subtotal_cents).toBe(935 + 518 + 1450);
     expect(folded.status).toBe('completed');
     expect(folded.mismatch).toBe(false);

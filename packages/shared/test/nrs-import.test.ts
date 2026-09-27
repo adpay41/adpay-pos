@@ -77,6 +77,9 @@ describe('NRS price book parser', () => {
     });
     expect(r.headline).toBe('Imported 1 of 1 items: 1 new, 0 updated, 0 unchanged.');
     expect(r.lines.join(' ')).toMatch(/1 NRS departments, 1 new.*Quick keys: 0/);
-    expect(r.unmapped.some((l) => l.startsWith('1 × Price already includes tax'))).toBe(true);
+    // Tax-inclusive prices carry over as tax-inclusive items (ADR 0044): reported as mapped, not as a problem.
+    expect(r.unmapped.some((l) => /includes tax/i.test(l))).toBe(false);
+    expect(r.lines).toContain('Tax-inclusive prices: 1 items ring at their marked price, tax inside.');
+    expect(p.rows[0]!.tax_included).toBe(true);
   });
 });

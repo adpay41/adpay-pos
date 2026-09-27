@@ -70,6 +70,8 @@ export const ItemCreateInput = z
     plu: Plu.nullable().default(null),
     sku: z.string().trim().max(40).nullable().default(null),
     open_price: z.boolean().default(false),
+    /** The price already includes the sales tax (ADR 0044): rung at exactly the marked price. */
+    tax_included: z.boolean().default(false),
     sell_unit: z.enum(['each', 'pack']).default('each'),
     pack_qty: z.int().min(1).max(1000).default(1),
     barcodes: z.array(ItemBarcodeInput).max(20).default([]),
@@ -94,6 +96,7 @@ export const ItemUpdateInput = z.strictObject({
   plu: Plu.nullable().optional(),
   sku: z.string().trim().max(40).nullable().optional(),
   open_price: z.boolean().optional(),
+  tax_included: z.boolean().optional(),
   sell_unit: z.enum(['each', 'pack']).optional(),
   pack_qty: z.int().min(1).max(1000).optional(),
   barcodes: z.array(ItemBarcodeInput).max(20).optional(),

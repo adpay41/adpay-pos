@@ -53,6 +53,7 @@ export function refundTax(s: FoldedSale, lines: readonly { line_id: string; qty:
       taxable: l.taxable,
       tax_rate_ppm: l.tax_rate_ppm,
       charges: l.charges.map((c) => ({ unit_cents: mode === 'card' ? c.unit_card_cents : c.unit_cash_cents, taxable: c.taxable })),
+      tax_included: l.tax_included,
     });
   }
   return sum(taxByRate(taxable).map((g) => g.tax_cents));

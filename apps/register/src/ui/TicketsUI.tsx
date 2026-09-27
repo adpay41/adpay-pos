@@ -3,7 +3,7 @@
  * the list of tickets rung here with reprint; refunds by line at the price paid; and voiding a
  * completed sale. Refunds and voids are permission-gated with a manager's PIN in place.
  */
-import { lineTotal, refundQuote, refundableQty, type CashierKey, type FoldedSale, type Permission } from '@adpay/shared';
+import { lineAmount, refundQuote, refundableQty, type CashierKey, type FoldedSale, type Permission } from '@adpay/shared';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { CardRefunder, ParkedTicket, SaleSession } from '../core/session';
@@ -226,7 +226,7 @@ function TicketDetail({
                 </Text>
                 {(sale.refunded_qty[l.line_id] ?? 0) > 0 ? <Text style={s.muted}>{t('{count} returned', { count: sale.refunded_qty[l.line_id] ?? 0 })}</Text> : null}
               </View>
-              <Text style={s.money}>{usd(lineTotal(l, mode === 'card' ? 'card' : 'cash'))}</Text>
+              <Text style={s.money}>{usd(lineAmount(l, mode === 'card' ? 'card' : 'cash'))}</Text>
               {refundable && can > 0 ? (
                 <View style={s.stepper}>
                   <Pressable style={s.step} onPress={() => setPick((p) => ({ ...p, [l.line_id]: Math.max(0, n - 1) }))} accessibilityLabel={t('Return one less {name}', { name: l.name })}>

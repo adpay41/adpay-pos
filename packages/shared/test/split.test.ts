@@ -38,7 +38,7 @@ describe('split tender: each portion at its own price', () => {
       { tender_type: 'cash', amount_cents: 1_000, covers_cash_cents: 1_000 },
       { tender_type: 'card', amount_cents: 1_040, covers_cash_cents: 1_000 },
     ]);
-    expect(t).toEqual({ subtotal_cents: 1_938, tax_cents: 102, total_cents: 2_040 });
+    expect(t).toEqual({ subtotal_cents: 1_938, tax_cents: 102, total_cents: 2_040, included_tax_cents: 0 });
   });
 
   it('everything is integers (property sweep)', () => {

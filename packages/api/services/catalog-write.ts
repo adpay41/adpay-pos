@@ -110,14 +110,14 @@ export async function createItem(
     // New items go to the end of their category's keys unless an explicit position is given.
     const { rows } = await q.query<{ item_id: string }>(
       `INSERT INTO items (org_id, merchant_id, category_id, name, sku, upc, plu, cash_price_cents, card_price_cents,
-                          cost_cents, open_price, sell_unit, pack_qty, active, updated_by, color, image_id, sort)
+                          cost_cents, open_price, sell_unit, pack_qty, active, updated_by, color, image_id, sort, tax_included)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-               coalesce($18, (SELECT coalesce(max(sort), -1) + 1 FROM items WHERE merchant_id = $2 AND category_id IS NOT DISTINCT FROM $3)))
+               coalesce($18, (SELECT coalesce(max(sort), -1) + 1 FROM items WHERE merchant_id = $2 AND category_id IS NOT DISTINCT FROM $3)), $19)
        RETURNING item_id`,
       [
         m.org_id, m.merchant_id, input.category_id, input.name, input.sku, input.upc, input.plu, input.cash_price_cents,
         input.card_price_cents, input.cost_cents, input.open_price, input.sell_unit, input.pack_qty, input.active, actorId(actor),
-        input.color, input.image_id, input.sort ?? null,
+        input.color, input.image_id, input.sort ?? null, input.tax_included,
       ],
     );
     const itemId = rows[0]!.item_id;
@@ -147,6 +147,7 @@ interface ItemRowFull {
   plu: string | null;
   sku: string | null;
   open_price: boolean;
+  tax_included: boolean;
   sell_unit: 'each' | 'pack';
   pack_qty: number;
   active: boolean;
@@ -157,7 +158,7 @@ interface ItemRowFull {
 
 const UPDATABLE = [
   'name', 'category_id', 'cash_price_cents', 'card_price_cents', 'cost_cents', 'upc', 'plu', 'sku',
-  'open_price', 'sell_unit', 'pack_qty', 'active', 'color', 'image_id', 'sort',
+  'open_price', 'tax_included', 'sell_unit', 'pack_qty', 'active', 'color', 'image_id', 'sort',
 ] as const;
 
 export async function updateItem(
@@ -171,7 +172,7 @@ export async function updateItem(
   return db.tx(async (q) => {
     const m = await merchantFor(q, merchantId);
     const { rows } = await q.query<ItemRowFull>(
-      `SELECT item_id, name, category_id, cash_price_cents, card_price_cents, cost_cents, upc, plu, sku, open_price,
+      `SELECT item_id, name, category_id, cash_price_cents, card_price_cents, cost_cents, upc, plu, sku, open_price, tax_included,
               sell_unit, pack_qty, active, color, image_id, sort
          FROM items WHERE item_id = $1 AND merchant_id = $2 FOR UPDATE`,
       [itemId, merchantId],

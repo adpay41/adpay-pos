@@ -51,6 +51,8 @@ export interface CatalogItem {
   card_price_override: boolean;
   /** Price entered at the register each time (deli by weight, "misc grocery"). */
   open_price: boolean;
+  /** The marked price already includes the sales tax (ADR 0044). Absent in older snapshots = false. */
+  tax_included?: boolean;
   /** Merchant's cost; null until entered. Shown on the register only behind a PIN (step P5). */
   cost_cents: number | null;
   taxable: boolean;

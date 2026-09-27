@@ -151,7 +151,7 @@ describe('a sale with a deposit and a bag fee', () => {
   it('folds: subtotal includes deposits and the bag, tax only on the water', () => {
     const s = foldSale(SALE, nycSale());
     // water 1194 + deposit 30 + bag 5 = 1229; tax 8.875% of 1194 = 105.97 → 106
-    expect(s.cash).toEqual({ subtotal_cents: 1_229, tax_cents: 106, total_cents: 1_335 });
+    expect(s.cash).toEqual({ subtotal_cents: 1_229, tax_cents: 106, total_cents: 1_335, included_tax_cents: 0 });
     // deposits and fees are not marked up at the card price
     expect(s.card.subtotal_cents - s.cash.subtotal_cents).toBe(6 * 8);
     expect(s.mismatch).toBe(false);

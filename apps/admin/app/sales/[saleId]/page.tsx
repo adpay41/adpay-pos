@@ -1,5 +1,5 @@
 'use client';
-import { lineTotal, type FoldedSale } from '@adpay/shared';
+import { lineAmount, type FoldedSale } from '@adpay/shared';
 import { useParams } from 'next/navigation';
 import { ErrorBox, Money, Shell, StatusPill, useLoad } from '../../../components/ui';
 import { api } from '../../../lib/api';
@@ -58,7 +58,7 @@ export default function SaleTimelinePage() {
                         )}
                       </td>
                       <td className="num">
-                        <Money cents={lineTotal(l, f.price_mode === 'card' ? 'card' : 'cash')} />
+                        <Money cents={lineAmount(l, f.price_mode === 'card' ? 'card' : 'cash')} />
                         {(l.charges ?? []).map((c) => (
                           <div key={c.rule_id} className="tiny muted">
                             incl. {c.label}
@@ -68,7 +68,7 @@ export default function SaleTimelinePage() {
                     </tr>
                   ))}
                   <tr>
-                    <td className="muted">Subtotal</td>
+                    <td className="muted">Subtotal before tax</td>
                     <td className="num">
                       <Money cents={totals.subtotal_cents} />
                     </td>
@@ -79,6 +79,14 @@ export default function SaleTimelinePage() {
                       <Money cents={totals.tax_cents} />
                     </td>
                   </tr>
+                  {(totals.included_tax_cents ?? 0) > 0 && (
+                    <tr>
+                      <td className="muted tiny">of which inside tax-inclusive prices</td>
+                      <td className="num tiny">
+                        <Money cents={totals.included_tax_cents ?? 0} />
+                      </td>
+                    </tr>
+                  )}
                   <tr>
                     <td>
                       <strong>Total</strong>
