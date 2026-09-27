@@ -34,7 +34,6 @@ import {
   localDate,
   lookupBarcode,
   searchCatalog,
-  quickCashOptions,
   renderReceipt,
   renderZReport,
   type ZReport,
@@ -64,6 +63,7 @@ import { QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
 import { CardPanel, type CardPhase } from './TenderUI';
 import { HeldTickets, TicketBrowser } from './TicketsUI';
+import { RegisterPad } from './RegisterPad';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
 import { C, usd } from './theme';
@@ -85,7 +85,6 @@ type Modal =
   | { kind: 'held' }
   | { kind: 'tickets' }
   | { kind: 'card'; phase: CardPhase }
-  | { kind: 'cash' }
   | { kind: 'done'; sale: FoldedSale; change: number; after: 'ask' | 'print' | 'none'; printed: readonly ReceiptLine[] | null }
   | { kind: 'receipt'; lines: readonly ReceiptLine[]; title: string }
   | { kind: 'device' }
@@ -114,6 +113,8 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   // FAVORITES is the location's own first page; a store without favorites opens on its first category.
   const [category, setCategory] = useState<string | null>(favoriteKeys(rt.catalog).length ? FAVORITES : (rt.catalog.categories[0]?.category_id ?? null));
   const [modal, setModal] = useState<Modal>({ kind: 'none' });
+  // What's typed on the register pad (layout A), in cents digits.
+  const [pad, setPad] = useState('');
   const [drawerFlash, setDrawerFlash] = useState(false);
   const display = useRef(createDisplayChannel()).current;
 
@@ -535,6 +536,25 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     await rt.drawer.refresh();
   }
 
+  // The pad (layout A): a cash tender waiting for the drawer to be started.
+  const pendingCash = useRef<{ amount: number; partial: boolean } | null>(null);
+  function cashTender(amount: number, partial: boolean) {
+    setPad('');
+    // Cash needs a started drawer (a counted float), so the day reconciles to the cent.
+    if (!training && !rt.drawer.current()) {
+      pendingCash.current = { amount, partial };
+      setModal({ kind: 'drawer', startWithFloat: true, thenCash: true });
+      return;
+    }
+    void tender(amount, partial);
+  }
+  function finishPendingCash() {
+    const p = pendingCash.current;
+    pendingCash.current = null;
+    setModal({ kind: 'none' });
+    if (p) void tender(p.amount, p.partial);
+  }
+
   async function tender(amount: number, partial = false) {
     await run(async () => {
       const saleId = sale!.sale_id;
@@ -704,21 +724,21 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
       ) : null}
 
       <View style={s.body}>
-        <View style={s.catCol}>
-          {favorites.length > 0 ? (
-            <Pressable onPress={() => setCategory(FAVORITES)} style={[s.cat, category === FAVORITES && s.catActive]}>
-              <Text style={[s.catText, category === FAVORITES && { color: '#fff' }]}>{t('★ Favorites')}</Text>
-            </Pressable>
-          ) : null}
-          {catalog.categories.filter((c) => c.active !== false).map((c) => (
-            <Pressable key={c.category_id} onPress={() => setCategory(c.category_id)} style={[s.cat, category === c.category_id && s.catActive]}>
-              <Text style={[s.catText, category === c.category_id && { color: '#fff' }]}>{c.name}</Text>
-              {catAge(c) ? <Text style={[s.catAge, category === c.category_id && { color: '#ddd' }]}>{catAge(c)}+</Text> : null}
-            </Pressable>
-          ))}
-        </View>
-
         <View style={{ flex: 1 }}>
+          {/* Departments as tabs across the top (layout A, ADR 0045). */}
+          <ScrollView horizontal style={s.deptBar} contentContainerStyle={s.deptRow} showsHorizontalScrollIndicator={false}>
+            {favorites.length > 0 ? (
+              <Pressable onPress={() => setCategory(FAVORITES)} style={[s.dept, category === FAVORITES && s.catActive]}>
+                <Text style={[s.catText, category === FAVORITES && { color: '#fff' }]}>{t('★ Favorites')}</Text>
+              </Pressable>
+            ) : null}
+            {catalog.categories.filter((c) => c.active !== false).map((c) => (
+              <Pressable key={c.category_id} onPress={() => setCategory(c.category_id)} style={[s.dept, category === c.category_id && s.catActive]}>
+                <Text style={[s.catText, category === c.category_id && { color: '#fff' }]}>{c.name}</Text>
+                {catAge(c) ? <Text style={[s.catAge, category === c.category_id && { color: '#ddd' }]}>{catAge(c)}+</Text> : null}
+              </Pressable>
+            ))}
+          </ScrollView>
           <View style={s.searchRow}>
             <TextInput
               style={s.search}
@@ -768,6 +788,22 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               </Text>
             ) : null}
           </ScrollView>
+          <RegisterPad
+            digits={pad}
+            onDigits={setPad}
+            dueCash={sale?.remaining_cash_cents ?? 0}
+            dueCard={sale ? cardAmountFor(sale.remaining_cash_cents, sale.cash.total_cents, sale.card.total_cents) : 0}
+            canTender={!!sale?.lines.length}
+            cardShown={flags.card_payments && !training}
+            cardOk={cardOk}
+            allowPart={cardOk && flags.card_payments && !training}
+            onCash={(amount, partial) => cashTender(amount, partial)}
+            onCard={(amount) => {
+              setPad('');
+              void chargeCard(amount);
+            }}
+            onRejectBill={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false, counterfeit: true })}
+          />
         </View>
 
         <View style={s.ticket}>
@@ -894,26 +930,6 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 <Text style={s.cashOnlyText}>{t('Cash only right now — no connection to the card machine. Tap to retry.')}</Text>
               </Pressable>
             ) : null}
-            <View style={s.actions}>
-              <Pressable
-                style={[s.payBtn, !sale?.lines.length && s.disabled]}
-                disabled={!sale?.lines.length}
-                // Cash needs a started drawer (a counted float), so the day reconciles to the cent.
-                onPress={() => setModal(training || rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true })}
-              >
-                <Text style={s.payText}>{t('Cash')}</Text>
-              </Pressable>
-              {flags.card_payments && !training ? (
-              <Pressable
-                style={[s.payBtn, (!sale?.lines.length || !cardOk) && s.disabled]}
-                disabled={!sale?.lines.length || !cardOk}
-                onPress={() => setModal({ kind: 'card', phase: { kind: 'ready' } })}
-              >
-                <Text style={s.payText}>{t('Card')}</Text>
-                {!cardOk ? <Text style={s.paySub}>{t('offline')}</Text> : null}
-              </Pressable>
-              ) : null}
-            </View>
             {session.lastCompleted || myUsuals.length || (sale?.lines.length && staff.member) ? (
               <View style={s.actions}>
                 {session.lastCompleted && !sale?.lines.length ? (
@@ -955,74 +971,75 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 ))}
               </View>
             ) : null}
-            <View style={s.actions}>
-              <Pressable
-                style={[s.ghost, !sale && s.disabled]}
-                disabled={!sale}
-                onPress={() => sale && guarded('ticket.void', sale.sale_id, () => ses.voidSale('Voided at register'))}
-              >
-                <Text>{t('Void ticket')}</Text>
-              </Pressable>
-              <Pressable style={[s.ghost, !session.lastCompleted && s.disabled]} disabled={!session.lastCompleted} onPress={() => void reprintLast()}>
-                <Text>{t('Reprint last')}</Text>
-              </Pressable>
-              {flags.hold_tickets ? (
-                <Pressable style={[s.ghost, !sale?.lines.length && s.disabled]} disabled={!sale?.lines.length} onPress={() => void run(() => ses.hold())}>
-                  <Text>{t('Hold')}</Text>
-                </Pressable>
-              ) : null}
-              {session.parked.length ? (
-                <Pressable style={[s.ghost, s.ghostOn]} onPress={() => setModal({ kind: 'held' })}>
-                  <Text style={{ color: '#fff' }}>{t('Held ({count})', { count: session.parked.length })}</Text>
-                </Pressable>
-              ) : null}
-              {!training ? (
-                // Refunds and voids move real money: not from training mode.
-                <Pressable style={s.ghost} onPress={() => setModal({ kind: 'tickets' })}>
-                  <Text>{t('Tickets')}</Text>
-                </Pressable>
-              ) : null}
-              {flags.price_check ? (
-                <Pressable style={[s.ghost, priceCheck && s.ghostOn]} onPress={() => setPriceCheck((v) => !v)}>
-                  <Text style={priceCheck ? { color: '#fff' } : undefined}>{t('Price check')}</Text>
-                </Pressable>
-              ) : null}
-              <Pressable
-                style={[s.ghost, training && s.ghostOn]}
-                onPress={() =>
-                  void run(async () => {
-                    // Leaving training throws the practice ticket away; nothing was ever saved.
-                    if (training && rt.training.state().sale) await rt.training.voidSale('Training');
-                    setTraining((t) => !t);
-                  })
-                }
-              >
-                <Text style={training ? { color: '#fff' } : undefined}>{training ? t('Exit training') : t('Training')}</Text>
-              </Pressable>
-              {!training ? (
-                <>
-                  <Pressable style={s.ghost} onPress={() => guarded('inventory.receive', null, async () => setModal({ kind: 'receive' }))}>
-                    <Text>{t('Receive')}</Text>
-                  </Pressable>
-                  <Pressable style={s.ghost} onPress={() => guarded('inventory.write_off', null, async () => setModal({ kind: 'write_off' }))}>
-                    <Text>{t('Write off')}</Text>
-                  </Pressable>
-                  <Pressable style={s.ghost} onPress={() => setModal({ kind: 'checklist' })}>
-                    <Text>{t('Checklist')}</Text>
-                  </Pressable>
-                </>
-              ) : null}
-              {!training ? (
-                <Pressable
-                  style={s.ghost}
-                  onPress={() => void run(async () => setModal({ kind: 'eod', z: await rt.eod.preview(catalog), lines: null, done: false }))}
-                >
-                  <Text>{t('End of day')}</Text>
-                </Pressable>
-              ) : null}
-            </View>
           </View>
         </View>
+      </View>
+      {/* Shortcut bar underneath (layout A, ADR 0045). */}
+      <View style={s.shortcutBar}>
+        <Pressable
+          style={[s.ghost, !sale && s.disabled]}
+          disabled={!sale}
+          onPress={() => sale && guarded('ticket.void', sale.sale_id, () => ses.voidSale('Voided at register'))}
+        >
+          <Text>{t('Void ticket')}</Text>
+        </Pressable>
+        <Pressable style={[s.ghost, !session.lastCompleted && s.disabled]} disabled={!session.lastCompleted} onPress={() => void reprintLast()}>
+          <Text>{t('Reprint last')}</Text>
+        </Pressable>
+        {flags.hold_tickets ? (
+          <Pressable style={[s.ghost, !sale?.lines.length && s.disabled]} disabled={!sale?.lines.length} onPress={() => void run(() => ses.hold())}>
+            <Text>{t('Hold')}</Text>
+          </Pressable>
+        ) : null}
+        {session.parked.length ? (
+          <Pressable style={[s.ghost, s.ghostOn]} onPress={() => setModal({ kind: 'held' })}>
+            <Text style={{ color: '#fff' }}>{t('Held ({count})', { count: session.parked.length })}</Text>
+          </Pressable>
+        ) : null}
+        {!training ? (
+          // Refunds and voids move real money: not from training mode.
+          <Pressable style={s.ghost} onPress={() => setModal({ kind: 'tickets' })}>
+            <Text>{t('Tickets')}</Text>
+          </Pressable>
+        ) : null}
+        {flags.price_check ? (
+          <Pressable style={[s.ghost, priceCheck && s.ghostOn]} onPress={() => setPriceCheck((v) => !v)}>
+            <Text style={priceCheck ? { color: '#fff' } : undefined}>{t('Price check')}</Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          style={[s.ghost, training && s.ghostOn]}
+          onPress={() =>
+            void run(async () => {
+              // Leaving training throws the practice ticket away; nothing was ever saved.
+              if (training && rt.training.state().sale) await rt.training.voidSale('Training');
+              setTraining((t) => !t);
+            })
+          }
+        >
+          <Text style={training ? { color: '#fff' } : undefined}>{training ? t('Exit training') : t('Training')}</Text>
+        </Pressable>
+        {!training ? (
+          <>
+            <Pressable style={s.ghost} onPress={() => guarded('inventory.receive', null, async () => setModal({ kind: 'receive' }))}>
+              <Text>{t('Receive')}</Text>
+            </Pressable>
+            <Pressable style={s.ghost} onPress={() => guarded('inventory.write_off', null, async () => setModal({ kind: 'write_off' }))}>
+              <Text>{t('Write off')}</Text>
+            </Pressable>
+            <Pressable style={s.ghost} onPress={() => setModal({ kind: 'checklist' })}>
+              <Text>{t('Checklist')}</Text>
+            </Pressable>
+          </>
+        ) : null}
+        {!training ? (
+          <Pressable
+            style={s.ghost}
+            onPress={() => void run(async () => setModal({ kind: 'eod', z: await rt.eod.preview(catalog), lines: null, done: false }))}
+          >
+            <Text>{t('End of day')}</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {modal.kind === 'eod' && modal.z && (
@@ -1173,17 +1190,6 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
         </Overlay>
       )}
 
-      {modal.kind === 'cash' && sale && (
-        <CashModal
-          total={sale.remaining_cash_cents}
-          allowPart={cardOk && flags.card_payments && !training}
-          onCancel={() => setModal({ kind: 'none' })}
-          onTender={(amt) => void tender(amt)}
-          onPart={(amt) => void tender(amt, true)}
-          onCounterfeit={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false, counterfeit: true })}
-        />
-      )}
-
       {modal.kind === 'card' && sale && (
         <Overlay onClose={modal.phase.kind === 'waiting' ? undefined : () => setModal({ kind: 'none' })}>
           <CardPanel
@@ -1193,8 +1199,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             onRetry={(pending) => void chargeCard(undefined, pending)}
             onPartial={() => setModal({ kind: 'card', phase: { kind: 'partial' } })}
             onCash={() => {
+              // Cash for the rest: back to the pad, which shows what's left.
               show(sale);
-              setModal(training || rt.drawer.current() ? { kind: 'cash' } : { kind: 'drawer', startWithFloat: true, thenCash: true });
+              setModal({ kind: 'none' });
             }}
             onBack={() => {
               show(sale);
@@ -1455,7 +1462,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               await hardware.kickDrawer();
               rt.sync.kick();
             }}
-            onStarted={modal.thenCash ? () => setModal({ kind: 'cash' }) : undefined}
+            onStarted={modal.thenCash ? () => finishPendingCash() : undefined}
             onClose={() => setModal({ kind: 'none' })}
           />
         </Overlay>
@@ -1581,69 +1588,6 @@ function SyncPill({ status, onPress }: { status: SyncStatus | null; onPress: () 
   );
 }
 
-function CashModal({
-  total,
-  allowPart,
-  onCancel,
-  onTender,
-  onPart,
-  onCounterfeit,
-}: {
-  total: number;
-  allowPart: boolean;
-  onCancel: () => void;
-  /** Refuse a counterfeit bill (P15): logged, then back to the sale. */
-  onCounterfeit: () => void;
-  onTender: (amount: number) => void;
-  /** Split: take this much cash now, the rest on a card. */
-  onPart: (amount: number) => void;
-}) {
-  const t = useT();
-  const [digits, setDigits] = useState('');
-  const typed = digits ? Number(digits) : 0; // keypad fills from the cents column: 2-0-0-0 → $20.00
-  const options = quickCashOptions(cents(total));
-  const press = (k: string) => setDigits((d) => (k === '⌫' ? d.slice(0, -1) : (d + k).replace(/^0+/, '').slice(0, 7)));
-  return (
-    <Overlay onClose={onCancel}>
-      <Text style={s.modalTitle}>{t('Cash — {amount}', { amount: usd(total) })}</Text>
-      <View style={s.quickRow}>
-        {options.map((o) => (
-          <Pressable key={o} style={s.quick} onPress={() => onTender(o)}>
-            <Text style={s.quickText}>{o === total ? t('Exact') : usd(o)}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <Text style={s.muted}>{t('Other amount')}</Text>
-      <Text style={s.keypadValue}>{usd(typed)}</Text>
-      <View style={s.keypad}>
-        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '⌫'].map((k) => (
-          <Pressable key={k} style={s.keyBtn} onPress={() => press(k)}>
-            <Text style={s.keyBtnText}>{k}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <View style={s.actions}>
-        <Pressable style={s.ghost} onPress={onCancel}>
-          <Text>{t('Back')}</Text>
-        </Pressable>
-        <Pressable style={s.ghost} onPress={onCounterfeit}>
-          <Text>{t('Reject a bill')}</Text>
-        </Pressable>
-        {/* Black, not red: these buttons carry dollar amounts. */}
-        {typed > 0 && typed < total && allowPart ? (
-          <Pressable style={[s.primary, { backgroundColor: C.black }]} onPress={() => onPart(typed)}>
-            <Text style={s.primaryText}>{t('Take {amount} now, rest by card', { amount: usd(typed) })}</Text>
-          </Pressable>
-        ) : (
-          <Pressable style={[s.primary, { backgroundColor: C.black }, typed < total && s.disabled]} disabled={typed < total} onPress={() => onTender(typed)}>
-            <Text style={s.primaryText}>{t('Take {amount}', { amount: usd(typed) })}</Text>
-          </Pressable>
-        )}
-      </View>
-    </Overlay>
-  );
-}
-
 function DevicePanel({
   rt,
   status,
@@ -1760,8 +1704,10 @@ const s = StyleSheet.create({
   zLine: { fontFamily: Platform.OS === 'web' ? 'monospace' : undefined, fontSize: 12, color: C.ink },
 
   body: { flex: 1, flexDirection: 'row' },
-  catCol: { width: 140, backgroundColor: '#fff', borderRightWidth: 1, borderRightColor: C.line, paddingVertical: 8 },
-  cat: { paddingVertical: 16, paddingHorizontal: 12, marginHorizontal: 8, marginVertical: 3, borderRadius: 8, flexDirection: 'row', justifyContent: 'space-between' },
+  deptBar: { flexGrow: 0, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: C.line },
+  deptRow: { paddingHorizontal: 8, paddingVertical: 6, gap: 6 },
+  dept: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: C.line },
+  shortcutBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line },
   catActive: { backgroundColor: C.black },
   catText: { fontWeight: '700', color: C.ink, fontSize: 15 },
   catAge: { color: C.muted, fontSize: 12, fontWeight: '600' },

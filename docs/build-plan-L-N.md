@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| Tax-inclusive prices | #47 | Open — item flag (merchant app toggle, set by the NRS import), line event records it, tax backed out per rate group, total = pre-tax subtotal + tax with included tax, receipt shows marked prices and incl. tax; tested on mixed tickets, refunds and split tender. ADR 0044. |
+| Register layout A | #48 | Open — department tabs across the top, the register pad (digits, quick cash, Cash/Card, reject a bill) on the main screen replacing the cash modal, ticket on the right, shortcut bar underneath. ADR 0045. |
+| Tax-inclusive prices | #47 | Merged — item flag (merchant app toggle, set by the NRS import), line event records it, tax backed out per rate group, total = pre-tax subtotal + tax with included tax, receipt shows marked prices and incl. tax; tested on mixed tickets, refunds and split tender. ADR 0044. |
 | NRS price book import | #46 | Merged — portal items JSON (real barcodes) or CSV export, preview with department tax/age to confirm and what can't be carried over, batched import (9,284 items ≈ 2 s), idempotent re-upload, merchant app + admin, scan-to-attach on the register. Method: docs/nrs-migration-method.md. ADR 0043. |
 | P25c UPC library, cohorts, investor pack | #41 | Merged — global UPC library deduped across stores (register + merchant app suggestions), cohorts by first-sale month, printable investor / bank pack with CSV. ADR 0041. |
 | P25b Agents & residual split | #40 | Merged — agents / referral partners with codes and dated terms, stores assigned at onboarding or by hand, monthly statements from the residual report with bounties, CSV. ADR 0040. |
