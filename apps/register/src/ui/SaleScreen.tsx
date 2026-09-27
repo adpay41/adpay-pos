@@ -17,6 +17,7 @@ import {
   categoryKeys,
   cents,
   deriveCardPrice,
+  departmentItem,
   favoriteKeys,
   foldSale,
   bagFeesOn,
@@ -63,6 +64,7 @@ import { QuickKey } from './QuickKey';
 import { DrawerPanel } from './DrawerUI';
 import { CardPanel, type CardPhase } from './TenderUI';
 import { HeldTickets, TicketBrowser } from './TicketsUI';
+import { padCents } from '../core/pad';
 import { RegisterPad } from './RegisterPad';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
 import { OverridePrompt, SignInScreen } from './StaffUI';
@@ -75,7 +77,7 @@ type Entry = 'key' | 'scan' | 'search' | 'new_item';
 
 type Modal =
   | { kind: 'none' }
-  | { kind: 'age'; item: CatalogItem; qty: number; entry: Entry }
+  | { kind: 'age'; item: CatalogItem; qty: number; entry: Entry; labelPrice?: number }
   | { kind: 'add_qty'; item: CatalogItem; entry: Entry }
   | { kind: 'set_qty'; line_id: string; name: string; qty: number }
   | { kind: 'open_price'; item: CatalogItem; qty: number; entry: Entry; ageConfirmed: boolean }
@@ -343,13 +345,26 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const ring = (item: CatalogItem, opts: { qty?: number; entry: Entry; ageConfirmed?: boolean; idCheck?: { age: number; jurisdiction: string | null }; labelPrice?: number }) => {
     const qty = opts.qty ?? 1;
     if (priceCheck) return setModal({ kind: 'price_check', item, showCost: false });
-    if (item.min_age && !opts.ageConfirmed && !ses.wouldMerge(item)) return setModal({ kind: 'age', item, qty, entry: opts.entry });
+    // The age check keeps a price already known (a price label, or an amount rung to a department).
+    if (item.min_age && !opts.ageConfirmed && !ses.wouldMerge(item)) return setModal({ kind: 'age', item, qty, entry: opts.entry, ...(opts.labelPrice !== undefined ? { labelPrice: opts.labelPrice } : {}) });
     // A price-embedded label (P21) carries the price: no need to ask.
     const price = opts.labelPrice !== undefined ? { cash: cents(opts.labelPrice), card: deriveCardPrice(cents(opts.labelPrice), catalog.dual_price_rate_ppm) } : undefined;
     if (item.open_price && !price) return setModal({ kind: 'open_price', item, qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed });
     void run(() => ses.addItem(item, { qty, entry: opts.entry, ageConfirmed: !!opts.ageConfirmed, ...(price ? { price } : {}), ...(opts.idCheck ? { idCheck: opts.idCheck } : {}) }));
   };
   const addItem = (item: CatalogItem) => ring(item, { entry: query ? 'search' : 'key' });
+  // Department ring (ADR 0046): the typed amount to the department tab on screen, no item behind it.
+  const deptTab = catalog.categories.find((c) => c.category_id === category && c.active !== false) ?? null;
+  const deptItem = (id: string | null) => {
+    const c = catalog.categories.find((x) => x.category_id === id);
+    return c ? departmentItem(c, catalog) : null;
+  };
+  const ringDepartment = () => {
+    if (!deptTab) return;
+    const typed = padCents(pad);
+    setPad('');
+    ring(departmentItem(deptTab, catalog), { entry: 'key', ...(typed > 0 ? { labelPrice: typed } : {}) });
+  };
   // Compliance (P10): bag-fee keys in force today, and each category's effective age check.
   const today = localDate(new Date(), rt.identity.timezone);
   const bagFees = bagFeesOn(catalog.compliance?.charges ?? [], today);
@@ -418,7 +433,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
     const idCheck = { age: r.age!, jurisdiction: r.jurisdiction };
     setIdResult(null);
     setModal({ kind: 'none' });
-    if (m.kind === 'age') ring(m.item, { qty: m.qty, entry: m.entry, ageConfirmed: true, idCheck });
+    if (m.kind === 'age') ring(m.item, { qty: m.qty, entry: m.entry, ageConfirmed: true, idCheck, ...(m.labelPrice !== undefined ? { labelPrice: m.labelPrice } : {}) });
     else if (m.kind === 'batch_age') ringAll(m.batch, m.label, true, idCheck);
   };
   const onIdScanRef = useRef(onIdScan);
@@ -803,6 +818,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               void chargeCard(amount);
             }}
             onRejectBill={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false, counterfeit: true })}
+            extraKeys={<DepartmentKey dept={deptTab} typed={padCents(pad)} onPress={ringDepartment} />}
           />
         </View>
 
@@ -933,7 +949,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
             {session.lastCompleted || myUsuals.length || (sale?.lines.length && staff.member) ? (
               <View style={s.actions}>
                 {session.lastCompleted && !sale?.lines.length ? (
-                  <Pressable style={s.ghost} onPress={() => startBatch(repeatBatch(session.lastCompleted!, byId), t('the last sale'))} accessibilityLabel={t('Repeat the last sale')}>
+                  <Pressable style={s.ghost} onPress={() => startBatch(repeatBatch(session.lastCompleted!, byId, deptItem), t('the last sale'))} accessibilityLabel={t('Repeat the last sale')}>
                     <Text>{t('↻ Repeat last')}</Text>
                   </Pressable>
                 ) : null}
@@ -949,7 +965,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                     <Text>★ {u.label}</Text>
                   </Pressable>
                 ))}
-                {sale?.lines.some((l) => !l.is_fee) && staff.member && !training ? (
+                {sale?.lines.some((l) => !l.is_fee && !l.is_department) && staff.member && !training ? (
                   <Pressable style={[s.ghost, !cardOk && s.disabled]} disabled={!cardOk} onPress={() => setModal({ kind: 'save_usual' })}>
                     <Text>{t('+ Save as usual')}</Text>
                   </Pressable>
@@ -1179,9 +1195,9 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               style={[s.primary, !!idResult && (idResult.flags.includes('under_age') || idResult.flags.includes('expired')) && s.disabled]}
               disabled={!!idResult && (idResult.flags.includes('under_age') || idResult.flags.includes('expired'))}
               onPress={() => {
-                const { item, qty, entry } = modal;
+                const { item, qty, entry, labelPrice } = modal;
                 setModal({ kind: 'none' });
-                ring(item, { qty, entry, ageConfirmed: true });
+                ring(item, { qty, entry, ageConfirmed: true, ...(labelPrice !== undefined ? { labelPrice } : {}) });
               }}
             >
               <Text style={s.primaryText}>{t('ID checked — {age}+', { age: modal.item.min_age ?? '' })}</Text>
@@ -1588,6 +1604,24 @@ function SyncPill({ status, onPress }: { status: SyncStatus | null; onPress: () 
   );
 }
 
+/** The pad key that rings the typed amount to the department tab on screen (ADR 0046). */
+function DepartmentKey({ dept, typed, onPress }: { dept: CatalogSnapshot['categories'][number] | null; typed: number; onPress: () => void }) {
+  const t = useT();
+  return (
+    <Pressable
+      style={[s.deptKey, !dept && s.disabled]}
+      disabled={!dept}
+      onPress={onPress}
+      accessibilityLabel={dept ? t('Ring {amount} to {department}', { amount: usd(typed), department: dept.name }) : t('Pick a department tab to ring an amount to it')}
+    >
+      <Text style={s.deptKeyText} numberOfLines={2}>
+        {dept ? t('→ {department}', { department: dept.name }) : t('Department')}
+      </Text>
+      <Text style={s.deptKeySub}>{!dept ? t('pick a tab') : typed > 0 ? usd(typed) : t('then the price')}</Text>
+    </Pressable>
+  );
+}
+
 function DevicePanel({
   rt,
   status,
@@ -1707,6 +1741,9 @@ const s = StyleSheet.create({
   deptBar: { flexGrow: 0, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: C.line },
   deptRow: { paddingHorizontal: 8, paddingVertical: 6, gap: 6 },
   dept: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: C.line },
+  deptKey: { flex: 1, backgroundColor: C.black, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
+  deptKeyText: { color: '#fff', fontWeight: '800', textAlign: 'center' },
+  deptKeySub: { color: '#ccc', fontSize: 12, fontVariant: ['tabular-nums'] },
   shortcutBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line },
   catActive: { backgroundColor: C.black },
   catText: { fontWeight: '700', color: C.ink, fontSize: 15 },

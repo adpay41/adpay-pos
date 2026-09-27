@@ -97,11 +97,13 @@ export function marginReport(
       // Revenue is before tax: a tax-inclusive price (ADR 0044) has its tax taken out.
       const gross = marked - lineIncludedTax({ qty: l.qty, unit_price_cents: unit, discount_cents: discount, taxable: l.taxable, tax_rate_ppm: l.tax_rate_ppm, tax_included: l.tax_included });
       const revenue = kept === l.qty ? gross : Math.floor((gross * kept * 2 + l.qty) / (2 * l.qty));
-      const unitCost = costAt(l.item_id, s.occurred_at);
+      // A department ring has no item and no cost: it's bucketed under its department (ADR 0046).
+      const unitCost = l.item_id ? costAt(l.item_id, s.occurred_at) : null;
+      const itemKey = l.item_id ?? `dept:${l.category_id ?? 'none'}`;
       const catKey = l.category_id ?? 'none';
       if (!cats.has(catKey)) cats.set(catKey, empty(catKey, categoryName(l.category_id)));
-      if (!items.has(l.item_id)) items.set(l.item_id, empty(l.item_id, l.name));
-      for (const m of [total, cats.get(catKey)!, items.get(l.item_id)!]) {
+      if (!items.has(itemKey)) items.set(itemKey, empty(itemKey, l.item_id ? l.name : `${l.name} (department)`));
+      for (const m of [total, cats.get(catKey)!, items.get(itemKey)!]) {
         m.units += kept;
         m.revenue_cents += revenue;
         if (unitCost === null) m.units_without_cost += kept;

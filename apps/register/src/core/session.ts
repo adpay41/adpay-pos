@@ -7,6 +7,7 @@
  * Actions are serialized so device_seq stays strictly increasing even if the UI double-taps.
  */
 import {
+  isDepartmentItem,
   type Lang,
   type Promotion,
   applyPromotions,
@@ -268,7 +269,8 @@ export class SaleSession {
         'sale.line_added',
         {
           line_id,
-          item_id: item.item_id,
+          // A department ring (ADR 0046) has no item: the line is the department and the amount.
+          item_id: isDepartmentItem(item) ? null : item.item_id,
           name: item.name,
           category_id: item.category_id,
           qty,
@@ -284,7 +286,7 @@ export class SaleSession {
           tax_included: item.tax_included ?? false,
           sell_unit: item.sell_unit,
           pack_qty: item.pack_qty,
-          price_source: opts.fee ? 'fee' : opts.price ? 'open' : 'catalog',
+          price_source: opts.fee ? 'fee' : isDepartmentItem(item) ? 'department' : opts.price ? 'open' : 'catalog',
           entry: opts.entry ?? 'key',
         },
         saleId,

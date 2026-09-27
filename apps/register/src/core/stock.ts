@@ -39,6 +39,7 @@ export class StockView {
     this.seen.add(sale.sale_id);
     const byId = new Map(this.items().map((i) => [i.item_id, i]));
     for (const l of sale.lines) {
+      if (l.item_id === null) continue; // a department ring counts no stock (ADR 0046)
       const item = byId.get(l.item_id);
       const base = item?.stock_of ?? l.item_id;
       const level = this.levels.get(base);

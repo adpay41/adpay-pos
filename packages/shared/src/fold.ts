@@ -17,7 +17,8 @@ export type SaleStatus = 'open' | 'suspended' | 'completed' | 'voided';
 
 export interface FoldedLine {
   line_id: string;
-  item_id: string;
+  /** Null for a department ring (ADR 0046): an amount with no item behind it. */
+  item_id: string | null;
   name: string;
   /** The item's category when rung (loyalty's qualifying category, P19a). */
   category_id: string | null;
@@ -41,6 +42,8 @@ export interface FoldedLine {
   is_fee: boolean;
   /** The unit prices already contain the tax (ADR 0044). */
   tax_included: boolean;
+  /** Rung as an amount to its department, with no item (ADR 0046). */
+  is_department: boolean;
 }
 
 export interface FoldedTender {
@@ -148,6 +151,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           charges: p.charges ?? [],
           is_fee: p.price_source === 'fee',
           tax_included: p.tax_included ?? false,
+          is_department: p.price_source === 'department',
           category_id: p.category_id ?? null,
           discount_reason: null,
           discount_promo_id: null,

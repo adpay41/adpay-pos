@@ -27,13 +27,17 @@ function finish(lines: BatchLine[], skipped: string[]): Batch {
 }
 
 /** The last completed sale's lines, less anything returned. */
-export function repeatBatch(sale: FoldedSale, items: ReadonlyMap<string, CatalogItem>): Batch {
+/**
+ * `department` gives the stand-in for a department-rung line (ADR 0046), so it repeats at the price
+ * it was rung at; without it such lines are skipped.
+ */
+export function repeatBatch(sale: FoldedSale, items: ReadonlyMap<string, CatalogItem>, department?: (categoryId: string | null) => CatalogItem | null): Batch {
   const lines: BatchLine[] = [];
   const skipped: string[] = [];
   for (const l of sale.lines) {
     const qty = l.qty - (sale.refunded_qty[l.line_id] ?? 0);
     if (qty <= 0) continue;
-    const item = items.get(l.item_id);
+    const item = l.item_id === null ? (l.is_department ? (department?.(l.category_id) ?? null) : null) : items.get(l.item_id);
     if (l.is_fee || !item || !item.active) {
       skipped.push(l.name);
       continue;
@@ -57,7 +61,8 @@ export function usualBatch(u: CashierUsual, items: ReadonlyMap<string, CatalogIt
 
 /** What to save as a usual from the ticket on screen: catalog lines only (no fees), qty per line. */
 export function usualLinesFrom(sale: FoldedSale): { item_id: string; qty: number }[] {
-  return sale.lines.filter((l) => !l.is_fee).map((l) => ({ item_id: l.item_id, qty: Math.min(100, l.qty) }));
+  // Department rings have no item and no fixed price: a usual is items only.
+  return sale.lines.filter((l): l is typeof l & { item_id: string } => !l.is_fee && l.item_id !== null).map((l) => ({ item_id: l.item_id, qty: Math.min(100, l.qty) }));
 }
 
 /** Ring the batch, one line at a time through the session. */

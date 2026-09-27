@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| Register layout A | #48 | Open — department tabs across the top, the register pad (digits, quick cash, Cash/Card, reject a bill) on the main screen replacing the cash modal, ticket on the right, shortcut bar underneath. ADR 0045. |
+| Department ring | #49 | Open — amount straight to a department with no item: nullable item_id on the line event, the department supplies tax/age/name, every consumer handles it; pad key → Department. ADR 0046. |
+| Register layout A | #48 | Merged — department tabs across the top, the register pad (digits, quick cash, Cash/Card, reject a bill) on the main screen replacing the cash modal, ticket on the right, shortcut bar underneath. ADR 0045. |
 | Tax-inclusive prices | #47 | Merged — item flag (merchant app toggle, set by the NRS import), line event records it, tax backed out per rate group, total = pre-tax subtotal + tax with included tax, receipt shows marked prices and incl. tax; tested on mixed tickets, refunds and split tender. ADR 0044. |
 | NRS price book import | #46 | Merged — portal items JSON (real barcodes) or CSV export, preview with department tax/age to confirm and what can't be carried over, batched import (9,284 items ≈ 2 s), idempotent re-upload, merchant app + admin, scan-to-attach on the register. Method: docs/nrs-migration-method.md. ADR 0043. |
 | P25c UPC library, cohorts, investor pack | #41 | Merged — global UPC library deduped across stores (register + merchant app suggestions), cohorts by first-sale month, printable investor / bank pack with CSV. ADR 0041. |
