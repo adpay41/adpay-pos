@@ -142,6 +142,7 @@ export async function reorderSuggestions(q: Queryable, merchantId: string, locat
     const idx = Math.round((Date.parse(`${day}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000);
     if (idx < 0 || idx >= 28) continue;
     for (const l of s.lines) {
+      if (l.item_id === null) continue; // a department ring sells no stocked item (ADR 0046)
       const it = itemById.get(l.item_id);
       if (!it) continue;
       const base = it.stock_of ?? it.item_id;

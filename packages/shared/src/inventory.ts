@@ -90,7 +90,7 @@ export function foldStock(items: readonly StockItem[], movements: readonly Movem
   for (const s of sales) {
     if (s.status !== 'completed' && s.status !== 'voided') continue;
     for (const l of s.lines) {
-      if (!byId.has(l.item_id)) continue;
+      if (l.item_id === null || !byId.has(l.item_id)) continue; // a department ring counts no stock
       const kept = l.qty - (s.refunded_qty[l.line_id] ?? 0);
       const voidedAll = s.status === 'voided';
       const units = (voidedAll ? 0 : kept) * ratio(l.item_id);

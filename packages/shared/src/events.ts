@@ -40,7 +40,8 @@ const LineChargeSchema = z.strictObject({
 
 const LineAdded = z.strictObject({
   line_id: Uuid,
-  item_id: Uuid,
+  /** Null for an amount rung straight to a department (ADR 0046, `price_source: 'department'`). */
+  item_id: Uuid.nullable(),
   name: z.string().min(1).max(200),
   category_id: Uuid.nullable(),
   qty: Qty,
@@ -58,7 +59,7 @@ const LineAdded = z.strictObject({
    * (the card price then follows the location's dual-price %); or a price override (P7).
    * Additive: older events default to catalog.
    */
-  price_source: z.enum(['catalog', 'open', 'override', 'fee']).default('catalog'),
+  price_source: z.enum(['catalog', 'open', 'override', 'fee', 'department']).default('catalog'),
   /** How it was rung: tapped key, scanned barcode, search result, or a device-created item (P5). */
   entry: z.enum(['key', 'scan', 'search', 'new_item']).default('key'),
   /**

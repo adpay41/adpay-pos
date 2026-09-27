@@ -37,6 +37,7 @@ export * from './analyzer';
 export * from './catalog-templates';
 export * from './catalog-import';
 export * from './nrs-import';
+export * from './department';
 export * from './timeclock';
 export * from './zreport';
 export * from './idscan';

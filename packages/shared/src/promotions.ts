@@ -151,7 +151,7 @@ export function applyPromotions(
 
   for (const p of promotions) {
     if (!promotionActive(p, ctx.location_id, local)) continue;
-    const qualifies = (l: FoldedLine) => p.item_ids.includes(l.item_id) || (l.category_id !== null && p.category_ids.includes(l.category_id));
+    const qualifies = (l: FoldedLine) => (l.item_id !== null && p.item_ids.includes(l.item_id)) || (l.category_id !== null && p.category_ids.includes(l.category_id));
     // One entry per available unit, most expensive first: groups favor the customer.
     const units: Unit[] = [];
     for (const l of free) {
