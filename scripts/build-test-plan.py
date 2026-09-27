@@ -37,14 +37,37 @@ THIN = Side(style="thin", color="D0D0D0")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 WRAP = Alignment(wrap_text=True, vertical="top")
 FLAG_TEXT = "⚑ Worked out from the code, not yet clicked through by us. If it's different, report it anyway: the mistake may be ours.\n\n"
+SCREEN_FILL = PatternFill("solid", start_color="F8CBAD")  # light red: a whole screen we have never clicked through
+SCREEN_TEXT = "⚠ WE HAVE NOT CLICKED THROUGH THIS SCREEN AT ALL (only automated tests). Please try it carefully and report anything that looks wrong, confusing or broken, even small things.\n\n"
 
 
 def steps(*lines: str) -> str:
     return "\n".join(f"{i}. {s}" for i, s in enumerate(lines, 1))
 
 
-# Each case: (id, feature, steps, expected, checked). A section header row is ("§", title).
+# Each case: (id, feature, steps, expected, checked). checked: True = we clicked it through; False = worked out from the code
+# (amber); "screen" = a whole screen nobody has clicked through yet (light red, at the top of its sheet).
+# A section header row is ("§", title); ("§!", title) is the red "do these first" header.
 REGISTER = [
+    ("§!", "⚠ DO THESE TWO FIRST: two register screens we have NOT clicked through ourselves. " + "If the register isn't signed in yet, do R1–R5 first (just below), then come back here."),
+    ("T1", "Tax-free sale (whole ticket)", steps(
+        "If the register isn't signed in yet, do R1–R5 first (just below), then come back here.",
+        "Tap the Drinks tab, then Hot Coffee — Medium.",
+        "In the bar along the bottom press Tax-free.",
+        "Look at the box before choosing anything, then tap Resale certificate and type ST3-00417 in the certificate box. Press Make it tax-free.",
+        "Approve: tap Luis Ortega, then 1 3 5 7.",
+        "Press Tax-free again, press Charge tax again, approve as Luis again.",
+        "Press Tax-free once more, choose Non-profit (no certificate), Make it tax-free, approve.",
+        "Pay it by check so the drawer isn't started yet: press Check / other (under the quick-cash buttons), keep Check, press the black Take … button. Press Print receipt, read it, press Done."),
+     "Before: Subtotal $2.25, Tax $0.15, Cash $2.40, Card $2.50. The Tax-free box offers Resale certificate, Non-profit, Government, Diplomat, Other exemption and a \"Certificate number (optional)\" box; \"Make it tax-free\" stays greyed until you pick a reason. It asks \"Manager approval: Make a sale tax-free\". After approval: the Tax-free button is dark, the tax row reads \"Tax (tax-free: Resale certificate)\" $0.00, Cash $2.25, Card $2.34. Charge tax again puts it back to Tax $0.15 / Cash $2.40. After the check: \"Sale complete\". The receipt says \"Tax exempt\" near the top of the totals, Tax $0.00, TOTAL $2.25, and \"Check $2.25\".", "screen"),
+    ("T2", "Check and other tenders (EBT, gift card, house account)", steps(
+        "If the register isn't signed in yet, do R1–R5 first (just below), then come back here.",
+        "Tap the Sandwiches tab, then Chopped Cheese Hero. (Cash $11.72, Card $12.19.)",
+        "On the keypad type 2 0 0 0 0 (that is $200.00) and press Check / other. Read the box, then press Back and press Clear on the keypad.",
+        "Type 5 0 0 ($5.00), press Check / other. Tap EBT, type 4410 in the reference box, and press the black Take … button.",
+        "With nothing typed, press Check / other again. Keep Check, type 1042 as the check number, press the black Take … button.",
+        "Press Print receipt and read it, then Done."),
+     "The box offers Check, EBT, Gift card, House account, Other tender and a reference box. With $200.00 typed it says \"Only $11.72 is left: a check or other tender can't be for more (no change)\" and the Take button is greyed. With $5.00: \"Pays $5.00 now; the rest on another tender.\" and the button reads \"Take $5.00 as EBT\"; afterwards the ticket shows \"Paid so far $5.00 · left $6.72 cash or $6.99 card\". The second time: \"Pays the rest: $6.72 (the cash price).\" and \"Take $6.72 as Check\", then \"Sale complete\". The receipt lists \"EBT #4410 $5.00\" and \"Check #1042 $6.72\" and \"Cash price applied\" (a check or EBT pays the cash price, never the card price).", "screen"),
     ("§", "Getting started (do these first, in order)"),
     ("R1", "Wrong setup code is refused", steps(
         "Open the Register link in Chrome. Make the window as large as you can (the register is built for a wide screen).",
@@ -57,29 +80,31 @@ REGISTER = [
      "and four people: Nadia Haddad (Owner), Luis Ortega (Manager), Dev Patel (Cashier), Maria Santos (Cashier).", True),
     ("R3", "Wrong PIN", steps(
         "Tap Maria Santos.",
-        "Tap 1 1 1 1 on the keypad, then Enter."),
+        "Tap 1 1 1 1 on the keypad. There's no Enter key: it checks the PIN as soon as the 4th digit is in."),
      "\"Wrong PIN (4 tries left)\".", True),
     ("R4", "Five wrong PINs lock a person out", steps(
         "Tap ‹ Back, then tap Dev Patel.",
-        "Tap 0 0 0 0 and Enter. Wait a second for the message. Do this 5 times in total (wait each time; very fast taps get ignored).",
+        "Tap 0 0 0 0 (no Enter). Wait a second for the message. Do this 5 times in total (wait each time; very fast taps get ignored).",
         "Tap ‹ Back."),
      "After the 5th try: \"Too many wrong PINs. Dev Patel is locked out on this register for 5 minutes.\" "
      "Back on \"Who's working?\", Dev Patel's tile says \"locked\".", True),
-    ("R5", "Sign in", steps("Tap Maria Santos, tap 2 4 6 8, then Enter."),
-     "The sale screen opens. Top bar: the store name, \"Register 3 (new)\", a line like \"Today $… · yesterday by now $…\", Clock in, Maria / Lock, "
-     "\"Drawer not started\", Synced, 🌐 English, Customer screen ↗. Left: ★ Favorites, Sandwiches, Drinks, Snacks, Tobacco 21+, Lottery 18+, Grocery, Household. "
-     "Right: the ticket, Cash and Card, and buttons including Receive, Write off, Checklist and End of day.", True),
+    ("R5", "Sign in: the new screen layout", steps("Tap Maria Santos, tap 2 4 6 8 (it signs in on the last digit)."),
+     "The sale screen opens. Top bar: the store name, \"Register 3 (new)\", a line like \"Today $… · yesterday by now $…\", \"Clock out · 0:00\" (signing in starts Maria's shift), "
+     "Maria / Lock, \"Drawer not started\", Synced, 🌐 English, Customer screen ↗. Under it, department TABS across the top: ★ Favorites, Sandwiches, Drinks, Snacks, "
+     "Tobacco 21+, Lottery 18+, Grocery, Household. Then the search box and the item keys. Under the keys, the KEYPAD: a display, Clear, 7 8 9 ⌫ / 4 5 6 00 / 1 2 3 0, "
+     "and @, PLU and Department keys; to its right Cash, Card, Check / other and Reject a bill. The ticket is on the right. Along the bottom: Void ticket, Reprint last, "
+     "Hold, Discount, Return (no receipt), Tax-free, Tickets, Price check, Training, Receive, Write off, Checklist, End of day.", True),
     ("§", "Selling"),
-    ("R6", "Ring an item", steps("Tap Drinks, then tap Hot Coffee — Medium."),
+    ("R6", "Ring an item", steps("Tap the Drinks tab, then tap Hot Coffee — Medium."),
      "The ticket shows Hot Coffee — Medium $2.25 with \"card $2.34\" under it. Subtotal $2.25, Tax $0.15. The two totals: Cash $2.40 and Card $2.50.", True),
     ("R7", "Tap twice = quantity 2", steps("Tap Hot Coffee — Medium again."),
      "Still one line, now \"2 × Hot Coffee — Medium\" $4.50 (card $4.68). Subtotal $4.50, Tax $0.30, Cash $4.80, Card $4.99.", True),
-    ("R8", "Pay cash: start the drawer, quick amounts, change, receipt", steps(
-        "Press Cash. It asks you to \"Count the starting cash\".",
-        "Tap 1, 0, 0, 0, 0 (that is $100.00). Press \"Start drawer with $100.00\".",
-        "On \"Cash — $4.80\", press $20.00.",
+    ("R8", "Pay cash with one tap: start the drawer, quick cash, change, receipt", steps(
+        "Look at the quick-cash buttons next to the keypad, then press $20.00. It asks you to \"Count the starting cash\" first (nobody started the drawer yet).",
+        "Tap 1, 0, 0, 0, 0 (that is $100.00). Press \"Start drawer with $100.00\". Don't press anything else: the $20.00 goes through by itself.",
         "Press Print receipt, read it, then press Done."),
-     "Quick buttons: Exact, $5.00, $10.00, $20.00, $50.00, $100.00. After $20.00: \"Sale complete\", Change due $15.20, \"Total $4.80 cash · drawer opened\". "
+     "Quick buttons: Exact, $5.00, $10.00, $20.00, $50.00, and the Cash key reads \"Cash $4.80\" (there is no separate cash popup any more). After the drawer starts: "
+     "\"Sale complete\", Change due $15.20, \"Total $4.80 cash · drawer opened\". "
      "The receipt (a box titled \"Receipt (printer preview)\") shows: 2 x Hot Coffee — Medium $4.50 · Subtotal $4.50 · Tax 6.625% on $4.50 $0.30 · TOTAL $4.80 · "
      "Cash price applied · Cash $20.00 · Change $15.20 · Cash price total $4.80 · Card price total $4.99, and near the bottom a web link with \"Scan for a digital copy\".", True),
     ("R9", "Search", steps("Click the search box (\"Search name, UPC or PLU — or scan\") and type cheet"),
@@ -111,23 +136,22 @@ REGISTER = [
         "Press Void ticket."),
      FLAG_TEXT + "Hold empties the ticket and a black \"Held (1)\" button appears. The list \"Held tickets\" shows one ticket; Recall brings the Buttered Roll back.", False),
     ("R16", "Card payment (approved)", steps(
-        "Ring Hot Coffee — Medium once (Drinks).",
-        "Press Card, then \"Charge $2.50\". Wait a few seconds.",
+        "Ring Hot Coffee — Medium once (Drinks tab).",
+        "Press the \"Card $2.50\" key next to the keypad. Wait a few seconds.",
         "Press No receipt."),
-     "The card screen shows \"Card price $2.50\", \"or $2.40 in cash\". Then \"Sale complete\" and \"Paid $2.50 by card ···· 1234\" "
-     "(the four digits change every time; that's normal).", True),
+     FLAG_TEXT + "The card goes straight to the card machine (no extra Charge button): \"Card — $2.50\" and \"Customer: tap, insert or swipe on the card machine\". "
+     "Then \"Sale complete\" and \"Paid $2.50 by card ···· 1234\" (the four digits change every time; that's normal).", False),
     ("R17", "Card declined (amounts ending in .13 always decline)", steps(
-        "Tap Grocery. Ring Breakfast Cereal and Whole Milk — Half Gallon.",
-        "Press Card, then \"Charge $9.13\".",
-        "Press \"Cash instead\", then Exact, then No receipt."),
-     "The ticket shows Cash $8.78 and Card $9.13 (both items say \"no tax\"). After Charge: \"Declined — test card: amounts ending in .13 decline. "
-     "Try again, another card, or cash.\" Cash instead + Exact completes the sale with change $0.00.", True),
+        "Tap the Grocery tab. Ring Breakfast Cereal and Whole Milk — Half Gallon.",
+        "Press the \"Card $9.13\" key.",
+        "Press \"Cash instead\", then tap Exact on the keypad, then No receipt."),
+     FLAG_TEXT + "The ticket shows Cash $8.78 and Card $9.13 (both items say \"no tax\"). After Card: \"Declined — test card: amounts ending in .13 decline. "
+     "Try again, another card, or cash.\" Cash instead closes the card box; Exact completes the sale with change $0.00.", False),
     ("R18", "Split: part cash, part card", steps(
         "Ring Hot Coffee — Medium twice.",
-        "Press Cash, tap 2, 0, 0 on the keypad (that is $2.00).",
-        "Press \"Take $2.00 now, rest by card\".",
+        "On the keypad tap 2, 00 (that is $2.00). The Cash key now reads \"Part cash $2.00\": press it.",
         "Press \"Charge $2.91\", then No receipt."),
-     "The card screen: \"Paid so far $2.00\", \"Left to pay by card $2.91\", \"or $2.80 in cash\". Then \"Sale complete\" and \"Paid $4.91: $2.00 cash + $2.91 card\".", True),
+     FLAG_TEXT + "The card box: \"Paid so far $2.00\", \"Left to pay by card $2.91\", \"or $2.80 in cash\". Then \"Sale complete\" and \"Paid $4.91: $2.00 cash + $2.91 card\".", False),
     ("R19", "Price check", steps(
         "Press Price check.",
         "Tap Sandwiches → Chopped Cheese Hero.",
@@ -141,7 +165,7 @@ REGISTER = [
         "Press Tickets. Tap the $2.50 card sale from R16.",
         "Press + next to Hot Coffee — Medium (reason \"Returned\" is already selected).",
         "Press \"Refund $2.50 to card\".",
-        "Tap Luis Ortega and enter 1 3 5 7, Enter."),
+        "Tap Luis Ortega and tap 1 3 5 7."),
      "\"Who's approving?\" lists Nadia Haddad and Luis Ortega. After the PIN, a receipt preview appears with \"Refunded -$2.50\" and at the bottom "
      "\"REFUND - $2.50 returned\".", True),
     ("R22", "Void a completed sale", steps(
@@ -150,7 +174,7 @@ REGISTER = [
      FLAG_TEXT + "The sale shows as voided and \"Drawer opened\" flashes (the $4.80 goes back in cash).", False),
     ("R23", "Training mode", steps(
         "Press Training.",
-        "Ring Hot Coffee — Medium, press Cash → Exact → Print receipt.",
+        "Ring Hot Coffee — Medium, tap Exact on the keypad → Print receipt.",
         "Press Exit training, then Tickets."),
      FLAG_TEXT + "A black banner \"TRAINING — practice only…\". Card, Tickets and End of day disappear. The receipt ends \"*** TRAINING — NOT A SALE ***\". "
      "After leaving training, the practice sale is not in Tickets.", False),
@@ -169,11 +193,11 @@ REGISTER = [
      "where Y = X − 25.00. X is $100.00 plus every cash payment you took since R8, minus drops and paid-outs (it depends on what you did). "
      "\"Recorded for Maria Santos. The owner sees this in the merchant app.\"", True),
     ("R26", "End of day (Z-report)", steps("Press End of day, then \"Take Z & print\"."),
-     "First: \"Since the last Z: N sales, $… (cash …, card …), tax …\". Then a printout \"Z-REPORT #…\" (the number is 2 or higher: we took #1 while testing) with "
+     "First: \"Since the last Z: N sales, $… (cash …, card …), tax …\". Then a printout \"Z-REPORT #…\" (#1 on the fresh demo, higher if someone already took one) with "
      "Sales, BY CATEGORY, TAX, Refunds, Voids, No-sale opens, Counterfeits refused, and CASH DRAWER (Float, Expected, Counted $25.00, Short from R25).", True),
     ("R27", "Selling with no internet", steps(
         "Press F12 (Chrome DevTools) → Network tab → change \"No throttling\" to Offline. Don't reload the page.",
-        "Ring Hot Coffee — Medium. Press Cash (start the drawer with 10000 if asked), Exact, No receipt.",
+        "Ring Hot Coffee — Medium. Tap Exact on the keypad (start the drawer with 10000 if asked), then No receipt.",
         "Set DevTools back to No throttling and wait 15 seconds."),
      FLAG_TEXT + "A yellow banner \"Cash only right now — no connection…\", and Card shows \"offline\". The sale completes; the status pill says \"Offline · N queued\". "
      "After reconnecting the pill goes back to Synced.", False),
@@ -195,7 +219,7 @@ REGISTER = [
      "Before the phone: both prices, \"Pagar en efectivo $2.93\" and \"Pagar con tarjeta $3.05\". After Listo the customer window says "
      "\"Teléfono terminado en 0123 · 0 de 5 visitas — 5 más para su recompensa\" (if someone already used 0123, the visit count is higher). "
      "The register ticket header says \"CUSTOMER: SPANISH\" and \"Rewards ···0123 · 0/5 visits\".", True),
-    ("R32", "Receipt in the customer's language", steps("On the register press Cash → Exact, then Print receipt. Press Done."),
+    ("R32", "Receipt in the customer's language", steps("On the register tap Exact on the keypad, then Print receipt. Press Done."),
      "\"Sale complete … receipt in Spanish\". The customer window says \"¡Gracias!\" and \"Pagado $2.93\". The receipt shows Impuesto 6.625% sobre $2.75 $0.18, "
      "Precio en efectivo aplicado, Efectivo $2.93, Cambio $0.00, Escanee para una copia digital. The store's own lines (returns policy, thank you) stay in English.", True),
     ("R33", "Customer 'Larger text'", steps("On the customer window press \"Letra más grande\" (Larger text)."),
@@ -210,7 +234,7 @@ REGISTER = [
     ("§", "Deals, stock and store routines"),
     ("R36", "Deal: any 2 energy drinks for $6.00", steps(
         "Tap Drinks. Ring Red Bull 8.4 oz, then Monster Energy 16 oz.",
-        "Press Cash → Exact → Print receipt."),
+        "Tap Exact on the keypad → Print receipt."),
      "Each line gets \"Energy drinks −$…\" under it (−$0.57 and −$0.61). Subtotal $6.00, Tax $0.40, Cash $6.40, Card $6.65. "
      "The receipt shows the two \"Energy drinks\" lines and \"You saved $1.18\".", True),
     ("R37", "Low stock and sell-soon", steps("Look at the Monster Energy tile, and at the ticket area when it's empty."),
@@ -233,9 +257,62 @@ REGISTER = [
      "After saving: a box titled \"Done\" with \"Closing checklist saved: 2 of 5 done.\"", True),
     ("R41", "Repeat last sale", steps("With an empty ticket, press ↻ Repeat last."),
      FLAG_TEXT + "The items of the previous sale are rung again. Void the ticket afterwards.", False),
+    ("§", "New: the keypad, departments, keys, discounts and returns"),
+    ("R42", "Quick cash in one tap", steps("Tap the Sandwiches tab, then Buttered Roll.", "Press $5.00 next to the keypad. Press No receipt."),
+     "The quick buttons read Exact, $3.00, $5.00, $10.00, $20.00; the Cash key \"Cash $2.12\" and the Card key \"Card $2.21\". One tap on $5.00: \"Sale complete\", Change due $2.88.", True),
+    ("R43", "Pay with a typed amount", steps("Tap the Drinks tab, then Hot Coffee — Large.", "On the keypad tap 1, 00, 0.", "Press the Cash key, then No receipt."),
+     "The display shows $10.00 and the Cash key changes to \"Cash $10.00\". The sale ($2.93) completes with Change due $7.07.", True),
+    ("R44", "Ring an amount to a department (no item)", steps("Tap the Grocery tab.", "On the keypad tap 3, 5, 0.", "Press the \"→ Grocery\" key (next to the digits). Then Void ticket."),
+     "The department key reads \"→ Grocery\" and under it $3.50. The ticket gets a line \"Grocery\" $3.50 \"no tax\" (Grocery isn't taxed); the keypad clears. "
+     "On ★ Favorites the key says \"Department · pick a tab\" and can't be pressed.", True),
+    ("R45", "Department amount with an age check", steps("Tap the Tobacco tab. Tap 1, 2, 00 on the keypad. Press \"→ Tobacco\".", "Press \"ID checked — 21+\". Then Void ticket."),
+     FLAG_TEXT + "A \"Check ID — 21+\" box first. After ID checked: a line \"Tobacco\" $12.00 with \"21+ checked\", no tax, and you are not asked for the price again.", False),
+    ("R46", "@ key: a number times the next item", steps("Tap the Drinks tab. On the keypad tap 3, then press @.", "Tap Hot Coffee — Medium.", "Tap Hot Coffee — Medium once more. Then Void ticket."),
+     "After @ the display shows \"3 ×\" and \"Now tap, scan or ring the item\". The coffee comes in as \"3 × Hot Coffee — Medium\" $6.75. "
+     "The next tap adds just one (the line becomes 4 ×): the 3 × is used once.", True),
+    ("R47", "PLU key (do Admin case A23 first)", steps("Tap 4, 0, 1, 1 on the keypad and press PLU.", "Tap 0, 4, 0, 1, 1 and press PLU.", "Tap 7, 7, 7 and press PLU. Then Void ticket."),
+     FLAG_TEXT + "Banana $0.39 is rung; the second time (with a leading zero) it rings Banana again (the line becomes 2 ×). 777 shows \"No item with PLU 777.\"", False),
+    ("R48", "Your own key page (do Merchant case MP1 first)", steps("Look at the tabs, then tap Coffee bar.", "Tap the \"$10 grocery\" key, then Void ticket."),
+     "A \"Coffee bar\" tab sits right after ★ Favorites, before the departments. It shows your keys in the order you left them: the three coffees as normal keys and "
+     "\"$10 grocery\" with GROCERY, $10.00 and card $10.40. The $10 key rings a line \"Grocery\" $10.00.", True),
+    ("R49", "Discount the whole ticket (needs a manager)", steps(
+        "Ring Buttered Roll (Sandwiches) and Hot Coffee — Large (Drinks).",
+        "Press Discount (bottom bar). Tap 10%, tap Regular customer, press \"Take $0.47 off\". Approve as Luis (1 3 5 7).",
+        "Tap Exact on the keypad, then Print receipt. Press Done."),
+     "Before: Subtotal $4.74, Tax $0.31, Cash $5.05. The box says \"Takes $0.47 off the cash price (card price in proportion).\" After approval the lines still show $1.99 and $2.75, "
+     "a row \"Ticket discount −$0.47\", Subtotal $4.27, Tax $0.28, Cash $4.55, Card $4.73; the Discount button reads \"Discount on\". The receipt shows \"Discount 10% -$0.47\", Subtotal $4.27, TOTAL $4.55.", True),
+    ("R50", "A price that already includes tax (do Merchant case M33 first)", steps(
+        "Tap the Drinks tab, then Hot Coffee — Large.",
+        "Tap the Sandwiches tab, then Buttered Roll.",
+        "Tap Exact on the keypad, then Print receipt. Press Done. Then undo M33 in the merchant app."),
+     FLAG_TEXT + "With just the coffee: Subtotal $2.75, Tax $0.00, \"Tax included in prices $0.17\", Cash $2.75, Card $2.86 (no tax added on top). With the roll too: Subtotal $4.74, "
+     "Tax $0.13, Tax included in prices $0.17, Cash $4.87. The receipt: \"Hot Coffee — Large *\" $2.75, Subtotal $4.74, \"Tax 6.625% on $1.99\" $0.13, TOTAL $4.87, "
+     "\"* Incl. tax 6.625% on $2.58\" $0.17, \"Total tax\" $0.30, and \"* Price includes tax\".", False),
+    ("R51", "Refund without a receipt (needs a manager)", steps(
+        "With an empty ticket press Return (no receipt) (bottom bar). Tap Defective, press Start the return. Approve as Luis (1 3 5 7).",
+        "Tap the Sandwiches tab, then Buttered Roll.",
+        "Press the black \"Refund $2.12 in cash\" button."),
+     "It asks \"Manager approval: Refund without a receipt\". Then the ticket shows a black banner \"RETURN — no receipt · Defective\" and the keypad's Cash/Card keys are off. "
+     "After the roll: \"Refund $2.12 in cash\" ($1.99 + tax, at today's price). After pressing it: a box titled Done, \"Refunded $2.12 in cash.\", and a new empty ticket.", True),
 ]
 
 MERCHANT = [
+    ("§!", "⚠ DO THESE FIRST: a merchant-app screen we have NOT clicked through ourselves (Items → Pages). Sign in as in M1 first (just below)."),
+    ("MP1", "Build a key page for the register", steps(
+        "Sign in as Nadia (see M1). Open Items, then the Pages section.",
+        "Press + Page. In \"Page name\" replace the text with Coffee bar.",
+        "Under \"Add an item\" type coffee and tap + Hot Coffee — Small, + Hot Coffee — Medium, + Hot Coffee — Large.",
+        "Under \"Add a department amount\" tap Grocery, type 10.00 as the amount and $10 grocery as the label. Press Add.",
+        "On the \"$10 grocery\" key press ↑ once. Press Save key pages.",
+        "Look at the register within about 15 seconds (then do Register case R48)."),
+     "A \"Key pages\" card with a chip \"Coffee bar (4)\" after you add the keys. The keys list reads \"Hot Coffee — Small · $1.75\", \"… Medium · $2.25\", "
+     "\"$10 grocery · Grocery · $10.00\" (after ↑ it sits above Large), \"… Large · $2.75\". After saving: \"Key pages saved (1). Registers update within 15 seconds.\" "
+     "The register gets a Coffee bar tab after ★ Favorites with the keys in that order.", "screen"),
+    ("MP2", "Key pages: limits and mistakes", steps(
+        "Still on Pages: press + Page, name it coffee BAR (same name, different capitals). Press Save key pages.",
+        "Delete that page (Delete page) and save again. Try the ← Earlier / Later → buttons and × on a key; don't save those changes (sign out and back in to undo)."),
+     "Saving two pages with the same name is refused with \"Two pages have the same name\" and nothing changes on the register. After deleting the duplicate, the save works. "
+     "The Save button is greyed whenever nothing has changed.", "screen"),
     ("§", "Signing in and the owner's numbers"),
     ("M1", "Sign in with a code", steps(
         "Open the Merchant app link.",
@@ -255,9 +332,9 @@ MERCHANT = [
      "OVER / SHORT shows the shortage from R25 (in amber, not red). BY CASHIER: Maria Santos with the same short. DRAWER SESSIONS: the Register 3 session with "
      "\"Maria Santos · float $100.00\" and the short. END OF DAY lists your Z from R26. Your closed drawer is NOT listed under \"In the drawers now\".", True),
     ("M6", "Hours and payroll export", steps(
-        "On the register (signed in as anyone) tap Clock in.",
+        "On the register press Lock, then sign in as Dev Patel (3 6 9 0): signing in starts his shift.",
         "In the app open Hours → This week, then press \"Export for payroll (CSV)\"."),
-     FLAG_TEXT + "The person you clocked in shows \"on the clock now\". A CSV file downloads.", False),
+     FLAG_TEXT + "Dev Patel shows \"on the clock now\". A CSV file downloads.", False),
     ("M7", "Opening/closing checklist report", steps("Open Hours and scroll to \"Open & close checklists\"."),
      "A row for today, Jersey City: Opening \"not done\" (unless someone did it), Closing \"2/5 · 2 photos missing\" with the time and \"Maria Santos\". "
      "Tap the Closing entry: the five items with ✓/✗, \"no photo\" on the two photo items, and your note in quotes.", True),
@@ -276,7 +353,7 @@ MERCHANT = [
      FLAG_TEXT + "It says how many customers said yes to texts (0 unless someone ticked the box). Sending is recorded but no text is delivered (see Don't Report This).", False),
     ("§", "Items and prices"),
     ("M12", "Price history", steps("Open Items → Items and tap Snickers."),
-     "\"Edit item\" with the fields and, at the bottom, PRICE HISTORY with at least one line like \"Sep 23, 2026 · $1.99 · import\".", True),
+     "\"Edit item\" with the fields and, at the bottom, PRICE HISTORY with at least one line like \"Sep 27, 2026 · $1.99 · import\" (the date the demo data was loaded).", True),
     ("M13", "Change a price, see it in history and on the register", steps(
         "On Snickers change CASH PRICE to 2.19 and press Save.",
         "Open Snickers again, then check the register (Snacks).",
@@ -305,7 +382,7 @@ MERCHANT = [
         "On the register scan 200000100421 twice (type it in the search box, Enter, twice)."),
      "Under the form a green preview \"★ 2 for $2.00 · Beef sticks 2 for $2\", then \"Saved. Registers pick it up at their next sync.\" On the register: "
      "\"2 × Beef Stick\" with \"Beef sticks 2 for $2 −$0.98\", Subtotal $2.00, Tax $0.13, Cash $2.13, Card $2.22. Void the ticket. "
-     "(You may also see an older, ended copy of this deal from our testing.)", True),
+     "", True),
     ("M19", "End a deal", steps("In Deals, press \"End now\" under your Beef sticks deal."),
      "It changes to \"Ended\" with a \"Run again\" button. Its line \"Last 30 days: 0 tickets\" (voided tickets don't count). The Energy drinks deal keeps running.", True),
     ("§", "Stock and ordering"),
@@ -347,16 +424,46 @@ MERCHANT = [
         "Open Tickets and Items."),
      "Store \"Bayonne Corner Mart\", person Kevin Walsh, no way to switch to Journal Square. Tickets show only Broadway sales. Items have no Test Muffin or Test Salsa.", True),
     ("M31", "Product library suggests a name (see Cross-App X8 for the full flow)", steps(
-        "Still as Kevin: Items → + Add item. In BARCODE (UPC) type 036000291452 (don't save)."),
-     "Under the barcode: \"1 store on AD Pay calls it “Verify Tissues 2-Ply”.\" and the Name box fills in with Verify Tissues 2-Ply. "
-     "(That item is at the Journal Square store.) Leave without saving, then sign out and back in as 2015550100.", True),
+        "Still as Kevin: Items → + Add item. Name Test Tissues 2-Ply, any category, cash price 2.49, BARCODE (UPC) 036000291452. Save.",
+        "Sign out and sign in as 2015550100 (Nadia). Items → + Add item. In BARCODE (UPC) type 036000291452 (don't save)."),
+     FLAG_TEXT + "Under the barcode: \"1 store on AD Pay calls it “Test Tissues 2-Ply”.\" and the Name box fills in with Test Tissues 2-Ply (Kevin's store has it). "
+     "Leave without saving.", False),
+    ("§", "Tax by category and prices that include tax"),
+    ("M32", "Switch a category between Taxed and No tax", steps(
+        "Items → Categories. Look at the Taxed / No tax chip on each category.",
+        "Tap Snacks' Taxed chip so it says No tax. Within 15 seconds ring Snickers on the register (Snacks tab).",
+        "Void the register ticket and tap Snacks' chip back to Taxed."),
+     FLAG_TEXT + "Grocery, Tobacco and Lottery say No tax; the others Taxed. With Snacks on No tax the register rings Snickers $1.99 with \"no tax\" and Tax $0.00. "
+     "After switching back, a new Snickers rings with tax again.", False),
+    ("M33", "Mark an item as \"price includes tax\" (used by Register R50)", steps(
+        "Items → Items → tap Hot Coffee — Large.",
+        "Switch on \"Price includes tax\" and read the line under it. Press Save.",
+        "Do Register case R50. Afterwards switch it off again and Save."),
+     FLAG_TEXT + "Switched on, the line under it reads \"Rings at exactly this price. The tax inside it is still counted on your tax report.\" (off: \"Tax is added on top of this price…\"). "
+     "After saving, the item list shows Hot Coffee — Large with \"· tax included\".", False),
+    ("§", "Bringing a store over from NRS (do these after the Register sheet: they add new tabs)"),
+    ("M34", "Save the sample NRS file", steps("Follow the steps on the sheet \"NRS sample file\" to save nrs-sample.json on your computer."),
+     "You have a file nrs-sample.json of about 5 KB. (A real store's file comes from its NRS login; this is a made-up 12-item one.)", True),
+    ("M35", "Preview an NRS price book", steps(
+        "Items → Import. Press \"Choose the NRS file\" and pick nrs-sample.json.",
+        "Press Preview and read everything on the page. Don't import yet."),
+     FLAG_TEXT + "\"Preview — nothing saved yet\" with: \"Will import 12 of 12 items: 12 new, 0 updated, 0 unchanged.\", "
+     "\"Categories: 5 NRS departments, 4 new, 1 already in your catalog (their tax and age settings kept).\", \"Barcodes: 11 real product barcodes, 1 store codes, 0 without a barcode.\", "
+     "\"Quick keys: 0 — …\", \"Tax-inclusive prices: 1 items ring at their marked price, tax inside.\" Under COULDN'T CARRY OVER EXACTLY: 1 × open price, 1 × store barcode, "
+     "1 × short code, 11 × no cost. Under DEPARTMENTS → CATEGORIES: CHECK TAX AND AGE: Drinks (already in your catalog, settings kept), Grocery tax (Taxed), Grocery Non-Taxable (No tax), Beers (Taxed, Alcohol 21+), "
+     "all smoke (Taxed, Tobacco 21+), each with Taxed / No tax and age chips you can change. ITEMS TO LOOK AT AFTER IMPORTING repeats those with examples, then FIRST CHANGES with \"New · …\" lines and an \"Import 12 items\" button.", False),
+    ("M36", "Import it", steps("Leave the department chips as they are and press Import 12 items. Wait for it to finish."),
+     FLAG_TEXT + "\"Imported\" and \"Imported 12 of 12 items: 12 new, 0 updated, 0 unchanged.\", plus a notice that registers update within 15 seconds. "
+     "Items now lists e.g. Coca-Cola Classic 20oz $2.49 and Marlboro Red Box $13.99 · tax included, and Gatorade Strawberry Kiwi 28oz as open price. Then do Cross-App X14.", False),
+    ("M37", "Uploading again never makes duplicates", steps("Choose the same file again and press Preview. Don't import."),
+     FLAG_TEXT + "\"Will import 12 of 12 items: 0 new, 0 updated, 12 unchanged.\" and Categories \"… 0 new, 5 already in your catalog …\".", False),
 ]
 
 ADMIN = [
     ("§", "Signing in"),
     ("A1", "Sign in", steps("Open the Admin link. Email admin@adpay.local, password adpay-demo. Press Sign in."),
      "The Merchants page with Bayonne Corner Mart and Journal Square Deli & Grocery (Astoria and Jersey City). Menu: Merchants, Onboarding, Fleet, Alerts, Support, "
-     "Tickets, Hardware, Rollouts, Partners, Agents, Investor pack, UPC library, Sales, Money, Tax, Translations, Audit log.", True),
+     "Tickets, Hardware, Rollouts, Partners, Agents, Investor pack, UPC library, Sales, Money, Translations, Audit log. (There is no Tax page any more: see A5.)", True),
     ("A2", "Wrong password", steps("Sign out and try the password wrong."),
      FLAG_TEXT + "An error; you're not signed in. Sign back in correctly.", False),
     ("§", "Stores, catalog and setup"),
@@ -365,9 +472,9 @@ ADMIN = [
     ("A4", "Edit a price (used in X1)", steps("Catalog tab. Open Snickers. Change cash to 2.09 and press Save changes."),
      FLAG_TEXT + "Cash $1.99 and card \"Automatic: cash + 4%\" before; a green saved message with a new catalog version after.", False),
     ("A5", "Tax schedule", steps(
-        "Catalog tab, set \"Priced at location\" to Astoria. Tax & compliance at Astoria → Edit → + Add rate. Class standard, rate 9, date 2099-01-01. Save.",
-        "Open Tax in the menu."),
-     FLAG_TEXT + "Astoria (NY) shows sales tax today 8.875% and under Scheduled \"standard 9% from 2099-01-01\"; Jersey City (NJ) 6.625%.", False),
+        "Catalog tab, set \"Priced at location\" to Astoria. Tax & compliance at Astoria → Edit → + Add rate. Class standard, rate 9, date 2099-01-01. Save."),
+     FLAG_TEXT + "The Tax & compliance panel for Astoria shows sales tax today 8.875% and, scheduled, \"standard 9% from 2099-01-01\". (Whether a category is taxed is set by the "
+     "store owner in the merchant app: Merchant case M32.)", False),
     ("A6", "Open-price item (needed for R13)", steps("Catalog (Jersey City) → + New item. Name Deli by weight, category Grocery, tick Open price, leave cash empty. Add item."),
      FLAG_TEXT + "The item list shows Deli by weight with price \"open\".", False),
     ("A7", "Onboard a new store, with a referral code (do A18 first)", steps(
@@ -418,7 +525,7 @@ ADMIN = [
      "\"American Dream Pay — company snapshot\" with Stores live, Registers paired, Sales this month, Revenue, Retention, a 12-month table (By month), Cohorts and Notes. "
      "Revenue shows $0.00 because the demo stores have no pricing plan (see Don't Report This). \"Print / save as PDF\" opens the print dialog.", True),
     ("A20", "UPC library", steps("Open UPC library. Tick \"Names disagree\", then untick it. Search for tissues."),
-     "A summary line (\"N product barcodes across all stores…\") and a table including 036000291452 · Verify Tissues 2-Ply · 1 store. The search finds it.", True),
+     "A summary line (\"N product barcodes across all stores…\") and a table including 036000291452 · Test Tissues 2-Ply · 1 store (from Merchant case M31). The search finds it.", True),
     ("A21", "Money: KPIs and statement analyzer", steps(
         "Money → KPIs, then Statement analyzer.",
         "Enter: Store Test Bodega, Processor Clover, Card volume 42000, Transactions 2800, Total card fees 1386, Interchange 1008, POS per month 79, Registers 2, "
@@ -426,6 +533,13 @@ ADMIN = [
      FLAG_TEXT + "They pay today $1,465.00, effective rate 3.3%, markup over interchange 0.9% ($378.00); the dual-pricing offer \"Costs $49.00 a month · saves $1,416.00 a month ($16,992.00 a year)\".", False),
     ("A22", "Audit log", steps("Open Audit log."),
      FLAG_TEXT + "Recent entries for your actions (price change, rollout, ticket note, …) with who and when.", False),
+    ("§", "New"),
+    ("A23", "Give an item a PLU (needed for Register R47)", steps("Merchants → Journal Square → Catalog (Jersey City). Open Banana, type 4011 in PLU, press Save changes."),
+     FLAG_TEXT + "Saved; the item list shows Banana with \"· PLU 4011\". Within 15 seconds the register can ring it with the PLU key.", False),
+    ("A24", "Move from NRS: the same file from Admin (after Merchant M36)", steps(
+        "Merchants → Journal Square → Catalog. Open the \"Move from NRS\" panel.",
+        "Choose nrs-sample.json and press Preview. Don't import."),
+     FLAG_TEXT + "\"Preview (nothing saved yet): Will import 12 of 12 items: 0 new, 0 updated, 12 unchanged.\" with the same department table and \"Couldn't carry over exactly\" list as the merchant app.", False),
 ]
 
 CROSS = [
@@ -436,7 +550,7 @@ CROSS = [
      FLAG_TEXT + "Within about 15 seconds the register's Snickers tile shows $2.09 without reloading.", False),
     ("X2", "A sale appears in the owner's live ticker", steps(
         "Keep the merchant app on Sales → Today (LIVE card \"● connected\").",
-        "On the register ring Hot Coffee — Medium and pay Cash → Exact."),
+        "On the register ring Hot Coffee — Medium and tap Exact on the keypad."),
      FLAG_TEXT + "Within about 5 seconds a new top row in LIVE: the time, \"Register 3 (new) · Jersey City\", the cashier, \"cash\", $2.40.", False),
     ("X3", "Closing the drawer reaches the owner", steps("After R25, open the merchant app → Cash → Today."),
      "The same short amount as the register showed in R25, under OVER / SHORT, BY CASHIER (Maria Santos) and DRAWER SESSIONS. The closed drawer is not under \"In the drawers now\".", True),
@@ -468,6 +582,18 @@ CROSS = [
         "Do M25 (store sends a problem), then A10 (AD Pay answers with a canned fix).",
         "In the merchant app, Help → Problems & equipment, tap your ticket."),
      FLAG_TEXT + "The ticket says \"Waiting for you\"; tapping it shows AD Pay's reply (the locked-out explanation). Reply \"Thanks\": in Admin the ticket goes back to open.", False),
+    ("X13", "An owner's key page reaches the register", steps("Do Merchant MP1, then Register R48."),
+     FLAG_TEXT + "The Coffee bar tab appears on the register within about 15 seconds of saving, without reloading.", False),
+    ("X14", "An NRS import scans on the register straight away", steps(
+        "After Merchant M36, wait 15 seconds. On the register look at the tabs.",
+        "Click the search box, type 049000028911 and press Enter (that's \"scanning\" the Coca-Cola barcode).",
+        "Type 028200003843 and press Enter. Press \"ID checked — 21+\".",
+        "Void the ticket."),
+     FLAG_TEXT + "New tabs: Grocery tax, Grocery Non-Taxable, Beers 21+, all smoke 21+. The Coca-Cola barcode rings Coca-Cola Classic 20oz $2.49 (Tax $0.16). "
+     "The Marlboro barcode asks for the 21+ check, then rings Marlboro Red Box $13.99 with its tax inside: the ticket shows Subtotal $16.48, Tax $0.16, "
+     "\"Tax included in prices $0.87\", Cash $16.64.", False),
+    ("X15", "\"Price includes tax\" reaches the register", steps("Do Merchant M33, then Register R50."),
+     FLAG_TEXT + "Within 15 seconds of saving, Hot Coffee — Large rings with no tax added on top and the tax shown as \"included\".", False),
 ]
 
 DONT = [
@@ -479,6 +605,9 @@ DONT = [
         "Revenue and margin show $0.00 or — because the demo stores have no pricing plan and no processor cost entered.",
         "Webhooks only reach a real partner server; example.com will show pending/failed deliveries.",
         "Paying agents happens outside the system; Agents only shows the statement.",
+        "Check / other: EBT, gift cards and house accounts only record the payment and its reference. No EBT processor, gift-card balance or account balance is checked.",
+        "A refund without a receipt is paid back in cash only.",
+        "Getting a store's file out of NRS needs that store's own NRS login, so you use the made-up sample file instead.",
     ]),
     ("Needs hardware we don't have here", [
         "No real printer, cash drawer or barcode scanner: receipts appear as \"Receipt (printer preview)\", the drawer as a \"Drawer opened\" message, and \"scanning\" is typing the barcode + Enter.",
@@ -499,12 +628,11 @@ DONT = [
     ]),
     ("Known small issues (already on our list)", [
         "The deal line on the customer screen (\"2 for $6.00 · Energy drinks\") stays in English when the customer picks Spanish.",
-        "Z-reports on Register 3 taken before today's fix may say \"The register's printout differs from the sales that reached us\" in the merchant app. A Z you take now shouldn't.",
     ]),
     ("Not bugs", [
         "The first time a page opens it can take 10–30 seconds, and everything is a little slow: it runs on one laptop over the internet.",
         "The data has months of history and other people may be testing at the same time: totals don't start at zero, and you may see sales and tickets that aren't yours.",
-        "Some items have test names (\"bbbbbb\", \"Verify Salsa 16oz\", \"Verify Tissues 2-Ply\"): leftovers from our own testing.",
+        "Things you add while testing (Test Muffin, Test Salsa, the Coffee bar page, the NRS sample items and their tabs) stay in the demo afterwards; other testers may see them too.",
         "Numbers that depend on time or on other people (stock counts, \"expires in N days\", visit counts, SLA hours left) are described as \"varies\" in the cases.",
     ]),
 ]
@@ -549,23 +677,31 @@ def case_sheet(wb: Workbook, name: str, intro: str, cases: list) -> None:
     ws.add_data_validation(dv)
     row = 4
     for case in cases:
-        if case[0] == "§":
+        if case[0] in ("§", "§!"):
             c = ws.cell(row=row, column=1, value=case[1])
             c.font = BOLD
+            c.alignment = WRAP
             for col in range(1, 7):
-                ws.cell(row=row, column=col).fill = SECTION_FILL
+                ws.cell(row=row, column=col).fill = SCREEN_FILL if case[0] == "§!" else SECTION_FILL
                 ws.cell(row=row, column=col).border = BORDER
             ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+            if case[0] == "§!":
+                ws.row_dimensions[row].height = 34
             row += 1
             continue
         cid, feature, step_text, expected, checked = case
+        if checked == "screen":
+            expected = SCREEN_TEXT + expected
         values = [cid, feature, step_text, expected, None, None]
         for col, v in enumerate(values, 1):
             c = ws.cell(row=row, column=col, value=v)
             c.font = BOLD if col == 1 else BODY
             c.alignment = WRAP
             c.border = BORDER
-        if not checked:
+        if checked == "screen":
+            for col in (1, 2, 4):
+                ws.cell(row=row, column=col).fill = SCREEN_FILL
+        elif not checked:
             ws.cell(row=row, column=1).fill = FLAG_FILL
             ws.cell(row=row, column=4).fill = FLAG_FILL
         ws.cell(row=row, column=5).fill = FILL_IN
@@ -594,7 +730,8 @@ about = [
     "Everything is demo data. Nothing costs money and no real card is ever charged. Use Chrome on a computer, one tab per app.",
     "Work through the sheets Register → Merchant App → Admin → Cross-App, top to bottom (some cases build on earlier ones). In each row, follow the Steps, "
     "compare with Expected Result, and pick Pass, Fail or Skipped in the yellow Pass/Fail cell. A case passes only if what you see matches.",
-    "Rows with an amber ID are ones we worked out from the code without clicking through ourselves: if they don't match, report them anyway. "
+    "At the top of the Register and Merchant App sheets there are LIGHT RED rows: whole screens we have never clicked through (only automated tests). Please do those first "
+    "(after signing in) and look at them carefully. Rows with an amber ID are ones we worked out from the code without clicking through ourselves: if they don't match, report them anyway. "
     "For every Fail, add a row on the Bug Reports sheet. Before reporting, check the \"Don't Report These\" sheet.",
 ]
 for line in about:
@@ -658,7 +795,7 @@ pair_rows(
     ],
     ["Phone", "Person", "Store"],
 )
-section("5. Register PINs (at \"Who's working?\" tap the name, then tap the PIN on the keypad and Enter)")
+section("5. Register PINs (at \"Who's working?\" tap the name, then tap the 4 digits: it signs in on the last digit, there is no Enter)")
 pair_rows(
     [
         ("2580", "Nadia Haddad · Owner", "Journal Square"),
@@ -673,6 +810,7 @@ pair_rows(
 section("6. Money in the Jersey City store")
 for line in [
     "Most items are taxed at 6.625%. Grocery, Tobacco and Lottery items are not taxed.",
+    "The register's keypad is always on screen: type an amount, then press a tender (Cash, Card, Check / other) or a key that uses the number (@, PLU, → Department).",
     "The card price is 4% higher than the cash price (tobacco and lottery: same price). All the amounts in the cases follow from this.",
     "Owners and managers can approve things a cashier isn't allowed to do: the register asks \"Who's approving?\".",
 ]:
@@ -711,6 +849,28 @@ for title, items in DONT:
     row += 1
 ws.sheet_view.showGridLines = False
 
+nrs = wb.create_sheet("NRS sample file")
+nrs["A1"] = "NRS sample file (for Merchant cases M34–M37)"
+nrs["A1"].font = TITLE
+nrs.column_dimensions["A"].width = 150
+for i, line in enumerate([
+    "A made-up 12-item price book in the exact shape a store's NRS portal gives us. To save it as a file:",
+    "1. Click cell A9 (the long line of text below). 2. Press Ctrl+C (Mac: Cmd+C).",
+    "3. Windows: open Notepad, paste (Ctrl+V), File → Save as, set \"Save as type\" to All files, name it nrs-sample.json. "
+    "Mac: open TextEdit, Format → Make Plain Text, paste (Cmd+V), save as nrs-sample.json (if it asks, use .json).",
+    "4. Check the file starts with [{ and ends with }]. Don't change anything inside it.",
+    "The same file is in the project as docs/nrs-sample-pricebook.json if someone can send it to you.",
+], 3):
+    c = nrs.cell(row=i, column=1, value=line)
+    c.font = BODY
+    c.alignment = WRAP
+import json as _json
+_sample = _json.loads((ROOT / "docs" / "nrs-sample-pricebook.json").read_text(encoding="utf-8"))
+c = nrs.cell(row=9, column=1, value=_json.dumps(_sample, ensure_ascii=False, separators=(",", ":")))
+c.font = Font(name="Consolas", size=9)
+c.fill = FILL_IN
+nrs.sheet_view.showGridLines = False
+
 bugs = wb.create_sheet("Bug Reports")
 bugs["A1"] = "Bug reports"
 bugs["A1"].font = TITLE
@@ -738,5 +898,5 @@ bugs.freeze_panes = "A4"
 OUT.parent.mkdir(parents=True, exist_ok=True)
 wb.save(OUT)
 print(OUT)
-print("cases:", sum(1 for s in (REGISTER, MERCHANT, ADMIN, CROSS) for c in s if c[0] != "§"),
-      "flagged:", sum(1 for s in (REGISTER, MERCHANT, ADMIN, CROSS) for c in s if c[0] != "§" and not c[4]))
+cases = [c for sh in (REGISTER, MERCHANT, ADMIN, CROSS) for c in sh if c[0] not in ("§", "§!")]
+print("cases:", len(cases), "worked out from code:", sum(1 for c in cases if c[4] is False), "never-clicked screens:", sum(1 for c in cases if c[4] == "screen"))
