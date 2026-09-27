@@ -95,8 +95,9 @@ function base(merchantName: string, sale: FoldedSale): DisplayState {
       line_id: l.line_id,
       name: l.name,
       qty: l.qty,
-      cash_cents: lineAmount(l, 'cash'),
-      card_cents: lineAmount(l, 'card'),
+      // The customer screen has no discount row: a basket share comes off the line itself (ADR 0048).
+      cash_cents: lineAmount(l, 'cash') - l.basket_cash_cents,
+      card_cents: lineAmount(l, 'card') - l.basket_card_cents,
       deal: l.discount_promo_id && l.discount_reason ? { kind: 'promo', name: l.discount_reason.replace(/^Promo: /, '') } : l.discount_reason === 'Loyalty reward' ? { kind: 'reward' } : null,
     })),
     cash_total_cents: sale.cash.total_cents,

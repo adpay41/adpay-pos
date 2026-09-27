@@ -3,7 +3,7 @@
  * build plan P20b, ADR 0032). Integer cents throughout: a percentage is parts per million.
  */
 import { z } from 'zod';
-import type { FoldedSale } from './fold';
+import { lineDiscount, type FoldedSale } from './fold';
 import { applyRateHalfUp, cents } from './money';
 import { lineIncludedTax } from './pricing';
 
@@ -92,7 +92,7 @@ export function marginReport(
       const kept = l.qty - (s.refunded_qty[l.line_id] ?? 0);
       if (kept <= 0) continue;
       const unit = mode === 'card' ? l.unit_card_price_cents : l.unit_cash_price_cents;
-      const discount = mode === 'card' ? l.card_discount_cents : l.cash_discount_cents;
+      const discount = lineDiscount(l, mode);
       const marked = unit * l.qty - discount; // goods only, before per-unit charges
       // Revenue is before tax: a tax-inclusive price (ADR 0044) has its tax taken out.
       const gross = marked - lineIncludedTax({ qty: l.qty, unit_price_cents: unit, discount_cents: discount, taxable: l.taxable, tax_rate_ppm: l.tax_rate_ppm, tax_included: l.tax_included });

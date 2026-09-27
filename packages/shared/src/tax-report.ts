@@ -4,7 +4,7 @@
  * figures are the receipts' figures. Integer cents throughout.
  */
 import type { FoldedSale } from './fold';
-import { toTaxable } from './fold';
+import { lineDiscount, toTaxable } from './fold';
 import { cents, sum, type Cents } from './money';
 import { taxByRate, type TaxableLine } from './pricing';
 import { splitTaxGroups } from './split';
@@ -45,7 +45,7 @@ export function refundTax(s: FoldedSale, lines: readonly { line_id: string; qty:
   for (const r of lines) {
     const l = s.lines.find((x) => x.line_id === r.line_id);
     if (!l) continue;
-    const disc = mode === 'card' ? l.card_discount_cents : l.cash_discount_cents;
+    const disc = lineDiscount(l, mode);
     taxable.push({
       qty: r.qty,
       unit_price_cents: mode === 'card' ? l.unit_card_price_cents : l.unit_cash_price_cents,

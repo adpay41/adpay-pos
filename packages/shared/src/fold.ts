@@ -9,6 +9,7 @@ import { add, cents, sub, sum, ZERO, type Cents } from './money';
 import { computeTotals, lineNet, type PriceMode, type TaxableLine, type Totals } from './pricing';
 import type { LineCharge } from './compliance';
 import { coverForCard, splitTotals } from './split';
+import { isEmptyBasket, spreadBasket, type BasketDiscount } from './basket';
 
 /** How a completed sale was paid: at the cash price, the card price, or split between them (P9). */
 export type CompletionMode = PriceMode | 'split';
@@ -44,6 +45,9 @@ export interface FoldedLine {
   tax_included: boolean;
   /** Rung as an amount to its department, with no item (ADR 0046). */
   is_department: boolean;
+  /** This line's share of the ticket's basket discount (ADR 0048), on top of its own discount. */
+  basket_cash_cents: Cents;
+  basket_card_cents: Cents;
 }
 
 export interface FoldedTender {
@@ -84,18 +88,25 @@ export interface FoldedSale {
   customer: { ref: string; last4: string; marketing_opt_in: boolean } | null;
   /** A loyalty reward used on this ticket. */
   loyalty: { cost: number; discount_cents: number } | null;
+  /** The whole-ticket discount (ADR 0048) and what it takes off in each price mode. */
+  basket: (BasketDiscount & { cash_cents: Cents; card_cents: Cents }) | null;
 }
 
 export function toTaxable(lines: FoldedLine[], mode: PriceMode): TaxableLine[] {
   return lines.map((l) => ({
     qty: l.qty,
     unit_price_cents: mode === 'cash' ? l.unit_cash_price_cents : l.unit_card_price_cents,
-    discount_cents: mode === 'cash' ? l.cash_discount_cents : l.card_discount_cents,
+    discount_cents: lineDiscount(l, mode),
     taxable: l.taxable,
     tax_rate_ppm: l.tax_rate_ppm,
     charges: l.charges.map((c) => ({ unit_cents: mode === 'cash' ? c.unit_cash_cents : c.unit_card_cents, taxable: c.taxable })),
     tax_included: l.tax_included,
   }));
+}
+
+/** Everything off a line in a price mode: its own discount (promotion, reward) plus its basket share. */
+export function lineDiscount(l: FoldedLine, mode: PriceMode): Cents {
+  return mode === 'cash' ? add(l.cash_discount_cents, l.basket_cash_cents) : add(l.card_discount_cents, l.basket_card_cents);
 }
 
 /**
@@ -106,9 +117,14 @@ export function lineTotal(line: FoldedLine, mode: PriceMode): Cents {
   return computeTotals(toTaxable([line], mode)).subtotal_cents;
 }
 
-/** One line as the ticket shows it: at its marked price (a tax-inclusive price keeps its tax). */
+/**
+ * One line as the ticket shows it: at its marked price (a tax-inclusive price keeps its tax), less
+ * its own discount. A basket discount (ADR 0048) is shown once, as its own row, so it is not taken
+ * off here.
+ */
 export function lineAmount(line: FoldedLine, mode: PriceMode): Cents {
-  return lineNet(toTaxable([line], mode)[0]!);
+  const t = toTaxable([line], mode)[0]!;
+  return lineNet({ ...t, discount_cents: mode === 'cash' ? line.cash_discount_cents : line.card_discount_cents });
 }
 
 /** Fold one sale's events. Events are ordered by device_seq; duplicates by event_id are ignored. */
@@ -125,6 +141,7 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   let receiptToken: string | null = null;
   let customer = null as FoldedSale['customer'];
   let loyalty = null as FoldedSale['loyalty'];
+  let basket: BasketDiscount | null = null;
   let refunded: Cents = ZERO;
   const refundedQty: Record<string, number> = {};
 
@@ -152,6 +169,8 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
           is_fee: p.price_source === 'fee',
           tax_included: p.tax_included ?? false,
           is_department: p.price_source === 'department',
+          basket_cash_cents: ZERO,
+          basket_card_cents: ZERO,
           category_id: p.category_id ?? null,
           discount_reason: null,
           discount_promo_id: null,
@@ -223,6 +242,9 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
       case 'sale.customer_identified':
         customer = { ref: e.payload.customer_ref, last4: e.payload.last4, marketing_opt_in: e.payload.marketing_opt_in };
         break;
+      case 'sale.basket_discounted':
+        basket = isEmptyBasket(e.payload) ? null : { kind: e.payload.kind, percent_ppm: e.payload.percent_ppm, amount_cents: e.payload.amount_cents, reason: e.payload.reason };
+        break;
       case 'sale.loyalty_redeemed':
         loyalty = { cost: (loyalty?.cost ?? 0) + e.payload.cost, discount_cents: (loyalty?.discount_cents ?? 0) + e.payload.discount_cents };
         break;
@@ -232,6 +254,21 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
   }
 
   const active = [...lines.values()];
+  // The basket discount over the goods (never a fee line or a deposit), after each line's own discount.
+  const goods = active.filter((l) => !l.is_fee && l.qty > 0);
+  const shares = spreadBasket(
+    basket,
+    goods.map((l) => ({
+      line_id: l.line_id,
+      cash_cents: Math.max(0, l.unit_cash_price_cents * l.qty - l.cash_discount_cents),
+      card_cents: Math.max(0, l.unit_card_price_cents * l.qty - l.card_discount_cents),
+    })),
+  );
+  for (const l of active) {
+    const share = shares.get(l.line_id);
+    l.basket_cash_cents = cents(share?.cash ?? 0);
+    l.basket_card_cents = cents(share?.card ?? 0);
+  }
   const cash = computeTotals(toTaxable(active, 'cash'));
   const card = computeTotals(toTaxable(active, 'card'));
   // What each approved tender paid for, in cash-price cents (explicit on new events, derived on old).
@@ -280,6 +317,9 @@ export function foldSale(saleId: string, events: readonly RegisterEvent[]): Fold
     receipt_token: receiptToken,
     customer,
     loyalty,
+    basket: basket
+      ? { ...basket, cash_cents: sum(active.map((l) => l.basket_cash_cents)), card_cents: sum(active.map((l) => l.basket_card_cents)) }
+      : null,
   };
 }
 

@@ -29,6 +29,7 @@ export const PERMISSIONS = {
   'sale.void': { label: 'Void a completed sale', where: 'register' },
   'sale.refund': { label: 'Refund', where: 'register' },
   'line.discount': { label: 'Discount a line', where: 'register' },
+  'ticket.discount': { label: 'Discount the whole ticket', where: 'register' },
   'price.override': { label: 'Change a price at the register', where: 'register' },
   'drawer.no_sale': { label: 'Open the drawer without a sale', where: 'register' },
   'cash.paid_out': { label: 'Pay out / pay in cash', where: 'register' },

@@ -8,6 +8,7 @@
  */
 import {
   isDepartmentItem,
+  type BasketDiscount,
   type Lang,
   type Promotion,
   applyPromotions,
@@ -404,6 +405,20 @@ export class SaleSession {
       const sale = this.current();
       await this.emit('sale.voided', { reason, by_user_id: this.actor }, sale.sale_id);
       await this.clearOpen();
+      this.notify();
+      return this.state();
+    });
+  }
+
+  /**
+   * A discount on the whole open ticket (ADR 0048), or null to remove it. The caller checks
+   * `ticket.discount` (or gets a manager's override); the event records who was signed in.
+   */
+  discountTicket(d: BasketDiscount | null): Promise<SessionState> {
+    return this.serial(async () => {
+      const sale = this.current();
+      if (sale.status !== 'open') throw new SaleError('Only an open ticket can be discounted');
+      await this.emit('sale.basket_discounted', d ?? { kind: 'amount', percent_ppm: null, amount_cents: null, reason: null }, sale.sale_id);
       this.notify();
       return this.state();
     });

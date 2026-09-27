@@ -11,7 +11,7 @@
  * maps them to CSS. See docs/decisions/0009-register-core.md.
  */
 import { ppmToPercent } from './catalog';
-import { toTaxable, type FoldedSale } from './fold';
+import { lineDiscount, toTaxable, type FoldedSale } from './fold';
 import { cellWidth, sliceCells, translator, type Lang, type Overrides } from './i18n';
 import { add, cents, formatUsd, mulQty } from './money';
 import { shownTotals, taxByRate } from './pricing';
@@ -147,6 +147,12 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
     if (line.min_age) push(`   ${t(line.age_verified ? 'r_age_verified' : 'r_age_not_verified', { age: line.min_age })}`);
   }
 
+  // The whole-ticket discount (ADR 0048), one line, before the subtotal it comes off.
+  if (sale.basket) {
+    const off = mode === 'card' ? sale.basket.card_cents : sale.basket.cash_cents;
+    const pct = sale.basket.kind === 'percent' && sale.basket.percent_ppm ? ` ${ppmToPercent(sale.basket.percent_ppm)}%` : '';
+    if (off > 0) push(pad(`${t('r_discount')}${pct}`, `-${money(off)}`));
+  }
   push(rule());
   // Items at their marked prices: tax already inside a price is not added again (ADR 0044).
   const shown = shownTotals(totals);
@@ -183,7 +189,7 @@ export function renderReceipt(input: ReceiptInput): ReceiptLine[] {
     push(t('r_tax_included_note'));
   }
   // Promotions and rewards, added up (P20a): the customer sees what the deal was worth.
-  const saved = sale.lines.reduce((n, l) => n + (mode === 'card' ? l.card_discount_cents : l.cash_discount_cents), 0);
+  const saved = sale.lines.reduce((n, l) => n + lineDiscount(l, mode), 0);
   if (saved > 0) push(center(t('r_saved', { amount: money(saved) })), 'center');
   push(
     pad(

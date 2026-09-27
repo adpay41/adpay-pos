@@ -5,7 +5,7 @@
  * minus what was already refunded. Returning everything left refunds exactly the remainder, so
  * rounding can never leave a stray cent behind or pay one out twice.
  */
-import type { FoldedSale } from './fold';
+import { lineDiscount, type FoldedSale } from './fold';
 import { cents, sub, ZERO, type Cents } from './money';
 import { computeTotals, type TaxableLine } from './pricing';
 
@@ -45,7 +45,7 @@ export function refundQuote(sale: FoldedSale, selection: readonly RefundLine[]):
     if (sel.qty > (left[sel.line_id] ?? 0)) throw new Error(`Only ${left[sel.line_id] ?? 0} of ${line.name} can still be returned`);
     lines.push({ line_id: sel.line_id, qty: sel.qty });
     const unit = mode === 'cash' ? line.unit_cash_price_cents : line.unit_card_price_cents;
-    const discount = mode === 'cash' ? line.cash_discount_cents : line.card_discount_cents;
+    const discount = lineDiscount(line, mode);
     // A line discount is spread over its units and the share rounded **up** once, so a partial
     // return never hands back more than was paid for those units (the full return takes the exact rest).
     // Per-unit charges (a deposit, P10) go back with the unit they were charged on.
