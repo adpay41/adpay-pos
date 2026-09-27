@@ -73,7 +73,7 @@ export function SummaryView({ s }: { s: SalesSummary }) {
             <tbody>
               {s.by_tender.map((t) => (
                 <tr key={t.tender_type}>
-                  <td>{t.tender_type === 'card' ? 'Card' : 'Cash'}</td>
+                  <td>{t.tender_type === 'card' ? 'Card' : t.tender_type === 'check' ? 'Check' : t.tender_type === 'other' ? 'Other' : 'Cash'}</td>
                   <td className="num muted">{t.count} tickets</td>
                   <td className="num">
                     <Money cents={t.amount_cents} />

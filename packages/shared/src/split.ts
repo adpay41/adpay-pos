@@ -36,7 +36,8 @@ export function coverForCard(cardAmount: number, remainingCash: number, cashTota
 }
 
 export interface TenderPortion {
-  tender_type: 'cash' | 'card';
+  /** Anything but a card pays at the cash price (a check, EBT, a gift card: ADR 0050). */
+  tender_type: 'cash' | 'card' | 'check' | 'other';
   amount_cents: number;
   covers_cash_cents: number;
 }
@@ -47,7 +48,7 @@ export interface TenderPortion {
  */
 export function splitTotals(cash: Totals, card: Totals, portions: readonly TenderPortion[]): Totals {
   const total = portions.reduce((n, p) => n + p.amount_cents, 0);
-  const cashCover = portions.filter((p) => p.tender_type === 'cash').reduce((n, p) => n + p.covers_cash_cents, 0);
+  const cashCover = portions.filter((p) => p.tender_type !== 'card').reduce((n, p) => n + p.covers_cash_cents, 0);
   const cardCover = portions.filter((p) => p.tender_type === 'card').reduce((n, p) => n + p.covers_cash_cents, 0);
   const C = cash.total_cents;
   const tax = C > 0 ? divHalfUp(cash.tax_cents * cashCover + card.tax_cents * cardCover, C) : 0;
@@ -77,7 +78,7 @@ export function splitTaxGroups(
   declaredTax: number,
 ): RateGroup[] {
   if (cashTotal <= 0) return [];
-  const cashCover = portions.filter((p) => p.tender_type === 'cash').reduce((n, p) => n + p.covers_cash_cents, 0);
+  const cashCover = portions.filter((p) => p.tender_type !== 'card').reduce((n, p) => n + p.covers_cash_cents, 0);
   const cardCover = portions.filter((p) => p.tender_type === 'card').reduce((n, p) => n + p.covers_cash_cents, 0);
   const blend = (a: number, b: number) => divHalfUp(a * cashCover + b * cardCover, cashTotal);
   const out = cashGroups.map((g) => {

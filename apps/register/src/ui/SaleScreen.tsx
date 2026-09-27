@@ -66,6 +66,7 @@ import { CardPanel, type CardPhase } from './TenderUI';
 import { HeldTickets, TicketBrowser } from './TicketsUI';
 import { findByPlu, padCents, padQty } from '../core/pad';
 import { BasketPanel } from './BasketUI';
+import { OtherTenderPanel } from './OtherTenderUI';
 import { TAX_EXEMPT_LABEL, TaxFreePanel } from './TaxFreeUI';
 import { RegisterPad } from './RegisterPad';
 import { NumberPad, PriceCheckCard, UnknownItemForm } from './SpeedUI';
@@ -109,7 +110,8 @@ type Modal =
   | { kind: 'write_off' }
   | { kind: 'checklist' }
   | { kind: 'basket' }
-  | { kind: 'tax_free' };
+  | { kind: 'tax_free' }
+  | { kind: 'other_tender' };
 
 export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void }) {
   const t = useT();
@@ -886,6 +888,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               void chargeCard(amount);
             }}
             onRejectBill={() => setModal({ kind: 'drawer', startWithFloat: false, thenCash: false, counterfeit: true })}
+            onOther={() => setModal({ kind: 'other_tender' })}
             pendingQty={atQty}
             extraKeys={
               <>
@@ -1216,6 +1219,28 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
               <Text style={s.primaryText}>{t('ID checked — {age}+', { age: modal.batch.min_age ?? '' })}</Text>
             </Pressable>
           </View>
+        </Overlay>
+      )}
+
+      {modal.kind === 'other_tender' && sale && (
+        <Overlay onClose={() => setModal({ kind: 'none' })}>
+          <OtherTenderPanel
+            due={sale.remaining_cash_cents}
+            typedCents={padCents(pad)}
+            onCancel={() => setModal({ kind: 'none' })}
+            onTake={(x) => {
+              setModal({ kind: 'none' });
+              setPad('');
+              void run(async () => {
+                const saleId = sale.sale_id;
+                const r = await ses.tenderOther(x.kind, x.amount, { reference: x.reference, other_kind: x.other_kind });
+                // A check goes in the drawer; EBT, gift cards and accounts don't.
+                if (x.kind === 'check') await takeCash(saleId);
+                rt.log.info('other tender', { sale: saleId.slice(0, 8), kind: x.other_kind ?? x.kind, amount_cents: x.amount, completed: r.completed });
+                if (r.completed) await completed(r.sale, x.amount, 0);
+              });
+            }}
+          />
         </Overlay>
       )}
 

@@ -114,7 +114,7 @@ export async function cashierPerformance(q: Queryable, merchantId: string, from:
 /** One row per store and day: what the books need, from the events. */
 export async function dailyJournal(q: Queryable, merchantId: string, from: string, to: string): Promise<JournalDay[]> {
   const { rows } = await q.query<{
-    date: string; location_id: string; location: string; net: number; tax: number; gross: number; refunds: number; cash: number; card: number;
+    date: string; location_id: string; location: string; net: number; tax: number; gross: number; refunds: number; cash: number; card: number; checks: number; others: number;
     paid_out: number; paid_in: number; drops: number;
   }>(
     `WITH ok AS (
@@ -128,6 +128,8 @@ export async function dailyJournal(q: Queryable, merchantId: string, from: strin
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (WHERE e.type = 'sale.refunded' AND e.payload->>'reason' NOT LIKE 'Void%'), 0)::bigint AS refunds,
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (WHERE e.type = 'sale.tender_added' AND e.payload->>'tender_type' = 'cash' AND e.sale_id IN (SELECT sale_id FROM ok)), 0)::bigint AS cash,
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (WHERE e.type = 'sale.tender_added' AND e.payload->>'tender_type' = 'card' AND e.sale_id IN (SELECT sale_id FROM ok) AND e.payload->'card'->>'status' = 'approved'), 0)::bigint AS card,
+            coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (WHERE e.type = 'sale.tender_added' AND e.payload->>'tender_type' = 'check' AND e.sale_id IN (SELECT sale_id FROM ok)), 0)::bigint AS checks,
+            coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (WHERE e.type = 'sale.tender_added' AND e.payload->>'tender_type' = 'other' AND e.sale_id IN (SELECT sale_id FROM ok)), 0)::bigint AS others,
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (WHERE e.type = 'drawer.cash_movement' AND e.payload->>'kind' = 'paid_out'), 0)::bigint AS paid_out,
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (WHERE e.type = 'drawer.cash_movement' AND e.payload->>'kind' = 'paid_in'), 0)::bigint AS paid_in,
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (WHERE e.type = 'drawer.cash_movement' AND e.payload->>'kind' = 'drop'), 0)::bigint AS drops
@@ -148,6 +150,8 @@ export async function dailyJournal(q: Queryable, merchantId: string, from: strin
     refunds_cents: Number(r.refunds),
     cash_cents: Number(r.cash),
     card_cents: Number(r.card),
+    check_cents: Number(r.checks),
+    other_cents: Number(r.others),
     paid_out_cents: Number(r.paid_out),
     paid_in_cents: Number(r.paid_in),
     drops_cents: Number(r.drops),

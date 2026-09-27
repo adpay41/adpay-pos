@@ -27,7 +27,7 @@ export interface ZReport {
   sales_count: number;
   /** Money taken on completed, not-voided sales (approved tenders). */
   gross_cents: Cents;
-  by_tender: { cash_cents: Cents; card_cents: Cents; cash_count: number; card_count: number };
+  by_tender: { cash_cents: Cents; card_cents: Cents; cash_count: number; card_count: number; check_cents: Cents; check_count: number; other_cents: Cents; other_count: number };
   by_category: { category_id: string | null; name: string; qty: number; amount_cents: Cents }[];
   tax_by_rate: { rate_ppm: number; taxable_cents: Cents; tax_cents: Cents }[];
   tax_cents: Cents;
@@ -123,6 +123,11 @@ export function buildZReport(
       card_cents: sum(tenders.filter((t) => t.tender_type === 'card').map((t) => t.amount_cents)),
       cash_count: tenders.filter((t) => t.tender_type === 'cash').length,
       card_count: tenders.filter((t) => t.tender_type === 'card').length,
+      // Checks and other tenders (ADR 0050): not cash, so never in the drawer count.
+      check_cents: sum(tenders.filter((t) => t.tender_type === 'check').map((t) => t.amount_cents)),
+      check_count: tenders.filter((t) => t.tender_type === 'check').length,
+      other_cents: sum(tenders.filter((t) => t.tender_type === 'other').map((t) => t.amount_cents)),
+      other_count: tenders.filter((t) => t.tender_type === 'other').length,
     },
     by_category: [...cats.values()].map((c) => ({ category_id: c.category_id, name: c.name, qty: c.qty, amount_cents: sum(c.amount) })).sort((a, b) => b.amount_cents - a.amount_cents),
     tax_by_rate,
@@ -157,6 +162,8 @@ export function renderZReport(z: ZReport, header: { merchant_name: string; locat
   out.push(pad(`Sales (${z.sales_count})`, money(z.gross_cents)));
   out.push(pad(`  Cash (${z.by_tender.cash_count})`, money(z.by_tender.cash_cents)));
   out.push(pad(`  Card (${z.by_tender.card_count})`, money(z.by_tender.card_cents)));
+  if (z.by_tender.check_count) out.push(pad(`  Check (${z.by_tender.check_count})`, money(z.by_tender.check_cents)));
+  if (z.by_tender.other_count) out.push(pad(`  Other (${z.by_tender.other_count})`, money(z.by_tender.other_cents)));
   out.push(rule, 'BY CATEGORY');
   for (const c of z.by_category) out.push(pad(`  ${c.name} (${c.qty})`, money(c.amount_cents)));
   out.push(rule, 'TAX');

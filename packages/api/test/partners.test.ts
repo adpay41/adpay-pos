@@ -49,7 +49,9 @@ describe('API keys', () => {
     const { key, key_id } = res.json() as { key: string; key_id: string };
     expect(key).toMatch(/^adp_[a-z0-9]{8}_/);
     const { rows } = await db.query<{ key_hash: string }>('SELECT key_hash FROM api_keys WHERE key_id = $1', [key_id]);
-    expect(rows[0]!.key_hash).not.toContain(key.split('_')[2]!);
+    // The secret is everything after `adp_<8-char prefix>_`; it is base64url, so it can itself contain
+    // '_' (splitting on '_' made this test fail now and then).
+    expect(rows[0]!.key_hash).not.toContain(key.slice('adp_'.length + 8 + 1));
     expect(JSON.stringify((await app.inject({ method: 'GET', url: '/admin/api-keys', headers: auth(admin) })).json())).not.toContain(key);
 
     await sell(a);

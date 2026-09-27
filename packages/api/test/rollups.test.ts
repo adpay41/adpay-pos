@@ -108,7 +108,7 @@ describe('cashier performance and the journal', () => {
     expect(j.days).toEqual([expect.objectContaining({ date: '2026-09-10', net_sales_cents: 4_500, tax_cents: 0, gross_cents: 4_500, cash_cents: 2_500, card_cents: 2_000, refunds_cents: 0 })]);
     const csv = await app.inject({ method: 'GET', url: '/merchant/reports/journal.csv?from=2026-09-10&to=2026-09-10', headers: auth(owner) });
     expect(csv.headers['content-type']).toMatch(/text\/csv/);
-    expect(csv.body.split('\n')[1]).toBe('2026-09-10,Nineteen Main St,45.00,0.00,45.00,0.00,25.00,20.00,0.00,0.00,0.00,0.00');
+    expect(csv.body.split('\n')[1]).toBe('2026-09-10,Nineteen Main St,45.00,0.00,45.00,0.00,25.00,20.00,0.00,0.00,0.00,0.00,0.00,0.00');
   });
 });
 

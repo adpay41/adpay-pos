@@ -370,7 +370,8 @@ part of v1.
 | Phase | PR | Status |
 | --- | --- | --- |
 | Plan + Feature Bible | #4 | merged |
-| Tax-free sale | #52 | Open — whole-ticket exemption with reason and certificate, tax-inclusive prices drop to pre-tax, exempt sales in the tax report, manager override. ADR 0049. |
+| Check and other tenders | #53 | Open — check / EBT / gift card / house account / other at the cash price with a reference; Z, sales summary and journal break them out; drawer stays cash-only. ADR 0050. |
+| Tax-free sale | #52 | Merged — whole-ticket exemption with reason and certificate, tax-inclusive prices drop to pre-tax, exempt sales in the tax report, manager override. ADR 0049. |
 | Basket discount | #51 | Merged — whole-ticket percent or amount with a reason, one event spread over the lines by the fold; tax, refunds, receipt, Z and profit agree; manager override for cashiers. ADR 0048. |
 | Key pages, @ and PLU | #50 | Merged — owner-named register tabs with item and department-amount keys (merchant app editor, snapshot), @ quantity and PLU keys on the pad. ADR 0047. |
 | Department ring | #49 | Merged — amount straight to a department with no item: nullable item_id on the line event, the department supplies tax/age/name, every consumer handles it; pad key → Department. ADR 0046. |

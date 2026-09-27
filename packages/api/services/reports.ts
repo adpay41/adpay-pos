@@ -20,6 +20,9 @@ interface SaleRow {
   hour: number | null;
   cash_cents: number;
   card_cents: number;
+  /** Checks and other tenders (ADR 0050). */
+  check_cents: number;
+  other_cents: number;
   tax_cents: number;
   refunds_cents: number;
   voids_in_range: number;
@@ -58,6 +61,10 @@ export async function salesSummary(
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (
               WHERE e.type = 'sale.tender_added' AND e.payload->>'tender_type' = 'card'
                 AND e.payload->'card'->>'status' = 'approved'), 0)::bigint AS card_cents,
+            coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (
+              WHERE e.type = 'sale.tender_added' AND e.payload->>'tender_type' = 'check'), 0)::bigint AS check_cents,
+            coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (
+              WHERE e.type = 'sale.tender_added' AND e.payload->>'tender_type' = 'other'), 0)::bigint AS other_cents,
             coalesce(max((e.payload->>'tax_cents')::bigint) FILTER (WHERE e.type = 'sale.completed'), 0)::bigint AS tax_cents,
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (
               WHERE e.type = 'sale.refunded' AND e.business_date BETWEEN $2::date AND $3::date), 0)::bigint AS refunds_cents,
@@ -81,14 +88,15 @@ export async function salesSummary(
   );
 
   const counted = rows.filter((r) => r.completed_in_range && !r.voided);
-  const money = (r: SaleRow) => sum([cents(r.cash_cents), cents(r.card_cents)]);
+  const money = (r: SaleRow) => sum([cents(r.cash_cents), cents(r.card_cents), cents(r.check_cents), cents(r.other_cents)]);
 
-  const byTender = (['card', 'cash'] as const)
+  const amountOf = (r: SaleRow, t: 'card' | 'cash' | 'check' | 'other') => Number(t === 'cash' ? r.cash_cents : t === 'card' ? r.card_cents : t === 'check' ? r.check_cents : r.other_cents);
+  const byTender = (['card', 'cash', 'check', 'other'] as const)
     .map((tender_type) => {
-      const withTender = counted.filter((r) => (tender_type === 'cash' ? r.cash_cents : r.card_cents) > 0);
+      const withTender = counted.filter((r) => amountOf(r, tender_type) > 0);
       return {
         tender_type,
-        amount_cents: sum(withTender.map((r) => cents(tender_type === 'cash' ? r.cash_cents : r.card_cents))),
+        amount_cents: sum(withTender.map((r) => cents(amountOf(r, tender_type)))),
         count: withTender.length,
       };
     })
@@ -201,7 +209,7 @@ export async function salesCompare(q: Queryable, merchantId: string, locationId:
                  + extract(minute FROM e.occurred_at AT TIME ZONE l.timezone))::int) FILTER (WHERE e.type = 'sale.completed') AS minute_of_day,
             bool_or(e.type = 'sale.voided') AS voided,
             coalesce(sum((e.payload->>'amount_cents')::bigint) FILTER (
-              WHERE e.type = 'sale.tender_added' AND (e.payload->>'tender_type' = 'cash' OR e.payload->'card'->>'status' = 'approved')), 0)::bigint AS money
+              WHERE e.type = 'sale.tender_added' AND (e.payload->>'tender_type' <> 'card' OR e.payload->'card'->>'status' = 'approved')), 0)::bigint AS money
        FROM sale_events e
        JOIN locations l ON l.location_id = e.location_id
       WHERE e.merchant_id = $1

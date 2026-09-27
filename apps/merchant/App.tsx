@@ -304,7 +304,7 @@ function SalesTab({ token }: { token: string }) {
           <View style={s.row2}>
             {data.by_tender.map((t) => (
               <View key={t.tender_type} style={[s.card, { flex: 1 }]}>
-                <Text style={s.label}>{t.tender_type === 'card' ? 'Card' : 'Cash'}</Text>
+                <Text style={s.label}>{t.tender_type === 'card' ? 'Card' : t.tender_type === 'check' ? 'Check' : t.tender_type === 'other' ? 'Other' : 'Cash'}</Text>
                 <Text style={s.mid}>{usd(t.amount_cents)}</Text>
                 <Text style={s.muted}>{t.count} tickets</Text>
               </View>
