@@ -29,6 +29,7 @@ import {
   ReceiptSettingsInput,
   parseCatalogCsv,
   parseNrsPricebook,
+  KeyPagesInput,
 } from '@adpay/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { languageStatuses } from '../services/i18n';
@@ -44,6 +45,7 @@ import { badRequest, forbidden } from '../http/errors';
 import type { AppDeps } from '../server';
 import { defaultLocationId, getCatalogSnapshot } from '../services/catalog';
 import { bulkUpsert, templateRows } from '../services/catalog-bulk';
+import { setKeyPages } from '../services/key-pages';
 import {
   createCategory,
   createItem,
@@ -160,6 +162,20 @@ function mount(app: FastifyInstance, deps: AppDeps, scope: Scope) {
       const { merchantId, actor } = scope.resolve(r, true);
       const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
       return setQuickKeys(db, actor, merchantId, locationId, QuickKeysInput.parse(r.body).item_ids, trace(r));
+    });
+
+    // Named key pages (ADR 0047): the owner's register tabs for this store.
+    s.get(`${p}/locations/:locationId/key-pages`, async (r) => {
+      const { merchantId } = scope.resolve(r, false);
+      const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
+      const snap = await getCatalogSnapshot(db, merchantId, locationId);
+      return { location_id: locationId, pages: snap.key_pages ?? [] };
+    });
+
+    s.put(`${p}/locations/:locationId/key-pages`, async (r) => {
+      const { merchantId, actor } = scope.resolve(r, true);
+      const { locationId } = z.object({ locationId: z.uuid() }).parse(r.params);
+      return setKeyPages(db, actor, merchantId, locationId, KeyPagesInput.parse(r.body), trace(r));
     });
 
     s.get(`${p}/locations/:locationId/receipt`, async (r) => {

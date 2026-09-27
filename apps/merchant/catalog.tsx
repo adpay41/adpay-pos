@@ -29,6 +29,7 @@ import { captureAndUpload, type PhotoSource } from './photo';
 import { ReceiptEditor } from './receipt';
 import { BulkPrice, PriceHistory } from './pricing-tools';
 import { NrsImport } from './nrs-import';
+import { KeyPages } from './key-pages';
 import { Labels } from './labels';
 import { C, dollars, usd } from './theme';
 
@@ -41,7 +42,7 @@ interface LocationSummary {
 }
 
 type Screen = { kind: 'list' } | { kind: 'edit'; item: CatalogItem | null };
-type Section = 'items' | 'favorites' | 'categories' | 'pricing' | 'bulk' | 'import' | 'tags' | 'receipt';
+type Section = 'items' | 'favorites' | 'pages' | 'categories' | 'pricing' | 'bulk' | 'import' | 'tags' | 'receipt';
 
 const PUSHED = 'Registers update within 15 seconds.';
 
@@ -107,7 +108,7 @@ export function CatalogTab({ token }: { token: string }) {
         />
       ) : null}
       <View style={s.segment}>
-        {(['items', 'favorites', 'categories', 'pricing', 'bulk', 'import', 'tags', 'receipt'] as const).map((k) => (
+        {(['items', 'favorites', 'pages', 'categories', 'pricing', 'bulk', 'import', 'tags', 'receipt'] as const).map((k) => (
           <Pressable key={k} onPress={() => setSection(k)} style={[s.segmentItem, section === k && s.segmentActive]}>
             <Text style={[s.segmentText, section === k && { color: '#fff' }]}>{k[0]!.toUpperCase() + k.slice(1)}</Text>
           </Pressable>
@@ -117,6 +118,7 @@ export function CatalogTab({ token }: { token: string }) {
       {error ? <Text style={s.error}>{error}</Text> : null}
       {section === 'items' && <ItemList catalog={catalog} onEdit={(item) => setView({ kind: 'edit', item })} />}
       {section === 'favorites' && <Favorites token={token} catalog={catalog} location={loc} onSaved={saved} />}
+      {section === 'pages' && <KeyPages key={locationId} token={token} catalog={catalog} locationId={locationId} onSaved={saved} />}
       {section === 'categories' && <Categories token={token} catalog={catalog} onSaved={saved} />}
       {section === 'pricing' && <Pricing token={token} catalog={catalog} location={loc} onSaved={saved} />}
       {section === 'bulk' && <BulkPrice token={token} catalog={catalog} onSaved={saved} />}

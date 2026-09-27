@@ -2,6 +2,7 @@
  * Wire shapes shared by the API and its clients (admin, merchant app, register). Money fields are
  * integer cents; rates are integer ppm.
  */
+import type { KeyPage } from './key-pages';
 import type { TileColor } from './catalog';
 import type { I18nSnapshot } from './i18n';
 import type { LoyaltySettings } from './loyalty';
@@ -102,6 +103,8 @@ export interface CatalogSnapshot {
   items: CatalogItem[];
   /** This location's favorites, in tile order: the register's first quick-key page. */
   quick_keys: string[];
+  /** The owner's named key pages, in tab order (ADR 0047). Absent in older cached snapshots. */
+  key_pages?: KeyPage[];
   /** This location's receipt settings, logo resolved to a `/media/…` path (P8). Absent in older cached snapshots. */
   receipt?: ReceiptSettings & { logo_url: string | null };
   /** Tax schedule, per-unit charges and age rules for this location (P10). Absent in older cached snapshots. */
