@@ -3,9 +3,9 @@
  * The merchant's color is a pale fill plus a stripe from the fixed palette, which has no red or
  * green, so the brand rule "never red near a dollar amount" holds whatever the merchant picks.
  */
-import { TILE_COLORS, type CatalogItem } from '@adpay/shared';
+import { TILE_COLORS, type CatalogItem, type SearchHit } from '@adpay/shared';
 import { useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { API_URL } from '../runtime';
 import { useT } from './i18n';
 import { C, usd } from './theme';
@@ -15,12 +15,15 @@ export function QuickKey({
   badge,
   onPress,
   onLongPress,
+  found,
 }: {
   item: CatalogItem;
   /** Low stock (P22b): the count left, or 'out'. */
   badge?: string | null;
   onPress: (i: CatalogItem) => void;
   onLongPress?: (i: CatalogItem) => void;
+  /** In search results: what matched and the code to read back (a barcode or PLU). */
+  found?: { match: SearchHit['match']; code: string | null; query: string } | null;
 }) {
   const t = useT();
   const [imageFailed, setImageFailed] = useState(false);
@@ -46,10 +49,11 @@ export function QuickKey({
           // Photos are immutable URLs with a year-long cache header, so they keep showing offline once seen.
           <Image source={{ uri: `${API_URL}${item.image_url}` }} style={s.photo} onError={() => setImageFailed(true)} resizeMode="cover" />
         ) : null}
-        <Text style={s.name} numberOfLines={showImage ? 2 : 3}>
+        <Text style={s.name} numberOfLines={showImage || found ? 2 : 3}>
           {item.name}
         </Text>
       </View>
+      {found ? <FoundCode found={found} /> : null}
       <View>
         <Text style={s.cash}>{usd(item.cash_price_cents)}</Text>
         <Text style={s.card}>{t('card {amount}', { amount: usd(item.card_price_cents) })}</Text>
@@ -85,7 +89,35 @@ export function AmountKey({ label, department, amount, cardAmount, onPress }: { 
   );
 }
 
+/**
+ * The code a search found or the item carries, so a person can read back its barcode: the whole
+ * barcode matched (✓), the typed ending in bold, the PLU, or "no barcode".
+ */
+function FoundCode({ found }: { found: { match: SearchHit['match']; code: string | null; query: string } }) {
+  const t = useT();
+  if (!found.code) return <Text style={[s.code, s.codeNone]}>{t('no barcode')}</Text>;
+  if (found.match === 'plu') return <Text style={s.code}>{t('PLU {plu}', { plu: found.code })}</Text>;
+  if (found.match === 'barcode_end') {
+    const end = found.query.trim();
+    return (
+      <Text style={s.code} accessibilityLabel={t('Barcode {code}', { code: found.code })}>
+        {found.code.slice(0, found.code.length - end.length)}
+        <Text style={s.codeHit}>{found.code.slice(found.code.length - end.length)}</Text>
+      </Text>
+    );
+  }
+  return (
+    <Text style={[s.code, found.match === 'barcode' && s.codeHit]} accessibilityLabel={t('Barcode {code}', { code: found.code })}>
+      {found.match === 'barcode' ? '✓ ' : ''}
+      {found.code}
+    </Text>
+  );
+}
+
 const s = StyleSheet.create({
+  code: { fontFamily: Platform.OS === 'web' ? 'monospace' : undefined, fontSize: 11, color: C.muted, fontVariant: ['tabular-nums'] },
+  codeHit: { color: C.black, fontWeight: '800' },
+  codeNone: { fontStyle: 'italic' },
   amountKey: { borderStyle: 'dashed' },
   dept: { color: C.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginTop: 2 },
   key: {

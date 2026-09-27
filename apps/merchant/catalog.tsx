@@ -8,6 +8,7 @@
  * float arithmetic on an amount. Tile colors come from the fixed palette (no red, no green).
  */
 import {
+  barcodeMatch,
   MAX_QUICK_KEYS,
   RESTRICTIONS,
   RESTRICTION_LABELS,
@@ -45,6 +46,7 @@ type Screen = { kind: 'list' } | { kind: 'edit'; item: CatalogItem | null };
 type Section = 'items' | 'favorites' | 'pages' | 'categories' | 'pricing' | 'bulk' | 'import' | 'tags' | 'receipt';
 
 const PUSHED = 'Registers update within 15 seconds.';
+const LIST_MAX = 200;
 
 export function CatalogTab({ token }: { token: string }) {
   const [locations, setLocations] = useState<LocationSummary[] | null>(null);
@@ -142,13 +144,19 @@ function Thumb({ item, size = 44 }: { item: CatalogItem; size?: number }) {
 function ItemList({ catalog, onEdit }: { catalog: CatalogSnapshot; onEdit: (i: CatalogItem | null) => void }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<string | null>(null);
-  const rows = useMemo(() => {
+  // Name, PLU, or any barcode the item rings under (whole, with or without a leading 0, or its last
+  // digits). A whole-barcode match comes first. At most LIST_MAX rows: a 9,000-item price book is searched, not scrolled.
+  const { rows, total } = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return catalog.items.filter(
-      (i) =>
-        (!cat || i.category_id === cat) &&
-        (!needle || i.name.toLowerCase().includes(needle) || i.upc?.includes(needle) || i.plu?.includes(needle)),
-    );
+    const found = catalog.items.flatMap((i) => {
+      if (cat && i.category_id !== cat) return [];
+      if (!needle) return [{ i, code: i.upc, exact: false }];
+      const bc = barcodeMatch(i, needle);
+      if (bc) return [{ i, code: bc.code, exact: bc.kind === 'barcode' }];
+      return i.name.toLowerCase().includes(needle) || i.plu?.includes(needle) ? [{ i, code: i.upc, exact: false }] : [];
+    });
+    found.sort((a, b) => Number(b.exact) - Number(a.exact));
+    return { rows: found.slice(0, LIST_MAX), total: found.length };
   }, [catalog.items, q, cat]);
   return (
     <>
@@ -163,7 +171,8 @@ function ItemList({ catalog, onEdit }: { catalog: CatalogSnapshot; onEdit: (i: C
       />
       <View style={s.card}>
         {rows.length === 0 ? <Text style={s.muted}>No items match.</Text> : null}
-        {rows.map((i) => (
+        {total > rows.length ? <Text style={s.mutedSmall}>Showing {rows.length} of {total}: search by name or barcode to narrow it down.</Text> : null}
+        {rows.map(({ i, code, exact }) => (
           <Pressable key={i.item_id} style={[s.line, !i.active && { opacity: 0.5 }]} onPress={() => onEdit(i)}>
             <Thumb item={i} />
             <View style={{ flex: 1 }}>
@@ -173,6 +182,11 @@ function ItemList({ catalog, onEdit }: { catalog: CatalogSnapshot; onEdit: (i: C
                 {i.active ? '' : ' · hidden'}
                 {i.open_price ? ' · open price' : ''}
                 {i.tax_included ? ' · tax included' : ''}
+              </Text>
+              <Text style={[s.mutedSmall, s.code, exact && { color: C.black, fontWeight: '700' }]}>
+                {exact ? '✓ ' : ''}
+                {code ? `Barcode ${code}` : 'No barcode'}
+                {i.plu ? ` · PLU ${i.plu}` : ''}
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
@@ -397,6 +411,12 @@ function ItemEditor({
 
       <Field label="Barcode (UPC)">
         <TextInput style={s.input} value={f.upc} onChangeText={(t) => set('upc', t)} keyboardType="number-pad" placeholder="Scan or type" />
+        {item?.barcodes?.length ? (
+          // Codes added at the register (scan-to-attach) or case barcodes: this item rings under these too.
+          <Text style={[s.mutedSmall, s.code]}>
+            Also rings under: {item.barcodes.map((b) => (b.pack_qty > 1 ? `${b.barcode} (${b.pack_qty}-pack)` : b.barcode)).join(' · ')}
+          </Text>
+        ) : null}
         {hint ? (
           <Text style={s.mutedSmall}>
             {hint.stores === 1 ? '1 store on AD Pay calls it' : `${hint.stores} stores on AD Pay call it`} “{hint.name}”
@@ -771,6 +791,7 @@ const s = StyleSheet.create({
   notice: { backgroundColor: '#fff', borderLeftWidth: 4, borderLeftColor: C.black, padding: 10, borderRadius: 6, color: C.ink },
   muted: { color: C.muted },
   mutedSmall: { color: C.muted, fontSize: 12 },
+  code: { fontFamily: Platform.OS === 'web' ? 'monospace' : undefined },
   link: { color: C.ink, fontWeight: '700' },
   card: { backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: C.line, padding: 14 },
   line: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.line, gap: 10 },

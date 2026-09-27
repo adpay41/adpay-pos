@@ -211,6 +211,11 @@ export function PriceCheckCard({ item, showCost, onShowCost, onDone }: { item: C
     <>
       <Text style={s.muted}>{t('Price check — not rung up')}</Text>
       <Text style={s.title}>{item.name}</Text>
+      {/* Every code the item rings under, so a label can be checked against the catalog. */}
+      <Text style={s.muted}>
+        {[item.upc, ...(item.barcodes ?? []).map((b) => (b.pack_qty > 1 ? `${b.barcode} (${b.pack_qty}-pack)` : b.barcode))].filter(Boolean).join(' · ') || t('no barcode')}
+        {item.plu ? ` · ${t('PLU {plu}', { plu: item.plu })}` : ''}
+      </Text>
       <View style={s.row}>
         <View style={s.box}>
           <Text style={s.boxLabel}>{t('Cash')}</Text>

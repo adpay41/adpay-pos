@@ -294,6 +294,14 @@ REGISTER = [
         "Press the black \"Refund $2.12 in cash\" button."),
      "It asks \"Manager approval: Refund without a receipt\". Then the ticket shows a black banner \"RETURN — no receipt · Defective\" and the keypad's Cash/Card keys are off. "
      "After the roll: \"Refund $2.12 in cash\" ($1.99 + tax, at today's price). After pressing it: a box titled Done, \"Refunded $2.12 in cash.\", and a new empty ticket.", True),
+    ("R52", "Find an item by typing its barcode", steps(
+        "Click the search box and type 200000100131 (don't press Enter). Look at the tile.",
+        "Replace it with just 0131. Look at the tile.",
+        "Replace it with coffee.",
+        "Clear the search. Press Price check, tap Hot Coffee — Medium, read the box, press Done, then Price check again to turn it off."),
+     FLAG_TEXT + "The whole barcode finds exactly one tile, Hot Coffee — Medium, with \"✓ 200000100131\" in bold under the name. With 0131 the same tile shows "
+     "the barcode with its last four digits in bold. With coffee, each coffee tile shows its own barcode (e.g. 200000100148 for Large). Price check shows the barcode "
+     "under the item name. (Pressing Enter after a whole barcode rings it, exactly like a scan.)", False),
 ]
 
 MERCHANT = [
@@ -455,6 +463,10 @@ MERCHANT = [
     ("M36", "Import it", steps("Leave the department chips as they are and press Import 12 items. Wait for it to finish."),
      FLAG_TEXT + "\"Imported\" and \"Imported 12 of 12 items: 12 new, 0 updated, 0 unchanged.\", plus a notice that registers update within 15 seconds. "
      "Items now lists e.g. Coca-Cola Classic 20oz $2.49 and Marlboro Red Box $13.99 · tax included, and Gatorade Strawberry Kiwi 28oz as open price. Then do Cross-App X14.", False),
+    ("M38", "Look an item up by barcode", steps(
+        "Items → Items. In the search box type 200000100131.",
+        "Tap the row and look under \"Barcode (UPC)\"."),
+     FLAG_TEXT + "One row, Hot Coffee — Medium, with \"✓ Barcode 200000100131\" under it (every row shows its barcode). The item shows 200000100131 in the Barcode (UPC) box.", False),
     ("M37", "Uploading again never makes duplicates", steps("Choose the same file again and press Preview. Don't import."),
      FLAG_TEXT + "\"Will import 12 of 12 items: 0 new, 0 updated, 12 unchanged.\" and Categories \"… 0 new, 5 already in your catalog …\".", False),
 ]

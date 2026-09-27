@@ -331,7 +331,10 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
   const [query, setQuery] = useState('');
   const [priceCheck, setPriceCheck] = useState(false);
   const favorites = useMemo(() => favoriteKeys(shown), [shown]);
-  const results = useMemo(() => (query.trim() ? searchCatalog(shown, query, 40).map((h) => h.item) : null), [shown, query]);
+  // Search by name, PLU or barcode (whole or its last digits); each result reads back its code.
+  const hits = useMemo(() => (query.trim() ? searchCatalog(shown, query, 40) : null), [shown, query]);
+  const results = useMemo(() => hits?.map((h) => h.item) ?? null, [hits]);
+  const foundById = useMemo(() => (hits ? new Map(hits.map((h) => [h.item.item_id, { match: h.match, code: h.code, query }])) : null), [hits, query]);
   // Named key pages (ADR 0047): the owner's own tabs, after Favorites.
   const pages = shown.key_pages ?? [];
   const page = category?.startsWith(PAGE) ? (pages.find((p) => PAGE + p.page_id === category) ?? null) : null;
@@ -879,7 +882,7 @@ export function SaleScreen({ rt, onForget }: { rt: Runtime; onForget: () => void
                 )
               : null}
             {items.map((i) => (
-              <QuickKey key={i.item_id} item={i} badge={rt.stock.badge(i)} onPress={addItem} onLongPress={(it) => setModal({ kind: 'add_qty', item: it, entry: query ? 'search' : 'key' })} />
+              <QuickKey key={i.item_id} item={i} badge={rt.stock.badge(i)} found={foundById?.get(i.item_id) ?? null} onPress={addItem} onLongPress={(it) => setModal({ kind: 'add_qty', item: it, entry: query ? 'search' : 'key' })} />
             ))}
             {results && results.length === 0 ? (
               <Text style={s.mutedSmall}>
